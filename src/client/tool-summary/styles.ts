@@ -327,6 +327,52 @@ const CSS = `
   color: var(--dsw-alias-label-primary);
 }
 
+/* 分区页签（思考/工具都有内容时才出现）：中性分段控件，选中态实面微阴影。 */
+.dts__tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  margin-right: 8px;
+  border-radius: 999px;
+  padding: 2px;
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.1));
+}
+
+.dts__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 10px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 22px;
+  white-space: nowrap;
+  transition: background-color .15s ease, color .15s ease, box-shadow .15s ease;
+}
+
+.dts__tab:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.dts__tab[data-active="true"] {
+  background: var(--dsw-alias-bg-layer-1, #fff);
+  box-shadow: 0 1px 2px rgba(15,17,21,.1);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.dts__tab:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--dts-accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
 .dts__modal-scroll {
   flex: 1 1 auto;
   min-height: 0;

@@ -101,6 +101,9 @@ export function activityStore(): ActivityStore {
  * it to `data-open` so the chevron mirrors the official turn-process row
  * (closed = chevron points left, open = points down).
  */
+/** Drawer tab: which panel the modal shows (row click picks the initial one). */
+export type DrawerTab = ViewMode
+
 export function useDrawerOpen(turn: number): boolean {
   const store = activityStore()
   return useSyncExternalStore(store.subscribe, () => store.openTurn === turn)
@@ -203,6 +206,12 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
   const kinds = useMemo(() => kindByToolName(blocks), [blocks])
   const close = (): void => { store.close() }
   const mode = store.activeMode
+  // 分区页签：行点击只决定初始分区（工具有工具、纯思考进思考），两个分区
+  // 都有内容时页签常驻可切——单行合并后不能再让思考“消失”。面板按 key=turn
+  // 重挂，mode 变化（同轮重开）时跟随。
+  const [tab, setTab] = useState<DrawerTab>(mode ?? (reasoning.length > 0 ? 'reasoning' : 'tools'))
+  useEffect(() => { if (mode !== null) setTab(mode) }, [mode])
+  const showTabs = reasoning.length > 0 && toolNodes.length > 0
 
   // Live elapsed time + auto-scroll while the turn is still working.
   const reasoningRunning = reasoning.some(item => item.running)
@@ -256,17 +265,41 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
         <header className="dts__modal-head">
           <span className="dts__modal-title">
             第 {turn} 轮
-            {mode === 'reasoning' && (
+            {tab === 'reasoning' && (
               <> · <IconThinkOutline14 size={14} aria-hidden /> {reasoning.length}</>
             )}
-            {mode === 'tools' && (
+            {tab === 'tools' && (
               <> · <IconApiOutline14 size={14} aria-hidden /> {toolNodes.length}</>
             )}
           </span>
+          {showTabs && (
+            <span className="dts__tabs" role="tablist" aria-label="分区">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'reasoning'}
+                className="dts__tab"
+                data-active={tab === 'reasoning' || undefined}
+                onClick={() => { setTab('reasoning') }}
+              >
+                <IconThinkOutline14 size={13} aria-hidden /> 思考 {reasoning.length}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'tools'}
+                className="dts__tab"
+                data-active={tab === 'tools' || undefined}
+                onClick={() => { setTab('tools') }}
+              >
+                <IconApiOutline14 size={13} aria-hidden /> 工具 {toolNodes.length}
+              </button>
+            </span>
+          )}
           <button type="button" className="dts__modal-close" onClick={close} aria-label="关闭">✕</button>
         </header>
         <div className="dts__modal-scroll" ref={scrollRef} onScroll={onScrollPin}>
-          {mode !== 'tools' && reasoning.length > 0 && (
+          {tab === 'reasoning' && reasoning.length > 0 && (
             <div className="dts__modal-panel">
               <header className="dts__modal-panel-head">
                 <span className="dts__modal-panel-title"><IconThinkOutline14 size={14} aria-hidden /> 思考过程</span>
@@ -277,7 +310,7 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
               <ReasoningGroups items={reasoning} activeIndex={activeIndex} jumpToCategory={jumpTo} />
             </div>
           )}
-          {mode !== 'reasoning' && toolNodes.length > 0 && (
+          {tab === 'tools' && toolNodes.length > 0 && (
             <div className="dts__modal-panel">
               <header className="dts__modal-panel-head">
                 <span className="dts__modal-panel-title"><IconApiOutline14 size={14} aria-hidden /> 工具调用</span>
