@@ -8,7 +8,7 @@
  * the bus is created lazily by whichever plugin touches it first.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { IconApiOutline14, IconThinkOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -94,6 +94,16 @@ export function activityStore(): ActivityStore {
   }
   globalObj[STORE_KEY] = store
   return store
+}
+
+/**
+ * Whether the shared drawer is currently open for one turn. Entry rows bind
+ * it to `data-open` so the chevron mirrors the official turn-process row
+ * (closed = chevron points left, open = points down).
+ */
+export function useDrawerOpen(turn: number): boolean {
+  const store = activityStore()
+  return useSyncExternalStore(store.subscribe, () => store.openTurn === turn)
 }
 
 /** Summary card for the drawer's tool section. */

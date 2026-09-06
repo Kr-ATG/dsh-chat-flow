@@ -17,153 +17,79 @@ const CSS = `
  * 只需覆盖这两个变量即可整体换成「中性半透明抬升」，不必逐条重写规则。
  * ──────────────────────────────────────────────────────────────────── */
 
-/* ===== 对话流内的入口 chip（工具调用 / 思考 共用一套视觉语言）=========== */
+/* ===== 回合过程行容器（官方 turn-process 行同款，见 .dts__process）===== */
 .dts__entry-wrap {
   --dts-accent: var(--dsw-alias-state-business-primary, #4176e6);
   --dts-fill: var(--dsh-flow-veil, color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent));
-  /* chip 表面/描边走变量：玻璃质感只需覆盖这两个变量（见 glass.ts），
-   * 不必用更高特异性的规则去压 chip 的运行态样式（实测直接覆盖
-   * background-color 会连运行态的强调色底一起吃掉）。 */
+  /* 实时卡片（下载/长命令）表面走变量，玻璃质感只需覆盖它。 */
   --dts-chip-surface: var(--dsw-alias-bg-layer-1, rgba(127,127,127,.05));
   --dts-chip-border: var(--dsw-alias-border-l2, rgba(127,127,127,.22));
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 8px;
   max-width: 100%;
 }
 
-.dts__entry {
-  position: relative;
-  display: inline-flex;
+/* ===== 回合过程行（与官方 TurnProcessNodeView.module.css 逐项一致）========
+ * 类名换前缀（官方 hash 会变，跟类名走必断），声明照抄官方：整宽文字按钮
+ * + 底部发丝线 + 左指 chevron（data-open 时转下来）。运行中文字染品牌蓝
+ * （官方行在流式期不存在，这里给个活指示）。 */
+.dts__process {
+  box-sizing: border-box;
+  display: flex;
   align-items: center;
-  gap: 7px;
-  max-width: 100%;
-  height: 28px;
+  width: 100%;
+  min-width: 0;
+  height: 33px;
   margin: 0;
-  padding: 0 12px 0 5px;
-  overflow: hidden;
-  border: 1px solid var(--dts-chip-border);
-  border-radius: 999px;
-  background: var(--dts-chip-surface);
-  box-shadow: 0 1px 2px rgba(15,17,21,.04);
+  padding: 0 0 8px;
+  border: none;
+  border-bottom: .5px solid var(--dsw-alias-border-l2);
+  background: 0 0;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  font-size: 12px;
-  line-height: 26px;
-  white-space: nowrap;
-  transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease, transform .18s ease;
+  text-align: left;
 }
 
-.dts__entry:hover {
-  border-color: color-mix(in srgb, var(--dts-accent) 34%, var(--dts-chip-border));
-  background: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.1));
-  box-shadow: 0 2px 8px rgba(15,17,21,.08);
-  color: var(--dsw-alias-label-primary);
-  transform: translateY(-1px);
+.dts__process:not([data-open]) {
+  margin-bottom: 8px;
 }
 
-.dts__entry:active {
-  box-shadow: 0 1px 2px rgba(15,17,21,.06);
-  transform: none;
-}
-
-.dts__entry:focus-visible {
+.dts__process:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--dts-accent) 55%, transparent);
   outline-offset: 2px;
 }
 
-/* 图标托在一枚圆形色底里，作为 chip 的视觉锚点（思考 chip 同规格）。 */
-.dts__entry-icon {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--dts-accent) 13%, transparent);
-  color: var(--dts-accent);
-  font-size: 12px;
-  line-height: 1;
-}
-
-.dts__entry-text {
+.dts__process-label {
   min-width: 0;
   overflow: hidden;
-  font-weight: 500;
+  font-size: 14px;
+  line-height: 24px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.dts__entry-sub {
-  flex: none;
-  border-radius: 999px;
-  padding: 0 7px;
-  background: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.1));
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 18px;
-}
-
-.dts__entry-err {
-  flex: none;
-  border-radius: 999px;
-  padding: 0 7px;
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #e5484d) 14%, transparent);
-  color: var(--dsw-alias-state-error-primary, #e5484d);
-  font-size: 11px;
-  line-height: 18px;
-}
-
-/* kind 迷你徽标组（chip 尾部的小圆图标） */
-.dts__entry-kinds {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  flex: none;
-}
-
-/* 运行态：描边/文字染成强调色，底色上扫过一道极淡高光。动画只在本轮进行中
- * 存在（单元素、GPU 友好的 background-position），回合结束即消失。 */
-.dts__entry[data-running="true"] {
-  border-color: color-mix(in srgb, var(--dts-accent) 42%, transparent);
-  background:
-    linear-gradient(color-mix(in srgb, var(--dts-accent) 9%, transparent), color-mix(in srgb, var(--dts-accent) 9%, transparent)),
-    var(--dts-chip-surface);
-}
-
-.dts__entry[data-running="true"] .dts__entry-text {
+.dts__process[data-running="true"] .dts__process-label {
   color: var(--dts-accent);
+  font-variant-numeric: tabular-nums;
 }
 
-.dts__entry[data-running="true"] .dts__entry-icon {
-  background: color-mix(in srgb, var(--dts-accent) 20%, transparent);
-  animation: dts-breathe 1.8s ease-in-out infinite;
+.dts__process-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  transform: rotate(-90deg);
+  transition: transform .1s;
 }
 
-.dts__entry[data-running="true"]::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(100deg,
-    transparent 22%,
-    color-mix(in srgb, var(--dts-accent) 16%, transparent) 50%,
-    transparent 78%);
-  background-size: 220% 100%;
-  pointer-events: none;
-  animation: dts-sheen 1.9s linear infinite;
+.dts__process[data-open] .dts__process-chevron {
+  transform: rotate(0);
 }
 
-@keyframes dts-sheen {
-  from { background-position: 160% 0; }
-  to { background-position: -60% 0; }
-}
 
-@keyframes dts-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--dts-accent) 32%, transparent); }
-  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--dts-accent) 0%, transparent); }
-}
 
 /* ===== 对话流内的实时卡片（下载 / 长命令）============================== */
 .dts__entry-live {
@@ -1079,9 +1005,7 @@ const CSS = `
 
 /* ── 尊重系统「减少动态效果」：高光/呼吸/滑动动画一律停 ─────────── */
 @media (prefers-reduced-motion: reduce) {
-  .dts__entry[data-running="true"]::after { display: none; }
-  .dts__entry,
-  .dts__entry[data-running="true"] .dts__entry-icon,
+  .dts__process-chevron,
   .dts__dot[data-state="running"],
   .dts__progress::after,
   .dts__modal,
@@ -1089,11 +1013,8 @@ const CSS = `
     animation: none;
     transition: none;
   }
-  .dts__entry:hover { transform: none; }
 }
 
-/* 用户要求：对话流工具 chip 去 resting 底色（运行/错误状态色与抽屉弹层不动）。 */
-.dts__entry { background: transparent !important; }
 `
 
 /** Inject the stylesheet once. */

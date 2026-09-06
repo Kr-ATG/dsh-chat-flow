@@ -231,121 +231,73 @@ const CSS = `
   to { opacity: 1; }
 }
 
-/* ── 思考入口 chip（与工具 chip dts__entry 同一套视觉语言）──────────────
-   胶囊 28px + 圆形图标底 + 强调色（品牌蓝）运行态。--dtt-rea-accent 只在
-   本组件根上声明一次，子元素继承。 */
+/* ── 回合过程行（官方 turn-process 行同款，见 .dtt__process）──────────────
+   整宽文字按钮 + 底部发丝线 + 左指 chevron（data-open 时转下来）。
+   --dtt-rea-accent 只在本组件根上声明一次，子元素继承。 */
 .dtt__reasoning {
   --dtt-rea-accent: var(--dsw-alias-state-business-primary, #4176e6);
   --dtt-rea-fill: var(--dsh-flow-veil, color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent));
-  --dtt-rea-surface: var(--dsw-alias-bg-layer-1, rgba(127,127,127,.05));
-  --dtt-rea-border: var(--dsw-alias-border-l2, rgba(127,127,127,.22));
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 8px;
   max-width: 100%;
 }
 
-.dtt__reasoning-btn {
-  position: relative;
-  display: inline-flex;
+/* 与官方 TurnProcessNodeView.module.css 逐项一致（类名换前缀），同 dts__process。 */
+.dtt__process {
+  box-sizing: border-box;
+  display: flex;
   align-items: center;
-  gap: 7px;
-  max-width: 100%;
-  height: 28px;
+  width: 100%;
+  min-width: 0;
+  height: 33px;
   margin: 0;
-  overflow: hidden;
-  border: 1px solid var(--dtt-rea-border);
-  border-radius: 999px;
-  padding: 0 12px 0 5px;
-  background: var(--dtt-rea-surface);
-  box-shadow: 0 1px 2px rgba(15,17,21,.04);
+  padding: 0 0 8px;
+  border: none;
+  border-bottom: .5px solid var(--dsw-alias-border-l2);
+  background: 0 0;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  font-size: 12px;
-  line-height: 26px;
-  white-space: nowrap;
-  transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease, transform .18s ease;
+  text-align: left;
 }
 
-.dtt__reasoning-btn:hover {
-  border-color: color-mix(in srgb, var(--dtt-rea-accent) 34%, var(--dtt-rea-border));
-  background: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.1));
-  box-shadow: 0 2px 8px rgba(15,17,21,.08);
-  color: var(--dsw-alias-label-primary);
-  transform: translateY(-1px);
+.dtt__process:not([data-open]) {
+  margin-bottom: 8px;
 }
 
-.dtt__reasoning-btn:active {
-  box-shadow: 0 1px 2px rgba(15,17,21,.06);
-  transform: none;
-}
-
-.dtt__reasoning-btn:focus-visible {
+.dtt__process:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--dtt-rea-accent) 55%, transparent);
   outline-offset: 2px;
 }
 
-.dtt__reasoning-icon {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--dtt-rea-accent) 13%, transparent);
-  color: var(--dtt-rea-accent);
-  font-size: 12px;
-  line-height: 1;
-}
-
-.dtt__reasoning-btn > span:not(.dtt__reasoning-icon) {
+.dtt__process-label {
   min-width: 0;
   overflow: hidden;
-  font-weight: 500;
+  font-size: 14px;
+  line-height: 24px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 思考中：描边/文字染成强调色 + 扫光高光 + 图标呼吸圈。动画仅在本轮进行中
-   存在（单元素 background-position / box-shadow），思考结束即消失。 */
-.dtt__reasoning[data-running="true"] .dtt__reasoning-btn {
-  border-color: color-mix(in srgb, var(--dtt-rea-accent) 42%, transparent);
-  background:
-    linear-gradient(color-mix(in srgb, var(--dtt-rea-accent) 9%, transparent), color-mix(in srgb, var(--dtt-rea-accent) 9%, transparent)),
-    var(--dtt-rea-surface);
+.dtt__process[data-running="true"] .dtt__process-label {
   color: var(--dtt-rea-accent);
+  font-variant-numeric: tabular-nums;
 }
 
-.dtt__reasoning[data-running="true"] .dtt__reasoning-icon {
-  background: color-mix(in srgb, var(--dtt-rea-accent) 20%, transparent);
-  animation: dtt-rea-breathe 1.8s ease-in-out infinite;
+.dtt__process-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  transform: rotate(-90deg);
+  transition: transform .1s;
 }
 
-.dtt__reasoning[data-running="true"] .dtt__reasoning-btn::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(100deg,
-    transparent 22%,
-    color-mix(in srgb, var(--dtt-rea-accent) 16%, transparent) 50%,
-    transparent 78%);
-  background-size: 220% 100%;
-  pointer-events: none;
-  animation: dtt-rea-sheen 1.9s linear infinite;
+.dtt__process[data-open] .dtt__process-chevron {
+  transform: rotate(0);
 }
-
-@keyframes dtt-rea-sheen {
-  from { background-position: 160% 0; }
-  to { background-position: -60% 0; }
-}
-
-@keyframes dtt-rea-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--dtt-rea-accent) 32%, transparent); }
-  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--dtt-rea-accent) 0%, transparent); }
-}
-
 /* 实时思考预览：流式滚动最新思考文字。左侧强调色导轨点明「这是思考流」。 */
 .dtt__reasoning-live {
   align-self: stretch;
@@ -399,13 +351,10 @@ const CSS = `
 /* 尊重系统「减少动态效果」偏好 */
 @media (prefers-reduced-motion: reduce) {
   .dtt__card { animation: none; }
-  .dtt__reasoning[data-running="true"] .dtt__reasoning-btn::after { display: none; }
-  .dtt__reasoning-btn,
-  .dtt__reasoning[data-running="true"] .dtt__reasoning-icon {
+  .dtt__process-chevron {
     animation: none;
     transition: none;
   }
-  .dtt__reasoning-btn:hover { transform: none; }
   .dtt__card-chip { transition: none; }
   .dtt__card-chip:hover { transform: none; }
 }

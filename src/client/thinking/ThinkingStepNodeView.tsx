@@ -18,7 +18,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { Fragment } from 'react'
-import { IconThinkOutline14, JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutline14, JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   AssistantChatData, ChatNode, ChatNodeViewProps, ChatViewSlotProps, TurnTailOwnerProps,
@@ -28,7 +28,7 @@ import type { AssistantBlock, RenderMessageImages } from '@deepseek-ai/dsh-clien
 // Seat props) so ChatNodeViewProps resolves its owner / hooks / session share.
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
-import { activityStore, type ActivityReasoningItem } from '../tool-summary/activity-drawer.tsx'
+import { activityStore, useDrawerOpen, type ActivityReasoningItem } from '../tool-summary/activity-drawer.tsx'
 import { formatDuration } from '../tool-summary/tool-stats.ts'
 import { useNow } from '../tool-summary/use-now.ts'
 import { FlowCard, type ReplyCardMeta } from '../flow-card.tsx'
@@ -74,11 +74,16 @@ function ReasoningChip({ items, running, turn, thinkingStart, t }: {
   t: ChatViewSlotProps['t']
 }) {
   const store = activityStore()
-  useEffect(() => {
-    store.setReasoning(turn, items)
-  }, [store, turn, items])
+  // 思考材料登记挪到父组件（本轮有工具调用时 chip 不挂载、不占行，
+  // 抽屉里仍要有思考分区）。
   const now = useNow(running)
   const elapsed = thinkingStart !== undefined ? Math.max(0, now - thinkingStart) : undefined
+  // 抽屉开合态：与官方 turn-process 行同行（data-open 把 chevron 转下来）。
+  const drawerOpen = useDrawerOpen(turn)
+  // 无工具调用的回合只剩这一行：文案取官方 turn-process 的「已思考」。
+  const label = running
+    ? elapsed !== undefined ? `思考中 · ${formatDuration(elapsed)}` : '思考中…'
+    : t('message.turnProcess.thoughtForAWhile')
   // 当前正在输出的思考文字（最后一个仍 running 的 reasoning 文本）。
   const liveText = useMemo(() => {
     if (!running) return ''
@@ -109,20 +114,24 @@ function ReasoningChip({ items, running, turn, thinkingStart, t }: {
 
   return (
     <div className="dtt__reasoning" data-running={running || undefined}>
-      <span className="dtt__visually-hidden">{t('row.running')}</span>
       <button
         type="button"
-        className="dtt__reasoning-btn"
-        title="点击打开本轮思考详情"
-        aria-label={`本轮思考 ${items.length} 次，点击查看`}
-        onClick={() => { store.open(turn, 'reasoning') }}
+        className="dtt__process"
+        data-open={drawerOpen || undefined}
+        data-running={running || undefined}
+        data-turn-process={turn}
+        data-turn-process-tool-calls={0}
+        data-turn-process-messages={0}
+        data-turn-process-subagents={0}
+        aria-expanded={drawerOpen}
+        aria-label={label}
+        onClick={(event) => {
+          event.currentTarget.focus()
+          store.open(turn, 'reasoning')
+        }}
       >
-        <span className="dtt__reasoning-icon" aria-hidden><IconThinkOutline14 size={14} /></span>
-        <span>
-          {running
-            ? elapsed !== undefined ? `思考中 · ${formatDuration(elapsed)}` : '思考中…'
-            : `思考 ×${items.length}`}
-        </span>
+        <span className="dtt__process-label">{label}</span>
+        <IconChevronDownOutline14 className="dtt__process-chevron" />
       </button>
       {running && liveText !== '' && (
         <div className="dtt__reasoning-live" ref={liveRef} onScroll={onLiveScroll} aria-live="polite">
@@ -332,16 +341,6 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     () => data.blocks.filter(block => block.kind !== 'reasoning'),
     [data.blocks],
   )
-  const chip = isFirstStep && reasoningItems.length > 0
-    ? <ReasoningChip
-        items={reasoningItems}
-        running={turnRunning}
-        turn={turnNumber as number}
-        thinkingStart={thinkingStart}
-        t={t}
-      />
-    : undefined
-
   // 本轮工具调用次数与耗时：复用已有的会话投影（无新增订阅）。
   const toolCount = useChat((snapshot) => {
     if (turnNumber === undefined) return 0
@@ -351,6 +350,24 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     }
     return count
   })
+  // 思考材料登记（首步负责）：本轮有工具调用时思考行并入工具行（与官方
+  // turn-process 一致，推理折叠不单独占行），chip 不挂载也得登记，抽屉里
+  // 才有思考分区。
+  useEffect(() => {
+    if (isFirstStep && reasoningItems.length > 0 && turnNumber !== undefined) {
+      activityStore().setReasoning(turnNumber, reasoningItems)
+    }
+  }, [isFirstStep, reasoningItems, turnNumber])
+  const folded = toolCount > 0
+  const chip = isFirstStep && reasoningItems.length > 0 && !folded
+    ? <ReasoningChip
+        items={reasoningItems}
+        running={turnRunning}
+        turn={turnNumber as number}
+        thinkingStart={thinkingStart}
+        t={t}
+      />
+    : undefined
   // 本轮 git 相关调用：扫工具节点参数里的 git <动词>（见 tool-stats.gitVerbOf）。
   const gitVerbs = useMemo(() => {
     const verbs: string[] = []

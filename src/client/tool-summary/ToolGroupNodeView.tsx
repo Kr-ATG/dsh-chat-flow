@@ -10,17 +10,17 @@
 
 import { memo, useEffect, useMemo, useState } from 'react'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ChatNode, ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ChatNode, ChatNodeViewProps, ChatViewSlotProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: activates the ui-chat / ui-tool SlotMap augmentation so ChatNodeViewProps
 // resolves its owner/keyed share (selectedCallId, cwd, openFile, inspectCall…).
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
-import { IconApiOutline14, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { callDurationMs, callName, callSummary, classifyActivity, collectRunningCalls, computeStats, formatDuration, isRunning, parseDownload, READONLY_TOOLS, resultText, shortenPath, type DownloadInfo } from './tool-stats.ts'
-import { classifyKind, distinctKinds, type ActivityKind } from './activity-kind.ts'
+import { IconChevronDownOutline14, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { callDurationMs, callName, callSummary, classifyActivity, collectRunningCalls, computeStats, formatDuration, isRunning, parseDownload, resultText, type DownloadInfo } from './tool-stats.ts'
+import { classifyKind, type ActivityKind } from './activity-kind.ts'
 import { KindIcon } from './icons.tsx'
 import { useNow } from './use-now.ts'
-import { activityStore, type ActivityHandlers, type ActivityStore } from './activity-drawer.tsx'
+import { activityStore, useDrawerOpen, type ActivityHandlers, type ActivityStore } from './activity-drawer.tsx'
 import { LiveDownloadCard } from '../download/DownloadCard.tsx'
 import { downloadPercent, useDownloadState } from '../download/api.ts'
 
@@ -196,7 +196,7 @@ export function ToolCallTreeList({ block, cwd, openFile, inspectCall }: {
  * the conversation projection.
  */
 const ToolEntry = memo(function ToolEntry({
-  nodes, turn, turnStart, cwd, openFile, inspectCall,
+  nodes, turn, turnStart, cwd, openFile, inspectCall, t,
 }: {
   readonly nodes: readonly ChatNode<'tool-call'>[]
   readonly turn: number
@@ -204,6 +204,7 @@ const ToolEntry = memo(function ToolEntry({
   readonly cwd?: string | undefined
   readonly openFile: (path: string) => void
   readonly inspectCall: (callId: string) => void
+  readonly t: ChatViewSlotProps['t']
 }) {
   const store: ActivityStore = activityStore()
   useEffect(() => {
@@ -211,9 +212,9 @@ const ToolEntry = memo(function ToolEntry({
     store.setHandlers({ openFile, inspectCall })
   }, [store, turn, nodes, cwd, turnStart, openFile, inspectCall])
   const stats = useMemo(() => computeStats(nodes.map(node => node.data.root)), [nodes])
-  const readOnly = useMemo(() => nodes.filter(node => READONLY_TOOLS.has(callName(node.data.root))).length, [nodes])
-  const kinds = useMemo(() => distinctKinds(nodes.map(node => node.data.root)).slice(0, 3), [nodes])
   const running = stats.running > 0
+  // 抽屉开合态：官方 turn-process 行靠 data-open 把 chevron 转下来，这里同行。
+  const drawerOpen = useDrawerOpen(turn)
   const now = useNow(running)
   // "当前工具"的时长：取仍在运行的最早一个 tool/call 时间，而不是整轮 turn 开始时间。
   const toolStart = useMemo(() => {
@@ -265,41 +266,32 @@ const ToolEntry = memo(function ToolEntry({
   )
   const showDownload = running && liveActivity.hasDownload && liveDownloadCalls.length === 0
   const showCommand = running && !liveActivity.hasDownload && liveDownloadCalls.length === 0 && liveActivity.hasCommand && (elapsed ?? 0) > 1000
+  // 文案与官方 TurnProcessNodeView 逐字一致（同 chat locale 键）；运行中保持
+  // 原有的实时时长（官方行在流式期不存在，进抽屉前给个活指示）。
+  const label = running
+    ? elapsed !== undefined ? `工具调用中 · ${formatDuration(elapsed)}` : '工具调用中'
+    : t(stats.total === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: stats.total })
 
   return (
     <div className={`${NS}__entry-wrap`}>
       <button
         type="button"
-        className={`${NS}__entry`}
+        className={`${NS}__process`}
+        data-open={drawerOpen || undefined}
         data-running={running || undefined}
-        title="点击打开本轮思考与工具调用详情"
-        aria-label={`本轮工具调用 ${stats.total} 次，点击查看`}
-        onClick={() => { store.open(turn, 'tools') }}
+        data-turn-process={turn}
+        data-turn-process-tool-calls={stats.total}
+        data-turn-process-messages={0}
+        data-turn-process-subagents={0}
+        aria-expanded={drawerOpen}
+        aria-label={label}
+        onClick={(event) => {
+          event.currentTarget.focus()
+          store.open(turn, 'tools')
+        }}
       >
-        <span className={`${NS}__entry-icon`} aria-hidden><IconApiOutline14 size={14} /></span>
-        <span className={`${NS}__entry-text`}>
-          {running
-            ? elapsed !== undefined
-              ? `工具调用中 · ${formatDuration(elapsed)}`
-              : '工具调用中'
-            : `工具 ×${stats.total}`}
-        </span>
-        {!running && kinds.length > 0 && (
-          <span className={`${NS}__entry-kinds`}>
-            {kinds.map(kind => (
-              <span
-                key={kind.key}
-                className={`${NS}__badge ${NS}__badge--mini`}
-                data-kind={kind.key}
-                title={kind.label}
-              >
-                <KindIcon kind={kind.key} size={12} />
-              </span>
-            ))}
-          </span>
-        )}
-        {readOnly > 0 && <span className={`${NS}__entry-sub`}>只读 {readOnly}</span>}
-        {stats.errors > 0 && <span className={`${NS}__entry-err`}>⚠ {stats.errors}</span>}
+        <span className={`${NS}__process-label`}>{label}</span>
+        <IconChevronDownOutline14 className={`${NS}__process-chevron`} />
       </button>
       {liveDownloadCalls.map(({ block, url, outputPath }) => (
         <LiveDownloadCard key={block.callId} callId={block.callId} url={url} startedAt={block.time} outputPath={outputPath} />
@@ -331,7 +323,7 @@ const ToolEntry = memo(function ToolEntry({
 
 /** Shadows the built-in `tool-call` renderer: one chip per turn, drawer on click. */
 export const ToolGroupNodeView = memo(function ToolGroupNodeView(props: ChatNodeViewProps<'tool-call'>) {
-  const { node, useChat, cwd, openFile, inspectCall } = props
+  const { node, useChat, cwd, openFile, inspectCall, t } = props
   const turn = turnNumber(node)
   const nodes = useChat(snapshot => {
     if (turn === undefined) return EMPTY
@@ -356,6 +348,7 @@ export const ToolGroupNodeView = memo(function ToolGroupNodeView(props: ChatNode
       cwd={cwd}
       openFile={openFile}
       inspectCall={inspectCall}
+      t={t}
     />
   )
 })
