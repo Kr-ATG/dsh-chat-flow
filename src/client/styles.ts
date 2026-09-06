@@ -134,11 +134,10 @@ const CSS = `
   height: 22px;
   border-radius: 11px;
   padding: 0 9px;
-  background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #2f9e44) 12%, transparent);
-  color: var(--dsw-alias-state-success-primary, #2f9e44);
+  background: var(--dsh-flow-veil, color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent));
+  color: var(--dsw-alias-label-secondary);
   font-size: 12px;
-  font-weight: 700;
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--dsw-alias-state-success-primary, #2f9e44) 8%, transparent);
+  font-weight: 600;
   line-height: 22px;
   white-space: nowrap;
 }
@@ -146,6 +145,15 @@ const CSS = `
 .dtt__card-badge[data-interrupted] {
   background: color-mix(in srgb, var(--dsw-alias-state-warn-primary, #f59e0b) 14%, transparent);
   color: var(--dsw-alias-state-warn-label, #b45309);
+}
+
+/* 徽章里只留对勾一笔语义绿（中断态跟随琥珀色）。 */
+.dtt__card-badge > svg {
+  color: var(--dsw-alias-state-success-primary, #2f9e44);
+}
+
+.dtt__card-badge[data-interrupted] > svg {
+  color: inherit;
 }
 
 .dtt__card-chips {
@@ -184,8 +192,8 @@ const CSS = `
 
 .dtt__card-chip:hover {
   transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 45%, transparent);
-  box-shadow: 0 6px 16px rgba(65,118,230,.14);
+  border-color: var(--dsw-alias-border-l2, rgba(127,127,127,.3));
+  box-shadow: 0 6px 16px rgba(15,17,21,.1);
 }
 
 .dtt__card-chip-value {
@@ -195,29 +203,6 @@ const CSS = `
   font-weight: 700;
 }
 
-/* Git chip 高亮蓝，一眼区分。 */
-.dtt__card-chip[data-kind="git"] {
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 12%, transparent);
-  border-color: transparent;
-  color: var(--dsw-alias-state-business-primary, #4176e6);
-}
-
-.dtt__card-chip[data-kind="git"] .dtt__card-chip-value {
-  color: inherit;
-}
-
-.dtt__card-chip[data-kind="git"]::before {
-  opacity: 1;
-  box-shadow: 0 0 6px currentColor;
-}
-
-.dtt__card-chip[data-kind="git"]:hover {
-  box-shadow: 0 6px 18px rgba(65,118,230,.30);
-}
-
-.dtt__card-chip[data-kind="time"] .dtt__card-chip-value {
-  color: var(--dsw-alias-state-business-primary, #4176e6);
-}
 
 .dtt__card-body {
   display: flex;
