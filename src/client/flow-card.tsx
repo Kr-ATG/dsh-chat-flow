@@ -72,8 +72,6 @@ export function FlowCard({ variant, meta, interrupted, children }: {
   }
   const duration = meta?.durationMs !== undefined && meta.durationMs > 0 ? formatSpan(meta.durationMs) : ''
   const steps = meta?.steps ?? 0
-  const tools = meta?.tools ?? 0
-  const thinking = meta?.thinking ?? 0
   const git = meta?.git
   const gitDetail = meta?.gitDetail
   return (
@@ -89,8 +87,6 @@ export function FlowCard({ variant, meta, interrupted, children }: {
         <span className="dtt__card-chips">
           {duration !== '' && <Chip label="用时" value={duration} kind="time" />}
           {steps > 1 && <Chip label="步骤" value={String(steps)} kind="steps" />}
-          {tools > 0 && <Chip label="工具" value={String(tools)} kind="tools" />}
-          {thinking > 0 && <Chip label="思考" value={String(thinking)} kind="think" />}
           {git !== undefined && git > 0 && <Chip label="Git" value={String(git)} kind="git" title={gitDetail !== undefined && gitDetail !== '' ? `Git 操作 ${git} 次（${gitDetail}）` : `Git 操作 ${git} 次`} />}
         </span>
       </div>
