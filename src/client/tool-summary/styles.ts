@@ -89,6 +89,37 @@ const CSS = `
   transform: rotate(0);
 }
 
+/* control 影子行的 chevron 独立热区：点正文进抽屉、点这里走官方折叠。
+   盒子放大到 24px 好点中，光学位置与官方 16px 图标一致（左 2px 偏移
+   抵掉半边增量），静止态与官方无差别。 */
+.dts__process-chevronbtn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: -4px -4px -4px 2px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.dts__process-chevronbtn:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.1));
+}
+
+.dts__process-chevronbtn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--dts-accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.dts__process-chevronbtn .dts__process-chevron {
+  margin-left: 0;
+}
+
 
 
 /* ===== 对话流内的实时卡片（下载 / 长命令）============================== */

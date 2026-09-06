@@ -1,0 +1,109 @@
+/**
+ * Official turn-process control, shadowed (dsh-chat-flow).
+ *
+ * 紧凑模式下官方 control 行与插件自有行会渲染出两行完全一样的
+ * 「N 次工具调用 › / 已思考 ›」（control 在前、插件行在成员位），因此把
+ * control 键整个接管：同一位置只留一行，文案/DOM 与官方逐字一致，
+ * 点击行为一分为二——
+ *
+ * - 行正文：打开共享活动抽屉（有工具进工具分区，否则进思考分区；
+ *   抽屉里没有东西的回合整行保持官方行为）；
+ * - 尾部 chevron：保留官方内联折叠开关（stopPropagation，不进抽屉）。
+ *
+ * 成员槽位（思考 chip / 工具入口）以 `turnProcess.foldable` 判断 control
+ * 是否接管：接管时只登记抽屉数据、不占行；无 control（非紧凑模式、
+ * 流式回合、旧 host）时回退到原来的自有行，抽屉照常可进。
+ */
+
+import { memo } from 'react'
+import type { ChatNode, ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-chat/client'
+// Type-only: activates the ui-chat / ui-tool SlotMap augmentation so
+// ChatNodeViewProps resolves its owner/keyed share.
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
+import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { activityStore } from './activity-drawer.tsx'
+
+const NS = 'dts'
+
+/** This turn can offer the drawer (and on which tab), or null = keep official behavior. */
+function useDrawerTab(turn: number, useChat: ChatNodeViewProps<'turn-process'>['useChat']): 'tools' | 'reasoning' | null {
+  return useChat((snapshot) => {
+    let tools = false
+    let reasoning = false
+    for (const key of snapshot.locations.getTurn(turn)) {
+      const candidate = snapshot.nodes.get(key)
+      if (candidate === undefined) continue
+      if (candidate.kind === 'tool-call') {
+        tools = true
+      } else if (candidate.kind === 'assistant-step') {
+        const step = candidate as ChatNode<'assistant-step'>
+        for (const block of step.data.blocks) {
+          if (block.kind === 'reasoning') { reasoning = true; break }
+        }
+      }
+      if (tools && reasoning) break
+    }
+    if (tools) return 'tools'
+    return reasoning ? 'reasoning' : null
+  })
+}
+
+/** Single per-turn row at the official control position (priority -100 shadows builtin). */
+export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: ChatNodeViewProps<'turn-process'>) {
+  const { node, useChat, turnProcess, t } = props
+  const store = activityStore()
+  const drawerTab = useDrawerTab(node.data.turn, useChat)
+  if (turnProcess === undefined) return null
+  if (!turnProcess.foldable) return null
+  const open = turnProcess.open
+  // 文案与官方 TurnProcessNodeView 逐字一致（同 chat locale 键）。
+  const data = node.data
+  const labels: string[] = []
+  if (data.toolCallCount > 0) labels.push(t(data.toolCallCount === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: data.toolCallCount }))
+  if (data.messageCount > 0) labels.push(t(data.messageCount === 1 ? 'message.turnProcess.messages.one' : 'message.turnProcess.messages.other', { count: data.messageCount }))
+  if (data.subagentCount > 0) labels.push(t(data.subagentCount === 1 ? 'message.turnProcess.subagents.one' : 'message.turnProcess.subagents.other', { count: data.subagentCount }))
+  const label = labels.length === 0 ? t('message.turnProcess.thoughtForAWhile') : labels.join(t('message.turnProcess.separator'))
+  const toggle = (): void => { turnProcess.setOpen(!open) }
+  return (
+    <button
+      type="button"
+      className={`${NS}__process`}
+      data-open={open || undefined}
+      data-turn-process={data.turn}
+      data-turn-process-tool-calls={data.toolCallCount}
+      data-turn-process-messages={data.messageCount}
+      data-turn-process-subagents={data.subagentCount}
+      aria-expanded={open}
+      aria-label={label}
+      onClick={(event) => {
+        event.currentTarget.focus()
+        if (drawerTab !== null) store.open(data.turn, drawerTab)
+        else toggle()
+      }}
+    >
+      <span className={`${NS}__process-label`}>{label}</span>
+      {drawerTab !== null ? (
+        <span
+          className={`${NS}__process-chevronbtn`}
+          role="button"
+          tabIndex={0}
+          title={open ? '折叠本轮原文' : '展开本轮原文'}
+          aria-label={open ? '折叠本轮原文' : '展开本轮原文'}
+          onClick={(event) => { event.stopPropagation(); toggle() }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              event.stopPropagation()
+              toggle()
+            }
+          }}
+        >
+          <IconChevronDownOutline14 className={`${NS}__process-chevron`} />
+        </span>
+      ) : (
+        <IconChevronDownOutline14 className={`${NS}__process-chevron`} />
+      )}
+    </button>
+  )
+})

@@ -196,7 +196,7 @@ export function ToolCallTreeList({ block, cwd, openFile, inspectCall }: {
  * the conversation projection.
  */
 const ToolEntry = memo(function ToolEntry({
-  nodes, turn, turnStart, cwd, openFile, inspectCall, t,
+  nodes, turn, turnStart, cwd, openFile, inspectCall, t, turnProcess,
 }: {
   readonly nodes: readonly ChatNode<'tool-call'>[]
   readonly turn: number
@@ -205,6 +205,7 @@ const ToolEntry = memo(function ToolEntry({
   readonly openFile: (path: string) => void
   readonly inspectCall: (callId: string) => void
   readonly t: ChatViewSlotProps['t']
+  readonly turnProcess?: { readonly foldable: boolean } | undefined
 }) {
   const store: ActivityStore = activityStore()
   useEffect(() => {
@@ -213,6 +214,11 @@ const ToolEntry = memo(function ToolEntry({
   }, [store, turn, nodes, cwd, turnStart, openFile, inspectCall])
   const stats = useMemo(() => computeStats(nodes.map(node => node.data.root)), [nodes])
   const running = stats.running > 0
+  // 官方 control 行接管时（紧凑模式 closed 回合）本行让位：只登记抽屉数据，
+  // 不占行（control 影子行是唯一的入口）。running 与接管互斥（接管要求回合
+  // closed，运行时 control 不 foldable），因此直接整体返回 null 即可，实时卡
+  // 片只在运行时出现、不受影响。
+  const controlActive = turnProcess?.foldable === true
   // 抽屉开合态：官方 turn-process 行靠 data-open 把 chevron 转下来，这里同行。
   const drawerOpen = useDrawerOpen(turn)
   const now = useNow(running)
@@ -271,6 +277,7 @@ const ToolEntry = memo(function ToolEntry({
   const label = running
     ? elapsed !== undefined ? `工具调用中 · ${formatDuration(elapsed)}` : '工具调用中'
     : t(stats.total === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: stats.total })
+  if (controlActive) return null
 
   return (
     <div className={`${NS}__entry-wrap`}>
@@ -323,7 +330,7 @@ const ToolEntry = memo(function ToolEntry({
 
 /** Shadows the built-in `tool-call` renderer: one chip per turn, drawer on click. */
 export const ToolGroupNodeView = memo(function ToolGroupNodeView(props: ChatNodeViewProps<'tool-call'>) {
-  const { node, useChat, cwd, openFile, inspectCall, t } = props
+  const { node, useChat, cwd, openFile, inspectCall, t, turnProcess } = props
   const turn = turnNumber(node)
   const nodes = useChat(snapshot => {
     if (turn === undefined) return EMPTY
@@ -349,6 +356,7 @@ export const ToolGroupNodeView = memo(function ToolGroupNodeView(props: ChatNode
       openFile={openFile}
       inspectCall={inspectCall}
       t={t}
+      turnProcess={turnProcess}
     />
   )
 })

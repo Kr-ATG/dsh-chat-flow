@@ -66,12 +66,13 @@ interface ReasoningItem {
  * activity drawer with the full reasoning material. While the turn is still
  * thinking the chip labels itself "思考中…".
  */
-function ReasoningChip({ items, running, turn, thinkingStart, t }: {
+function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: {
   items: readonly ReasoningItem[]
   running: boolean
   turn: number
   thinkingStart?: number | undefined
   t: ChatViewSlotProps['t']
+  turnProcess?: { readonly foldable: boolean } | undefined
 }) {
   const store = activityStore()
   // 思考材料登记挪到父组件（本轮有工具调用时 chip 不挂载、不占行，
@@ -80,6 +81,9 @@ function ReasoningChip({ items, running, turn, thinkingStart, t }: {
   const elapsed = thinkingStart !== undefined ? Math.max(0, now - thinkingStart) : undefined
   // 抽屉开合态：与官方 turn-process 行同行（data-open 把 chevron 转下来）。
   const drawerOpen = useDrawerOpen(turn)
+  // 官方 control 行接管时（紧凑模式 closed 回合）本行让位：control 影子行是
+  // 唯一的入口（running 与接管互斥，接管要求回合 closed，见工具入口同注释）。
+  const controlActive = turnProcess?.foldable === true
   // 无工具调用的回合只剩这一行：文案取官方 turn-process 的「已思考」。
   const label = running
     ? elapsed !== undefined ? `思考中 · ${formatDuration(elapsed)}` : '思考中…'
@@ -112,6 +116,7 @@ function ReasoningChip({ items, running, turn, thinkingStart, t }: {
     el.scrollTop = el.scrollHeight
   }, [liveText, running])
 
+  if (controlActive) return null
   return (
     <div className="dtt__reasoning" data-running={running || undefined}>
       <button
@@ -265,7 +270,7 @@ function AssistantBody({ blocks, streaming, interrupted, renderMessageImages, me
 export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
   props: ChatNodeViewProps<'assistant-step'>,
 ) {
-  const { node, useTurnData, useChat, openFile, renderMessageImages, fileMentions, cwd, t } = props
+  const { node, useTurnData, useChat, openFile, renderMessageImages, fileMentions, cwd, t, turnProcess } = props
   const data = node.data
   const locationTurn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
@@ -366,6 +371,7 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
         turn={turnNumber as number}
         thinkingStart={thinkingStart}
         t={t}
+        turnProcess={turnProcess}
       />
     : undefined
   // 本轮 git 相关调用：扫工具节点参数里的 git <动词>（见 tool-stats.gitVerbOf）。

@@ -290,17 +290,18 @@ for (const expected of [
 if (styleIds.length === 8) pass('injected eight <style> sheets (dtt__ + dts__ + tsh__ + modal + proto + diagram + download + html-preview)')
 else if (styleIds.length > 8) fail(`unexpected extra styles: ${styleIds.join(', ')}`)
 
-// 三个 keyed 槽位阴影注册 + 截图按钮注册（+ download toolview）。
+// 四个 keyed 槽位阴影注册 + 截图按钮注册（+ download toolview）。
 const cell = (key) => registeredSlots.find((s) => s?.slot === 'conversation.chat.node' && s?.key === key)
-if (registeredSlots.length !== 4) {
-  fail(`expected 4 slot registrations, got ${registeredSlots.length}: ${JSON.stringify(registeredSlots)}`)
+if (registeredSlots.length !== 5) {
+  fail(`expected 5 slot registrations, got ${registeredSlots.length}: ${JSON.stringify(registeredSlots)}`)
 } else {
-  pass(`registered ${registeredSlots.length} seats (2 chat-node keyed + 1 actions + 1 download toolview)`)
+  pass(`registered ${registeredSlots.length} seats (3 chat-node keyed + 1 actions + 1 download toolview)`)
 }
 const downloadSeat = registeredSlots.find((s) => s?.slot === 'tool.call.toolview' && s?.key === 'download')
 if (downloadSeat === undefined) fail('missing keyed toolview seat tool.call.toolview / download')
 else pass('seat tool.call.toolview / download (keyed by wire tool name)')
 for (const expected of [
+  { key: 'turn-process', priority: -100 },
   { key: 'tool-call', priority: -100 },
   { key: 'assistant-step', priority: -100 },
 ]) {
