@@ -21,6 +21,7 @@ import { classifyKind, type ActivityKind } from './activity-kind.ts'
 import { KindIcon } from './icons.tsx'
 import { useNow } from './use-now.ts'
 import { activityStore, useDrawerOpen, type ActivityHandlers, type ActivityStore } from './activity-drawer.tsx'
+import { useTurnActivityCounts } from './TurnProcessShadowView.tsx'
 import { LiveDownloadCard } from '../download/DownloadCard.tsx'
 import { downloadPercent, useDownloadState } from '../download/api.ts'
 
@@ -196,7 +197,7 @@ export function ToolCallTreeList({ block, cwd, openFile, inspectCall }: {
  * the conversation projection.
  */
 const ToolEntry = memo(function ToolEntry({
-  nodes, turn, turnStart, cwd, openFile, inspectCall, t, turnProcess,
+  nodes, turn, turnStart, cwd, openFile, inspectCall, t, turnProcess, useChat,
 }: {
   readonly nodes: readonly ChatNode<'tool-call'>[]
   readonly turn: number
@@ -206,6 +207,7 @@ const ToolEntry = memo(function ToolEntry({
   readonly inspectCall: (callId: string) => void
   readonly t: ChatViewSlotProps['t']
   readonly turnProcess?: { readonly foldable: boolean } | undefined
+  readonly useChat: ChatNodeViewProps<'tool-call'>['useChat']
 }) {
   const store: ActivityStore = activityStore()
   useEffect(() => {
@@ -213,6 +215,7 @@ const ToolEntry = memo(function ToolEntry({
     store.setHandlers({ openFile, inspectCall })
   }, [store, turn, nodes, cwd, turnStart, openFile, inspectCall])
   const stats = useMemo(() => computeStats(nodes.map(node => node.data.root)), [nodes])
+  const activity = useTurnActivityCounts(turn, useChat)
   const running = stats.running > 0
   // 官方 control 行接管时（紧凑模式 closed 回合）本行让位：只登记抽屉数据，
   // 不占行（control 影子行是唯一的入口）。running 与接管互斥（接管要求回合
@@ -274,9 +277,10 @@ const ToolEntry = memo(function ToolEntry({
   const showCommand = running && !liveActivity.hasDownload && liveDownloadCalls.length === 0 && liveActivity.hasCommand && (elapsed ?? 0) > 1000
   // 文案与官方 TurnProcessNodeView 逐字一致（同 chat locale 键）；运行中保持
   // 原有的实时时长（官方行在流式期不存在，进抽屉前给个活指示）。
+  const resting = t(stats.total === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: stats.total })
   const label = running
     ? elapsed !== undefined ? `工具调用中 · ${formatDuration(elapsed)}` : '工具调用中'
-    : t(stats.total === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: stats.total })
+    : activity.reasoning > 0 ? `${resting}${t('message.turnProcess.separator') as string}思考 ${activity.reasoning}` : resting
   if (controlActive) return null
 
   return (
@@ -357,6 +361,7 @@ export const ToolGroupNodeView = memo(function ToolGroupNodeView(props: ChatNode
       inspectCall={inspectCall}
       t={t}
       turnProcess={turnProcess}
+      useChat={useChat}
     />
   )
 })

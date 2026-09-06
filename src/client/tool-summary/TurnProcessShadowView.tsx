@@ -26,34 +26,42 @@ import { activityStore } from './activity-drawer.tsx'
 
 const NS = 'dts'
 
-/** This turn can offer the drawer (and on which tab), or null = keep official behavior. */
-function useDrawerTab(turn: number, useChat: ChatNodeViewProps<'turn-process'>['useChat']): 'tools' | 'reasoning' | null {
+/** Per-turn activity counts (tool-call nodes + reasoning blocks, drawer 口径一致）. */
+export function useTurnActivityCounts(turn: number, useChat: ChatNodeViewProps<'tool-call'>['useChat']): {
+  readonly tools: number
+  readonly reasoning: number
+} {
   return useChat((snapshot) => {
-    let tools = false
-    let reasoning = false
+    let tools = 0
+    let reasoning = 0
     for (const key of snapshot.locations.getTurn(turn)) {
       const candidate = snapshot.nodes.get(key)
       if (candidate === undefined) continue
       if (candidate.kind === 'tool-call') {
-        tools = true
+        tools += 1
       } else if (candidate.kind === 'assistant-step') {
         const step = candidate as ChatNode<'assistant-step'>
         for (const block of step.data.blocks) {
-          if (block.kind === 'reasoning') { reasoning = true; break }
+          if (block.kind === 'reasoning') reasoning += 1
         }
       }
-      if (tools && reasoning) break
     }
-    if (tools) return 'tools'
-    return reasoning ? 'reasoning' : null
+    return { tools, reasoning }
   })
+}
+
+/** This turn can offer the drawer (and on which tab), or null = keep official behavior. */
+function drawerTabFor(counts: { readonly tools: number; readonly reasoning: number }): 'tools' | 'reasoning' | null {
+  if (counts.tools > 0) return 'tools'
+  return counts.reasoning > 0 ? 'reasoning' : null
 }
 
 /** Single per-turn row at the official control position (priority -100 shadows builtin). */
 export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: ChatNodeViewProps<'turn-process'>) {
   const { node, useChat, turnProcess, t } = props
   const store = activityStore()
-  const drawerTab = useDrawerTab(node.data.turn, useChat)
+  const counts = useTurnActivityCounts(node.data.turn, useChat)
+  const drawerTab = drawerTabFor(counts)
   if (turnProcess === undefined) return null
   if (!turnProcess.foldable) return null
   const open = turnProcess.open
@@ -63,6 +71,9 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
   if (data.toolCallCount > 0) labels.push(t(data.toolCallCount === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: data.toolCallCount }))
   if (data.messageCount > 0) labels.push(t(data.messageCount === 1 ? 'message.turnProcess.messages.one' : 'message.turnProcess.messages.other', { count: data.messageCount }))
   if (data.subagentCount > 0) labels.push(t(data.subagentCount === 1 ? 'message.turnProcess.subagents.one' : 'message.turnProcess.subagents.other', { count: data.subagentCount }))
+  // 思考数缀在官方文案后面（`N 次工具调用 · 思考 M`，与抽屉页签同口径）；
+  // 纯思考回合保持官方「已思考」不动。
+  if (labels.length > 0 && counts.reasoning > 0) labels.push(`思考 ${counts.reasoning}`)
   const label = labels.length === 0 ? t('message.turnProcess.thoughtForAWhile') : labels.join(t('message.turnProcess.separator'))
   const toggle = (): void => { turnProcess.setOpen(!open) }
   return (
