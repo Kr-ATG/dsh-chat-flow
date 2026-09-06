@@ -130,11 +130,9 @@ const CSS = `
   gap: 8px;
   height: 26px;
   padding: 0 12px;
-  border: 1px solid color-mix(in srgb, var(--dts-accent) 32%, transparent);
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22));
   border-radius: 999px;
-  background:
-    linear-gradient(color-mix(in srgb, var(--dts-accent) 10%, transparent), color-mix(in srgb, var(--dts-accent) 10%, transparent)),
-    var(--dts-chip-surface, transparent);
+  background: var(--dts-chip-surface, transparent);
   color: var(--dts-accent);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -149,11 +147,9 @@ const CSS = `
   min-width: 280px;
   max-width: 100%;
   padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--dts-accent) 24%, var(--dsw-alias-border-l2, rgba(127,127,127,.22)));
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22));
   border-radius: 12px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--dts-accent) 9%, transparent), transparent 64%),
-    var(--dts-fill, rgba(127,127,127,.05));
+  background: var(--dts-fill, rgba(127,127,127,.05));
   box-shadow: 0 1px 3px rgba(15,17,21,.05);
 }
 

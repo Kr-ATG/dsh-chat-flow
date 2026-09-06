@@ -298,7 +298,7 @@ const CSS = `
 .dtt__process[data-open] .dtt__process-chevron {
   transform: rotate(0);
 }
-/* 实时思考预览：流式滚动最新思考文字。左侧强调色导轨点明「这是思考流」。 */
+/* 实时思考预览：流式滚动最新思考文字。底色透明（去蓝）、左侧保留一条强调色导轨点明「这是思考流」。 */
 .dtt__reasoning-live {
   align-self: stretch;
   position: relative;
@@ -308,9 +308,7 @@ const CSS = `
   border-left: 2px solid color-mix(in srgb, var(--dtt-rea-accent) 38%, transparent);
   border-radius: 4px 12px 12px 4px;
   padding: 10px 14px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--dtt-rea-accent) 7%, transparent), transparent 56%),
-    var(--dtt-rea-fill, rgba(127,127,127,.04));
+  background: transparent;
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 20px;
