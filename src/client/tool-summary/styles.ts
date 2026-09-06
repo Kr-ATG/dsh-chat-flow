@@ -287,6 +287,8 @@ const CSS = `
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
+  row-gap: 8px;
   padding: 13px 14px 13px 18px;
   border-bottom: 1px solid var(--dsw-alias-border-l3, rgba(127,127,127,.16));
 }
@@ -295,6 +297,10 @@ const CSS = `
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
   font-weight: 600;
@@ -331,6 +337,7 @@ const CSS = `
 .dts__tabs {
   display: inline-flex;
   align-items: center;
+  flex: none;
   gap: 2px;
   margin-left: auto;
   margin-right: 8px;
@@ -342,6 +349,7 @@ const CSS = `
 .dts__tab {
   display: inline-flex;
   align-items: center;
+  flex: none;
   gap: 5px;
   margin: 0;
   border: 0;
