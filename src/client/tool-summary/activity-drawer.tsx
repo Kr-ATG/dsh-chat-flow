@@ -151,12 +151,10 @@ function DrawerToolSummary({ stats, cwd, openFile, kinds }: {
   )
 }
 
-/** Classified reasoning blocks with per-category headings and jump targets. */
-function ReasoningGroups({ items, activeIndex, jumpToCategory }: {
+/** Classified reasoning blocks with per-category headings. */
+function ReasoningGroups({ items, activeIndex }: {
   readonly items: readonly ActivityReasoningItem[]
   readonly activeIndex: number | null
-  /** Jump to the first reasoning item of the given global-index offset. */
-  jumpToCategory: (firstIndex: number) => void
 }) {
   const groups = useMemo(() => groupReasoning(items), [items])
   let cursor = 0
@@ -167,7 +165,7 @@ function ReasoningGroups({ items, activeIndex, jumpToCategory }: {
         cursor += group.items.length
         return (
           <div key={group.category.label} className="dts__modal-reasoning-group" data-reasoning-category={group.category.label}>
-            <div className="dts__modal-reasoning-group-title" role="button" tabIndex={0} onClick={() => jumpToCategory(firstIndex)}>
+            <div className="dts__modal-reasoning-group-title">
               <KindIcon kind={group.category.icon} size={12} /> {group.category.label} ({group.items.length})
             </div>
             {group.items.map((item) => {
@@ -254,12 +252,7 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
 
   // Jump navigation over reasoning items (querySelector over refs: refs get
   // cleared by effects and are unreliable across re-renders).
-  const [activeIndex, setActiveIndex] = useState<number | null>(null)
-  const jumpTo = (index: number): void => {
-    setActiveIndex(index)
-    const el = document.querySelector(`[data-reasoning-index="${index}"]`)
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+  const [activeIndex] = useState<number | null>(null)
 
   return (
     <>
@@ -310,7 +303,7 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
                   <span className="dts__modal-panel-live">思考中 · {formatDuration(elapsed)}</span>
                 )}
               </header>
-              <ReasoningGroups items={reasoning} activeIndex={activeIndex} jumpToCategory={jumpTo} />
+              <ReasoningGroups items={reasoning} activeIndex={activeIndex} />
             </div>
           )}
           {tab === 'tools' && toolNodes.length > 0 && (

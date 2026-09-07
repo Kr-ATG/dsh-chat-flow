@@ -528,18 +528,11 @@ const CSS = `
   padding: 0 10px;
   background: var(--dts-fill, rgba(127,127,127,.05));
   color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
   font-size: 12px;
   font-weight: 600;
   line-height: 22px;
-  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
 }
 
-.dts__modal-reasoning-group-title:hover {
-  border-color: color-mix(in srgb, var(--dts-accent) 34%, transparent);
-  background: color-mix(in srgb, var(--dts-accent) 10%, transparent);
-  color: var(--dsw-alias-label-primary);
-}
 
 .dts__modal-reasoning-item {
   display: flex;
