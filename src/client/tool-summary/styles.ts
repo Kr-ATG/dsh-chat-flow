@@ -50,9 +50,7 @@ const CSS = `
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   text-align: left;
-}
-
-.dts__process:not([data-open]) {
+  /* 常驻 8px：官方是 ：not([data-open]) 才有——高度一变虚拟列表就跳位。 */
   margin-bottom: 8px;
 }
 

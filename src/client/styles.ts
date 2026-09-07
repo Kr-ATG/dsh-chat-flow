@@ -245,9 +245,6 @@ const CSS = `
   color: var(--dsw-alias-label-secondary);
   cursor: default;
   text-align: left;
-}
-
-.dtt__process:not([data-open]) {
   margin-bottom: 8px;
 }
 
