@@ -72,10 +72,16 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
   if (data.messageCount > 0) labels.push(t(data.messageCount === 1 ? 'message.turnProcess.messages.one' : 'message.turnProcess.messages.other', { count: data.messageCount }))
   if (data.subagentCount > 0) labels.push(t(data.subagentCount === 1 ? 'message.turnProcess.subagents.one' : 'message.turnProcess.subagents.other', { count: data.subagentCount }))
   // 思考数缀在官方文案后面（`N 次工具调用 · 思考 M`，与抽屉页签同口径）；
-  // 纯思考回合保持官方「已思考」不动。
-  if (labels.length > 0 && counts.reasoning > 0) labels.push(`思考 ${counts.reasoning}`)
-  const label = labels.length === 0 ? t('message.turnProcess.thoughtForAWhile') : labels.join(t('message.turnProcess.separator'))
+  // 纯思考回合保持官方「已思考」不动。点哪段开哪个分区，气泡从该段后钻出。
+  const thinkingLabel = labels.length > 0 && counts.reasoning > 0 ? `思考 ${counts.reasoning}` : undefined
+  const label = labels.length === 0
+    ? t('message.turnProcess.thoughtForAWhile')
+    : labels.filter(l => l !== thinkingLabel).join(t('message.turnProcess.separator'))
   const toggle = (): void => { turnProcess.setOpen(!open) }
+  const openFor = (mode: 'tools' | 'reasoning', target: EventTarget & HTMLElement): void => {
+    const el = target.querySelector('[class*="__process-label"]') ?? target.querySelector('[class*="__process-think"]')
+    store.open(data.turn, mode, { el: (el ?? target) as HTMLElement })
+  }
   return (
     <button
       type="button"
@@ -86,17 +92,34 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
       data-turn-process-messages={data.messageCount}
       data-turn-process-subagents={data.subagentCount}
       aria-expanded={open}
-      aria-label={label}
-      onClick={(event) => {
-        if (drawerTab !== null) {
-          // 锚点是文字本身（气泡从「›」后面钻出来），不是整行。
-          const label = event.currentTarget.querySelector('[class*="__process-label"]')
-          const rect = (label ?? event.currentTarget).getBoundingClientRect()
-          store.open(data.turn, drawerTab, { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom })
-        } else toggle()
-      }}
+      aria-label={[label, thinkingLabel].filter(Boolean).join(' ')}
+      onClick={drawerTab !== null
+        ? (event) => { openFor(drawerTab, event.currentTarget) }
+        : undefined}
     >
       <span className={`${NS}__process-label`}>{label}</span>
+      {thinkingLabel !== undefined && (
+        <span
+          className={`${NS}__process-think`}
+          role="button"
+          tabIndex={0}
+          title={`查看思考 ${counts.reasoning}`}
+          aria-label={`查看思考 ${counts.reasoning}`}
+          onClick={(event) => {
+            event.stopPropagation()
+            store.open(data.turn, 'reasoning', { el: event.currentTarget as HTMLElement })
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              event.stopPropagation()
+              store.open(data.turn, 'reasoning', { el: event.currentTarget as HTMLElement })
+            }
+          }}
+        >
+          {t('message.turnProcess.separator')}{thinkingLabel}
+        </span>
+      )}
       {drawerTab !== null ? (
         <span
           className={`${NS}__process-chevronbtn`}

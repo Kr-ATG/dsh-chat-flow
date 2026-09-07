@@ -132,8 +132,7 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: 
         aria-label={label}
         onClick={(event) => {
           const label = event.currentTarget.querySelector('[class*="__process-label"]')
-          const rect = (label ?? event.currentTarget).getBoundingClientRect()
-          store.open(turn, 'reasoning', { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom })
+          store.open(turn, 'reasoning', { el: (label ?? event.currentTarget) as HTMLElement })
         }}
       >
         <span className="dtt__process-label">{label}</span>

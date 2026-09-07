@@ -8,7 +8,7 @@
  * the bus is created lazily by whichever plugin touches it first.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { IconApiOutline14, IconThinkOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -42,12 +42,13 @@ export interface ActivityHandlers {
   readonly inspectCall: (callId: string) => void
 }
 
-/** Click-position anchor: the popover slides out beside this rect. */
+/**
+ * Popover anchor: the label ELEMENT the bubble sticks to. Kept as a live
+ * element (not a frozen rect) so the bubble can re-position on scroll/resize
+ * and stay glued to the text.
+ */
 export interface PopoverAnchor {
-  readonly top: number
-  readonly left: number
-  readonly right: number
-  readonly bottom: number
+  readonly el: HTMLElement
 }
 
 export interface ActivityStore {
@@ -266,24 +267,53 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
   // cleared by effects and are unreliable across re-renders).
   const [activeIndex] = useState<number | null>(null)
 
-  // 气泡定位：从点击文字后面（右缘 + 8px 缝）钻出来，气泡顶与文字顶对齐
-  // （尾巴指向文字行中心）；右侧放不下就贴窗口右缘。没有锚点时贴右缘兜底。
+  // 气泡定位：实时贴住锚点文字（滚动/缩放跟手）。从文字右缘 8px 缝钻出，
+  // 顶与文字顶对齐（尾巴指向文字行中心）；右侧放不下就贴窗口右缘。锚点
+  // 被虚拟列表收走（disconnect/移出 DOM）就关闭。
+  const popRef = useRef<HTMLDivElement | null>(null)
+  const [pos, setPos] = useState<{ readonly top: number; readonly left: number; readonly height: number; readonly tail: number }>(() => ({ top: 80, left: 1020, height: 480, tail: 10 }))
   const POPOVER_WIDTH = 420
   const GAP = 8
-  const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1440
-  const viewportH = typeof window !== 'undefined' ? window.innerHeight : 900
-  const anchorTop = Math.max(8, Math.min((anchor?.top ?? 80) - 6, viewportH - 120))
-  const anchorLeft = Math.max(8, Math.min(
-    (anchor?.right ?? viewportW - 24) + GAP,
-    viewportW - POPOVER_WIDTH - 8,
-  ))
-  const maxH = Math.min(640, viewportH - anchorTop - 24)
-  const popHeight = maxH > 280 ? maxH : 320
+  const relayout = useCallback((): void => {
+    const el = anchor?.el
+    if (el === undefined || !el.isConnected) { store.close(); return }
+    const box = el.getBoundingClientRect()
+    const viewportW = window.innerWidth
+    const viewportH = window.innerHeight
+    if (box.bottom < 0 || box.top > viewportH) { store.close(); return }
+    const top = Math.max(8, Math.min(box.top - 4, viewportH - 140))
+    const left = Math.max(8, Math.min(box.right + GAP, viewportW - POPOVER_WIDTH - 8))
+    const height = Math.max(300, Math.min(640, viewportH - top - 24))
+    const tail = Math.max(10, Math.min((box.top + box.height / 2) - top - 8, height - 40))
+    setPos(prev => (prev.top === top && prev.left === left && prev.height === height && prev.tail === tail ? prev : { top, left, height, tail }))
+  }, [anchor, store])
+  useLayoutEffect(() => { relayout() }, [relayout])
+  useEffect(() => {
+    const el = anchor?.el
+    if (el === undefined) return
+    // 滚动在 capture 阶段接住所有容器（含虚拟列表内部滚动），rAF 节流。
+    let frame = 0
+    const onMove = (): void => {
+      if (frame !== 0) return
+      frame = requestAnimationFrame(() => { frame = 0; relayout() })
+    }
+    window.addEventListener('scroll', onMove, { passive: true, capture: true })
+    window.addEventListener('resize', onMove)
+    const observer = new ResizeObserver(onMove)
+    observer.observe(el)
+    return () => {
+      window.removeEventListener('scroll', onMove, { capture: true } as EventListenerOptions)
+      window.removeEventListener('resize', onMove)
+      observer.disconnect()
+      if (frame !== 0) cancelAnimationFrame(frame)
+    }
+  }, [anchor, relayout])
+  const { top: anchorTop, left: anchorLeft, height: popHeight, tail: popTail } = pos
 
   return (
     <>
       <div className="dts__popover-veil" onClick={close} aria-hidden />
-      <div className="dts__popover" role="dialog" aria-label={`第 ${turn} 轮活动详情`} style={{ top: anchorTop, left: anchorLeft, height: popHeight, ['--dts-pop-tail' as string]: `${Math.max(10, Math.min((anchor?.top ?? 80) - anchorTop + 4, popHeight - 40))}px` }}>
+      <div className="dts__popover" ref={popRef} role="dialog" aria-label={`第 ${turn} 轮活动详情`} style={{ top: anchorTop, left: anchorLeft, height: popHeight, ['--dts-pop-tail' as string]: `${popTail}px` }}>
         <header className="dts__modal-head">
           <span className="dts__modal-title">
             第 {turn} 轮
@@ -388,14 +418,7 @@ function DrawerApp() {
     window.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('keydown', onKey) }
   }, [openTurn])
-  // 滚动时气泡跟着锚走：锚是打开瞬间的屏幕坐标，列表一滚气泡必须收起
-  // （跟手但不跟随，避免每帧重算的抖动——官方 popover 也是这个策略）。
-  useEffect(() => {
-    if (openTurn === null) return
-    const onScroll = (): void => { activityStore().close() }
-    window.addEventListener('scroll', onScroll, { passive: true, capture: true })
-    return () => { window.removeEventListener('scroll', onScroll, { capture: true } as EventListenerOptions) }
-  }, [openTurn])
+  // 滚动跟随由气泡面板内部的 relayout 负责（锚点是活元素，实时贴住）。
   if (openTurn === null) return null
   const store = activityStore()
   const handlers = store.handlers()

@@ -54,6 +54,23 @@ const CSS = `
   margin-bottom: 8px;
 }
 
+/* 思考分段：行内第二个可点热区（点工具段走行本体）。 */
+.dts__process-think {
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary);
+  transition: color .15s ease;
+}
+
+.dts__process-think:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.dts__process-think:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--dts-accent) 55%, transparent);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
 .dts__process:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--dts-accent) 55%, transparent);
   outline-offset: 2px;
