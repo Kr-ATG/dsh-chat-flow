@@ -380,36 +380,7 @@ const CSS = `
   outline-offset: 1px;
 }
 
-/* 下划线：选中页签自己的 ::after——left/right 内收、height 1px 全部由 CSS
-   锁死，不依赖 JS 量宽，任何缩放/缓存下都是一条细线。两端 6px 淡出。
-   切换页签时 data-active 翻转重建伪元素，播放 0.22s 展开动画 = 传递感。 */
-.dts__tab {
-  position: relative;
-}
 
-.dts__tab[data-active="true"]::after {
-  content: '';
-  position: absolute;
-  left: 9px;
-  right: 9px;
-  bottom: -6px;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0,
-    color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 62%, transparent) 6px,
-    color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 62%, transparent) calc(100% - 6px),
-    transparent 100%
-  );
-  pointer-events: none;
-  transform-origin: 50% 50%;
-  animation: dts-tab-line-in .22s cubic-bezier(.2,.8,.2,1);
-}
-
-@keyframes dts-tab-line-in {
-  from { transform: scaleX(.35); opacity: 0; }
-  to { transform: scaleX(1); opacity: 1; }
-}
 
 .dts__modal-scroll {
   flex: 1 1 auto;
@@ -1116,7 +1087,6 @@ const CSS = `
 
 /* ── 尊重系统「减少动态效果」：高光/呼吸/滑动动画一律停 ─────────── */
 @media (prefers-reduced-motion: reduce) {
-  .dts__tab[data-active="true"]::after,
   .dts__tab[data-active="true"]::after,
   .dts__process-chevron,
   .dts__dot[data-state="running"],
