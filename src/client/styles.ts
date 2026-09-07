@@ -243,7 +243,7 @@ const CSS = `
   border-bottom: .5px solid var(--dsw-alias-border-l2);
   background: 0 0;
   color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
+  cursor: default;
   text-align: left;
 }
 

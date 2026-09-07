@@ -87,33 +87,10 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
       data-turn-process-subagents={data.subagentCount}
       aria-expanded={open}
       aria-label={label}
-      onClick={() => {
-        if (drawerTab !== null) store.open(data.turn, drawerTab)
-        else toggle()
-      }}
+      onClick={() => { toggle() }}
     >
       <span className={`${NS}__process-label`}>{label}</span>
-      {drawerTab !== null ? (
-        <span
-          className={`${NS}__process-chevronbtn`}
-          role="button"
-          tabIndex={0}
-          title={open ? '折叠本轮原文' : '展开本轮原文'}
-          aria-label={open ? '折叠本轮原文' : '展开本轮原文'}
-          onClick={(event) => { event.stopPropagation(); toggle() }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
-              event.stopPropagation()
-              toggle()
-            }
-          }}
-        >
-          <IconChevronDownOutline14 className={`${NS}__process-chevron`} />
-        </span>
-      ) : (
-        <IconChevronDownOutline14 className={`${NS}__process-chevron`} />
-      )}
+      <IconChevronDownOutline14 className={`${NS}__process-chevron`} />
     </button>
   )
 })
