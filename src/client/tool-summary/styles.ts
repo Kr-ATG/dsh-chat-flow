@@ -341,11 +341,10 @@ const CSS = `
   gap: 2px;
   margin-left: auto;
   margin-right: 8px;
-  border: 1px solid var(--dsw-alias-border-l3, rgba(127,127,127,.16));
+  border: 0;
   border-radius: 999px;
   padding: 2px;
   background: var(--dsw-alias-bg-layer-1, #ffffff);
-  box-shadow: 0 1px 2px rgba(15,17,21,.05);
 }
 
 .dts__tab {
@@ -356,7 +355,7 @@ const CSS = `
   margin: 0;
   border: 1px solid transparent;
   border-radius: 999px;
-  padding: 0 10px;
+  padding: 0 15px;
   background: none;
   box-sizing: border-box;
   color: var(--dsw-alias-label-secondary);
