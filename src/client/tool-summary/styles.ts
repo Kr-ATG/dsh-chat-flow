@@ -341,9 +341,11 @@ const CSS = `
   gap: 2px;
   margin-left: auto;
   margin-right: 8px;
+  border: 1px solid var(--dsw-alias-border-l3, rgba(127,127,127,.16));
   border-radius: 999px;
   padding: 2px;
-  background: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.1));
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  box-shadow: 0 1px 2px rgba(15,17,21,.05);
 }
 
 .dts__tab {
@@ -352,10 +354,11 @@ const CSS = `
   flex: none;
   gap: 5px;
   margin: 0;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 999px;
   padding: 0 10px;
   background: none;
+  box-sizing: border-box;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   font-size: 12px;
@@ -370,8 +373,9 @@ const CSS = `
 }
 
 .dts__tab[data-active="true"] {
-  background: var(--dsw-alias-bg-layer-1, #fff);
-  box-shadow: 0 1px 2px rgba(15,17,21,.1);
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  border-color: var(--dsw-alias-border-l2, rgba(127,127,127,.25));
+  box-shadow: 0 1px 3px rgba(15,17,21,.14);
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
 }
