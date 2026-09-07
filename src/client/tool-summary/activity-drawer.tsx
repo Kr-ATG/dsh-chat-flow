@@ -265,10 +265,10 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
         <header className="dts__modal-head">
           <span className="dts__modal-title">
             第 {turn} 轮
-            {tab === 'reasoning' && (
+            {!showTabs && tab === 'reasoning' && (
               <> · <IconThinkOutline14 size={14} aria-hidden /> {reasoning.length}</>
             )}
-            {tab === 'tools' && (
+            {!showTabs && tab === 'tools' && (
               <> · <IconApiOutline14 size={14} aria-hidden /> {toolNodes.length}</>
             )}
           </span>

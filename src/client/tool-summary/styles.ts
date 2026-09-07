@@ -355,7 +355,7 @@ const CSS = `
   margin: 0;
   border: 1px solid transparent;
   border-radius: 999px;
-  padding: 0 15px;
+  padding: 0 12px;
   background: none;
   box-sizing: border-box;
   color: var(--dsw-alias-label-secondary);
