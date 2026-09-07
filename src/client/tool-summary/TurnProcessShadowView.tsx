@@ -15,7 +15,7 @@
  * 流式回合、旧 host）时回退到原来的自有行，抽屉照常可进。
  */
 
-import { memo } from 'react'
+import { memo, useEffect } from 'react'
 import type { ChatNode, ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: activates the ui-chat / ui-tool SlotMap augmentation so
 // ChatNodeViewProps resolves its owner/keyed share.
@@ -30,10 +30,13 @@ const NS = 'dts'
 export function useTurnActivityCounts(turn: number, useChat: ChatNodeViewProps<'tool-call'>['useChat']): {
   readonly tools: number
   readonly reasoning: number
+  /** 本轮仍有 assistant-step 在流式输出。 */
+  readonly streaming: boolean
 } {
   return useChat((snapshot) => {
     let tools = 0
     let reasoning = 0
+    let streaming = false
     for (const key of snapshot.locations.getTurn(turn)) {
       const candidate = snapshot.nodes.get(key)
       if (candidate === undefined) continue
@@ -41,12 +44,13 @@ export function useTurnActivityCounts(turn: number, useChat: ChatNodeViewProps<'
         tools += 1
       } else if (candidate.kind === 'assistant-step') {
         const step = candidate as ChatNode<'assistant-step'>
+        if (step.data.status === 'running') streaming = true
         for (const block of step.data.blocks) {
           if (block.kind === 'reasoning') reasoning += 1
         }
       }
     }
-    return { tools, reasoning }
+    return { tools, reasoning, streaming }
   })
 }
 
@@ -65,6 +69,20 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
   if (turnProcess === undefined) return null
   if (!turnProcess.foldable) return null
   const open = turnProcess.open
+  // 思考中（流式）：把「实时思考预览」挂到本行下方（body 级跟随元素）。
+  // 流式回合 control 不 foldable 的场景走不到这里；foldable 且流式时官方
+  // 行也还在，这里只负责登记预览锚点。
+  const streamingThinking = counts.reasoning > 0 && counts.streaming === true
+  useEffect(() => {
+    // 本回合流式且有思考时，把 control 行登记为预览锚点；否则清掉。
+    if (streamingThinking) {
+      const row = document.querySelector('[data-turn-process="' + node.data.turn + '"].' + NS + '__process')
+      store.setPreviewAnchor((row as HTMLElement) ?? undefined, node.data.turn)
+    } else {
+      store.setPreviewAnchor(undefined, null)
+    }
+    return () => { if (streamingThinking) store.setPreviewAnchor(undefined, null) }
+  }, [streamingThinking, node.data.turn, store])
   // 文案与官方 TurnProcessNodeView 逐字一致（同 chat locale 键）。
   const data = node.data
   const labels: string[] = []

@@ -55,6 +55,10 @@ export interface ActivityStore {
   readonly openTurn: number | null
   readonly activeMode: ViewMode | null
   readonly openAnchor: PopoverAnchor | undefined
+  /** 流式思考预览：登记的 control 行元素与回合号（null = 无预览）。 */
+  readonly previewAnchorEl: HTMLElement | undefined
+  readonly previewTurn: number | null
+  setPreviewAnchor(el: HTMLElement | undefined, turn: number | null): void
   open(turn: number, mode: ViewMode, anchor?: PopoverAnchor): void
   close(): void
   setReasoning(turn: number, items: readonly ActivityReasoningItem[]): void
@@ -77,6 +81,8 @@ export function activityStore(): ActivityStore {
   let openTurn: number | null = null
   let activeMode: ViewMode | null = null
   let openAnchor: PopoverAnchor | undefined
+  let previewAnchorEl: HTMLElement | undefined
+  let previewTurn: number | null = null
   let handlers: ActivityHandlers = { openFile: () => {}, inspectCall: () => {} }
   const notify = (): void => {
     for (const fn of [...listeners]) {
@@ -87,6 +93,14 @@ export function activityStore(): ActivityStore {
     get openTurn() { return openTurn },
     get activeMode() { return activeMode },
     get openAnchor() { return openAnchor },
+    get previewAnchorEl() { return previewAnchorEl },
+    get previewTurn() { return previewTurn },
+    setPreviewAnchor: (el, turn) => {
+      if (previewAnchorEl === el && previewTurn === turn) return
+      previewAnchorEl = el
+      previewTurn = turn
+      notify()
+    },
     open: (turn, mode, anchor) => { openTurn = turn; activeMode = mode; openAnchor = anchor; notify() },
     close: () => { openTurn = null; activeMode = null; openAnchor = undefined; notify() },
     setReasoning: (turn, items) => {
@@ -418,20 +432,62 @@ function DrawerApp() {
     window.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('keydown', onKey) }
   }, [openTurn])
+  // 流式思考预览：贴着流式中回合的 control 行下方滚动显示最新思考文字。
+  // 预览由 control 行在流式时把行元素登记进来（setPreviewAnchor）。
+  const [preview, setPreview] = useState<{ readonly top: number; readonly left: number; readonly text: string } | null>(null)
+  useEffect(() => {
+    const store = activityStore()
+    const update = (): void => {
+      const el = store.previewAnchorEl
+      if (el === undefined || !el.isConnected) { setPreview(null); return }
+      const box = el.getBoundingClientRect()
+      if (box.bottom < 0 || box.top > window.innerHeight) { setPreview(null); return }
+      const turn = store.previewTurn
+      const turnData = turn === null ? undefined : store.get(turn)
+      const reasoning = turnData?.reasoning ?? []
+      let text = ''
+      for (let index = reasoning.length - 1; index >= 0; index -= 1) {
+        const item = reasoning[index]
+        if (item !== undefined && item.running) { text = item.text; break }
+      }
+      if (text === '') { setPreview(null); return }
+      setPreview({ top: box.bottom + 2, left: box.left, text })
+    }
+    update()
+    const onMove = (): void => { requestAnimationFrame(update) }
+    window.addEventListener('scroll', onMove, { passive: true, capture: true })
+    window.addEventListener('resize', onMove)
+    const id = window.setInterval(update, 500)
+    return () => {
+      window.removeEventListener('scroll', onMove, { capture: true } as EventListenerOptions)
+      window.removeEventListener('resize', onMove)
+      window.clearInterval(id)
+    }
+  }, [])
   // 滚动跟随由气泡面板内部的 relayout 负责（锚点是活元素，实时贴住）。
-  if (openTurn === null) return null
   const store = activityStore()
+  if (openTurn === null) {
+    // 无气泡时仍可渲染流式思考预览。
+    return preview === null ? null : (
+      <div className="dtt__reasoning-live dts__preview" style={{ position: 'fixed', top: preview.top, left: preview.left, maxWidth: 520 }} aria-live="polite">{preview.text}</div>
+    )
+  }
   const handlers = store.handlers()
   return (
-    <DrawerPanel
-      key={openTurn}
-      turn={openTurn}
-      data={data}
-      store={store}
-      anchor={anchor}
-      openFile={handlers.openFile}
-      inspectCall={handlers.inspectCall}
-    />
+    <>
+      <DrawerPanel
+        key={openTurn}
+        turn={openTurn}
+        data={data}
+        store={store}
+        anchor={anchor}
+        openFile={handlers.openFile}
+        inspectCall={handlers.inspectCall}
+      />
+      {preview !== null && (
+        <div className="dtt__reasoning-live dts__preview" style={{ position: 'fixed', top: preview.top, left: preview.left, maxWidth: 520 }} aria-live="polite">{preview.text}</div>
+      )}
+    </>
   )
 }
 
