@@ -333,8 +333,10 @@ const CSS = `
   color: var(--dsw-alias-label-primary);
 }
 
-/* 分区页签（思考/工具都有内容时才出现）：中性分段控件，选中态实面微阴影。 */
+/* 分区页签（思考/工具都有内容时才出现）：无底无框下划线式，选中态一条贴字
+   横线 + left/width 过渡，来回点击横线“传递”过去。 */
 .dts__tabs {
+  position: relative;
   display: inline-flex;
   align-items: center;
   flex: none;
@@ -342,9 +344,8 @@ const CSS = `
   margin-left: auto;
   margin-right: 8px;
   border: 0;
-  border-radius: 999px;
-  padding: 2px;
-  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  padding: 0 2px 5px;
+  background: none;
 }
 
 .dts__tab {
@@ -353,18 +354,16 @@ const CSS = `
   flex: none;
   gap: 5px;
   margin: 0;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  padding: 0 12px;
+  border: 0;
+  padding: 2px 10px;
   background: none;
-  box-sizing: border-box;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   line-height: 22px;
   white-space: nowrap;
-  transition: background-color .15s ease, color .15s ease, box-shadow .15s ease;
+  transition: color .15s ease;
 }
 
 .dts__tab:hover {
@@ -372,9 +371,6 @@ const CSS = `
 }
 
 .dts__tab[data-active="true"] {
-  background: var(--dsw-alias-bg-layer-1, #ffffff);
-  border-color: var(--dsw-alias-border-l2, rgba(127,127,127,.25));
-  box-shadow: 0 1px 3px rgba(15,17,21,.14);
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
 }
@@ -382,6 +378,16 @@ const CSS = `
 .dts__tab:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--dts-accent) 55%, transparent);
   outline-offset: 1px;
+}
+
+.dts__tabs-indicator {
+  position: absolute;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--dsw-alias-label-primary);
+  pointer-events: none;
+  transition: left .28s cubic-bezier(.2,.8,.2,1), width .28s cubic-bezier(.2,.8,.2,1);
 }
 
 .dts__modal-scroll {
@@ -1089,6 +1095,7 @@ const CSS = `
 
 /* ── 尊重系统「减少动态效果」：高光/呼吸/滑动动画一律停 ─────────── */
 @media (prefers-reduced-motion: reduce) {
+  .dts__tabs-indicator,
   .dts__process-chevron,
   .dts__dot[data-state="running"],
   .dts__progress::after,
