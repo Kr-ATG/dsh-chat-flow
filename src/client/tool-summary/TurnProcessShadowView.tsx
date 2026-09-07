@@ -87,9 +87,11 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
       data-turn-process-subagents={data.subagentCount}
       aria-expanded={open}
       aria-label={label}
-      onClick={() => {
-        if (drawerTab !== null) store.open(data.turn, drawerTab)
-        else toggle()
+      onClick={(event) => {
+        if (drawerTab !== null) {
+          const rect = event.currentTarget.getBoundingClientRect()
+          store.open(data.turn, drawerTab, { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom })
+        } else toggle()
       }}
     >
       <span className={`${NS}__process-label`}>{label}</span>

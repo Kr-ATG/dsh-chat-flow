@@ -266,17 +266,17 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
   // cleared by effects and are unreliable across re-renders).
   const [activeIndex] = useState<number | null>(null)
 
-  // 气泡定位：贴着点击行的右缘向下展开（右侧弹不出就翻到左侧）。锚点从
-  // props 来；没有锚点（键盘路径/旧调用）就居右兜底。
+  // 气泡定位：贴着点击行的右缘向下展开；右侧放不下就贴窗口右缘（行是
+  // 整宽的，右侧往往放不下整只气泡）。没有锚点时也贴右缘兜底。
   const POPOVER_WIDTH = 420
   const GAP = 10
+  const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1440
   const viewportH = typeof window !== 'undefined' ? window.innerHeight : 900
   const anchorTop = Math.max(8, Math.min((anchor?.top ?? 80), viewportH - 120))
-  const anchorLeft = anchor !== undefined
-    ? (anchor.right + GAP + POPOVER_WIDTH <= (typeof window !== 'undefined' ? window.innerWidth : 1440)
-      ? anchor.right + GAP
-      : Math.max(8, anchor.left - GAP - POPOVER_WIDTH))
-    : (typeof window !== 'undefined' ? window.innerWidth - POPOVER_WIDTH - 24 : 996)
+  const anchorLeft = Math.max(8, Math.min(
+    (anchor?.right ?? viewportW - 24) + GAP,
+    viewportW - POPOVER_WIDTH - 8,
+  ))
   const maxH = Math.min(640, viewportH - anchorTop - 24)
   const popHeight = maxH > 280 ? maxH : 320
 

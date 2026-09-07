@@ -296,8 +296,9 @@ const ToolEntry = memo(function ToolEntry({
         data-turn-process-subagents={0}
         aria-expanded={drawerOpen}
         aria-label={label}
-        onClick={() => {
-          store.open(turn, 'tools')
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect()
+          store.open(turn, 'tools', { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom })
         }}
       >
         <span className={`${NS}__process-label`}>{label}</span>
