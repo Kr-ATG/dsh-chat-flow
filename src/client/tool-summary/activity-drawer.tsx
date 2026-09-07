@@ -223,7 +223,9 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
     if (host === null || target === null) { setIndicator(null); return }
     const hostBox = host.getBoundingClientRect()
     const box = target.getBoundingClientRect()
-    const next = { left: box.left - hostBox.left, width: box.width }
+    // 两侧各收 3px：横线比文字略短，不再横贯整个按钮。
+    const inset = 3
+    const next = { left: box.left - hostBox.left + inset, width: Math.max(8, box.width - inset * 2) }
     setIndicator(prev => (prev !== null && prev.left === next.left && prev.width === next.width ? prev : next))
   }, [tab])
   useLayoutEffect(() => { measureIndicator() }, [measureIndicator, showTabs, reasoning.length, toolNodes.length])
