@@ -83,12 +83,10 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
     }
     return () => { if (streamingThinking) store.setPreviewAnchor(undefined, null) }
   }, [streamingThinking, node.data.turn, store])
-  // 文案与官方 TurnProcessNodeView 逐字一致（同 chat locale 键）。
+  // 只显示工具和思考：官方文案里的消息/subagent 计数不要（用户没要过）。
   const data = node.data
   const labels: string[] = []
   if (data.toolCallCount > 0) labels.push(t(data.toolCallCount === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: data.toolCallCount }))
-  if (data.messageCount > 0) labels.push(t(data.messageCount === 1 ? 'message.turnProcess.messages.one' : 'message.turnProcess.messages.other', { count: data.messageCount }))
-  if (data.subagentCount > 0) labels.push(t(data.subagentCount === 1 ? 'message.turnProcess.subagents.one' : 'message.turnProcess.subagents.other', { count: data.subagentCount }))
   // 思考数缀在官方文案后面（`N 次工具调用 · 思考 M`，与抽屉页签同口径）；
   // 纯思考回合保持官方「已思考」不动。点哪段开哪个分区，气泡从该段后钻出。
   const thinkingLabel = labels.length > 0 && counts.reasoning > 0 ? `思考 ${counts.reasoning}` : undefined
