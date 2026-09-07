@@ -382,10 +382,10 @@ const CSS = `
 
 .dts__tabs-indicator {
   position: absolute;
-  bottom: 0;
+  bottom: 1px;
   height: 2px;
   border-radius: 2px;
-  background: var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 55%, transparent);
   pointer-events: none;
   transition: left .28s cubic-bezier(.2,.8,.2,1), width .28s cubic-bezier(.2,.8,.2,1);
 }
