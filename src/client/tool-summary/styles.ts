@@ -380,12 +380,19 @@ const CSS = `
   outline-offset: 1px;
 }
 
+/* 指示条：用渐变而非纯色块——中间一段实线、两端各自淡出 4px，远看是
+   「文字底下浮着一条细线」，不是一块砖。长度仍是量的文字宽（两侧收 3px）。 */
 .dts__tabs-indicator {
   position: absolute;
   bottom: 2px;
   height: 1px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 55%, transparent);
+  background: linear-gradient(
+    90deg,
+    transparent 0,
+    color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 60%, transparent) 4px,
+    color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 60%, transparent) calc(100% - 4px),
+    transparent 100%
+  );
   pointer-events: none;
   transition: left .28s cubic-bezier(.2,.8,.2,1), width .28s cubic-bezier(.2,.8,.2,1);
 }
