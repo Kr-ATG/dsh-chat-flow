@@ -110,7 +110,7 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
       aria-expanded={open}
       aria-label={[label, thinkingLabel].filter(Boolean).join(' ')}
       onClick={drawerTab !== null
-        ? (event) => { openFor(drawerTab, event.currentTarget) }
+        ? (event) => { openFor(counts.reasoning > 0 ? 'reasoning' : drawerTab, event.currentTarget) }
         : undefined}
     >
       <span className={`${NS}__process-label`}>{label}</span>
