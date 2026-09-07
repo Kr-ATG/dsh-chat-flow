@@ -87,8 +87,7 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
       data-turn-process-subagents={data.subagentCount}
       aria-expanded={open}
       aria-label={label}
-      onClick={(event) => {
-        event.currentTarget.focus()
+      onClick={() => {
         if (drawerTab !== null) store.open(data.turn, drawerTab)
         else toggle()
       }}

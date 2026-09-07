@@ -130,8 +130,7 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: 
         data-turn-process-subagents={0}
         aria-expanded={drawerOpen}
         aria-label={label}
-        onClick={(event) => {
-          event.currentTarget.focus()
+        onClick={() => {
           store.open(turn, 'reasoning')
         }}
       >

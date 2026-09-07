@@ -296,8 +296,7 @@ const ToolEntry = memo(function ToolEntry({
         data-turn-process-subagents={0}
         aria-expanded={drawerOpen}
         aria-label={label}
-        onClick={(event) => {
-          event.currentTarget.focus()
+        onClick={() => {
           store.open(turn, 'tools')
         }}
       >
