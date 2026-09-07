@@ -360,7 +360,7 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
                 data-active={tab === 'reasoning' || undefined}
                 onClick={() => { setTab('reasoning') }}
               >
-                <IconThinkOutline14 size={13} aria-hidden /> 思考 {reasoning.length}
+                <IconThinkOutline14 size={13} aria-hidden /> {reasoning.length} 次思考
               </button>
               <button
                 type="button"

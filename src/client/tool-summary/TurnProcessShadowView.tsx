@@ -89,7 +89,7 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
   if (data.toolCallCount > 0) labels.push(t(data.toolCallCount === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: data.toolCallCount }))
   // 思考数缀在官方文案后面（`N 次工具调用 · 思考 M`，与抽屉页签同口径）；
   // 纯思考回合保持官方「已思考」不动。点哪段开哪个分区，气泡从该段后钻出。
-  const thinkingLabel = labels.length > 0 && counts.reasoning > 0 ? `思考 ${counts.reasoning}` : undefined
+  const thinkingLabel = labels.length > 0 && counts.reasoning > 0 ? `${counts.reasoning} 次思考` : undefined
   const label = labels.length === 0
     ? t('message.turnProcess.thoughtForAWhile')
     : labels.filter(l => l !== thinkingLabel).join(t('message.turnProcess.separator'))
@@ -119,8 +119,8 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
           className={`${NS}__process-think`}
           role="button"
           tabIndex={0}
-          title={`查看思考 ${counts.reasoning}`}
-          aria-label={`查看思考 ${counts.reasoning}`}
+          title={`查看${counts.reasoning} 次思考`}
+          aria-label={`查看${counts.reasoning} 次思考`}
           onClick={(event) => {
             event.stopPropagation()
             store.open(data.turn, 'reasoning', { el: event.currentTarget as HTMLElement })

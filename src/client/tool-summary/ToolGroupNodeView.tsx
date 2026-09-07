@@ -280,7 +280,7 @@ const ToolEntry = memo(function ToolEntry({
   const resting = t(stats.total === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: stats.total })
   const label = running
     ? elapsed !== undefined ? `工具调用中 · ${formatDuration(elapsed)}` : '工具调用中'
-    : activity.reasoning > 0 ? `${resting}${t('message.turnProcess.separator') as string}思考 ${activity.reasoning}` : resting
+    : activity.reasoning > 0 ? `${resting}${t('message.turnProcess.separator') as string}${activity.reasoning} 次思考` : resting
   if (controlActive) return null
 
   return (
