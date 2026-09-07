@@ -296,12 +296,19 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
     const viewportW = window.innerWidth
     const viewportH = window.innerHeight
     if (box.bottom < 0 || box.top > viewportH) { store.close(); return }
-    const MIN_H = 260
+    const MIN_H = 300
     const MARGIN = 12
-    // 高度：从锚点下方到窗口底减边距；不够 MIN_H 就让气泡顶过锚点向上长。
+    // 高度：优先从锚点下方铺到窗口底；低于 MIN_H 时把气泡顶抬到锚点上方
+    // （上最多用到窗口 55% 高度），保证常见屏上有足够内容高度。
     const below = viewportH - MARGIN - (box.top - 4)
-    const height = Math.min(680, Math.max(MIN_H, below))
-    const top = Math.max(MARGIN, Math.min(box.top - 4, viewportH - MARGIN - height))
+    let height = Math.min(680, below)
+    let top = box.top - 4
+    if (height < MIN_H) {
+      height = Math.min(680, Math.max(MIN_H, Math.round(viewportH * 0.55)))
+      top = Math.max(MARGIN, Math.min(box.top - 4, viewportH - MARGIN - height))
+    } else {
+      top = Math.max(MARGIN, top)
+    }
     const tail = Math.max(10, Math.min((box.top + box.height / 2) - top - 8, height - 40))
     const left = Math.max(8, Math.min(box.right + GAP, viewportW - POPOVER_WIDTH - 8))
     setPos(prev => (prev.top === top && prev.left === left && prev.height === height && prev.tail === tail ? prev : { top, left, height, tail }))
