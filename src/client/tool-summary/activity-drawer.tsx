@@ -266,13 +266,13 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
   // cleared by effects and are unreliable across re-renders).
   const [activeIndex] = useState<number | null>(null)
 
-  // 气泡定位：贴着点击行的右缘向下展开；右侧放不下就贴窗口右缘（行是
-  // 整宽的，右侧往往放不下整只气泡）。没有锚点时也贴右缘兜底。
+  // 气泡定位：从点击文字后面（右缘 + 8px 缝）钻出来，气泡顶与文字顶对齐
+  // （尾巴指向文字行中心）；右侧放不下就贴窗口右缘。没有锚点时贴右缘兜底。
   const POPOVER_WIDTH = 420
-  const GAP = 10
+  const GAP = 8
   const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1440
   const viewportH = typeof window !== 'undefined' ? window.innerHeight : 900
-  const anchorTop = Math.max(8, Math.min((anchor?.top ?? 80), viewportH - 120))
+  const anchorTop = Math.max(8, Math.min((anchor?.top ?? 80) - 6, viewportH - 120))
   const anchorLeft = Math.max(8, Math.min(
     (anchor?.right ?? viewportW - 24) + GAP,
     viewportW - POPOVER_WIDTH - 8,
@@ -283,7 +283,7 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
   return (
     <>
       <div className="dts__popover-veil" onClick={close} aria-hidden />
-      <div className="dts__popover" role="dialog" aria-label={`第 ${turn} 轮活动详情`} style={{ top: anchorTop, left: anchorLeft, height: popHeight }}>
+      <div className="dts__popover" role="dialog" aria-label={`第 ${turn} 轮活动详情`} style={{ top: anchorTop, left: anchorLeft, height: popHeight, ['--dts-pop-tail' as string]: `${Math.max(10, Math.min((anchor?.top ?? 80) - anchorTop + 4, popHeight - 40))}px` }}>
         <header className="dts__modal-head">
           <span className="dts__modal-title">
             第 {turn} 轮

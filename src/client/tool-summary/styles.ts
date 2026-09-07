@@ -265,6 +265,35 @@ const CSS = `
   animation: dts-pop-in .34s cubic-bezier(.2, .8, .2, 1);
 }
 
+/* 气泡尾巴：双层三角（描边层+填充层）指向左侧点击文字，位于行中心高度。 */
+.dts__popover::before {
+  content: '';
+  position: absolute;
+  left: -9px;
+  top: var(--dts-pop-tail, 10px);
+  width: 10px;
+  height: 16px;
+  background: var(--dsw-alias-border-l2, rgba(127,127,127,.22));
+  clip-path: polygon(0 50%, 100% 0, 100% 100%);
+  pointer-events: none;
+}
+
+.dts__popover::after {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: calc(var(--dts-pop-tail, 10px) + 1px);
+  width: 10px;
+  height: 14px;
+  background: var(--dsw-alias-bg-layer-1, #fff);
+  clip-path: polygon(0 50%, 100% 0, 100% 100%);
+  pointer-events: none;
+}
+
+.dts__popover {
+  --dts-pop-tail: 10px;
+}
+
 @keyframes dts-pop-in {
   from { opacity: 0; transform: translateX(-18px); }
   to { opacity: 1; transform: translateX(0); }

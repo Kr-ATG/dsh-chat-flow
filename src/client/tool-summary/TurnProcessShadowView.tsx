@@ -89,7 +89,9 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
       aria-label={label}
       onClick={(event) => {
         if (drawerTab !== null) {
-          const rect = event.currentTarget.getBoundingClientRect()
+          // 锚点是文字本身（气泡从「›」后面钻出来），不是整行。
+          const label = event.currentTarget.querySelector('[class*="__process-label"]')
+          const rect = (label ?? event.currentTarget).getBoundingClientRect()
           store.open(data.turn, drawerTab, { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom })
         } else toggle()
       }}

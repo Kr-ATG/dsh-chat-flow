@@ -131,7 +131,8 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: 
         aria-expanded={drawerOpen}
         aria-label={label}
         onClick={(event) => {
-          const rect = event.currentTarget.getBoundingClientRect()
+          const label = event.currentTarget.querySelector('[class*="__process-label"]')
+          const rect = (label ?? event.currentTarget).getBoundingClientRect()
           store.open(turn, 'reasoning', { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom })
         }}
       >
