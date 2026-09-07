@@ -271,7 +271,7 @@ const CSS = `
   z-index: 9990;
   display: flex;
   flex-direction: column;
-  width: min(420px, calc(100vw - 16px));
+  width: min(480px, calc(100vw - 16px));
   border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22));
   border-radius: 14px;
   background: var(--dsw-alias-bg-layer-1, #fff);

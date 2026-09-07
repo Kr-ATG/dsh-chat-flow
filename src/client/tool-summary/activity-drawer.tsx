@@ -282,11 +282,12 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
   const [activeIndex] = useState<number | null>(null)
 
   // 气泡定位：实时贴住锚点文字（滚动/缩放跟手）。从文字右缘 8px 缝钻出，
-  // 顶与文字顶对齐（尾巴指向文字行中心）；右侧放不下就贴窗口右缘。锚点
-  // 被虚拟列表收走（disconnect/移出 DOM）就关闭。
+  // 顶与文字顶对齐（尾巴指向文字行中心）；右侧放不下就贴窗口右缘；底部
+  // 空间不足时气泡整体上移并缩高度，保证完整可见。锚点被虚拟列表收走
+  // （disconnect/移出 DOM）就关闭。
   const popRef = useRef<HTMLDivElement | null>(null)
   const [pos, setPos] = useState<{ readonly top: number; readonly left: number; readonly height: number; readonly tail: number }>(() => ({ top: 80, left: 1020, height: 480, tail: 10 }))
-  const POPOVER_WIDTH = 420
+  const POPOVER_WIDTH = 480
   const GAP = 8
   const relayout = useCallback((): void => {
     const el = anchor?.el
@@ -295,10 +296,14 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
     const viewportW = window.innerWidth
     const viewportH = window.innerHeight
     if (box.bottom < 0 || box.top > viewportH) { store.close(); return }
-    const top = Math.max(8, Math.min(box.top - 4, viewportH - 140))
-    const left = Math.max(8, Math.min(box.right + GAP, viewportW - POPOVER_WIDTH - 8))
-    const height = Math.max(300, Math.min(640, viewportH - top - 24))
+    const MIN_H = 260
+    const MARGIN = 12
+    // 高度：从锚点下方到窗口底减边距；不够 MIN_H 就让气泡顶过锚点向上长。
+    const below = viewportH - MARGIN - (box.top - 4)
+    const height = Math.min(680, Math.max(MIN_H, below))
+    const top = Math.max(MARGIN, Math.min(box.top - 4, viewportH - MARGIN - height))
     const tail = Math.max(10, Math.min((box.top + box.height / 2) - top - 8, height - 40))
+    const left = Math.max(8, Math.min(box.right + GAP, viewportW - POPOVER_WIDTH - 8))
     setPos(prev => (prev.top === top && prev.left === left && prev.height === height && prev.tail === tail ? prev : { top, left, height, tail }))
   }, [anchor, store])
   useLayoutEffect(() => { relayout() }, [relayout])
