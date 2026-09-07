@@ -296,6 +296,9 @@ const ToolEntry = memo(function ToolEntry({
         data-turn-process-subagents={0}
         aria-expanded={drawerOpen}
         aria-label={label}
+        onClick={() => {
+          store.open(turn, 'tools')
+        }}
       >
         <span className={`${NS}__process-label`}>{label}</span>
         <IconChevronDownOutline14 className={`${NS}__process-chevron`} />

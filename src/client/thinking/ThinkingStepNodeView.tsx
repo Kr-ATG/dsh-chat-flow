@@ -130,6 +130,9 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: 
         data-turn-process-subagents={0}
         aria-expanded={drawerOpen}
         aria-label={label}
+        onClick={() => {
+          store.open(turn, 'reasoning')
+        }}
       >
         <span className="dtt__process-label">{label}</span>
         <IconChevronDownOutline14 className="dtt__process-chevron" />
