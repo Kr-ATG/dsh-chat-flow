@@ -15,6 +15,7 @@ import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
 import { computeStats, formatDuration, isRunning, shortenPath, type ToolStats } from './tool-stats.ts'
 import { kindByToolName, type ActivityKind } from './activity-kind.ts'
+import { KindIcon } from './icons.tsx'
 import { useNow } from './use-now.ts'
 import { groupReasoning } from './reasoning-classify.ts'
 import { ToolCallTreeList } from './ToolGroupNodeView.tsx'
@@ -167,7 +168,7 @@ function ReasoningGroups({ items, activeIndex, jumpToCategory }: {
         return (
           <div key={group.category.label} className="dts__modal-reasoning-group" data-reasoning-category={group.category.label}>
             <div className="dts__modal-reasoning-group-title" role="button" tabIndex={0} onClick={() => jumpToCategory(firstIndex)}>
-              {group.category.icon} {group.category.label} ({group.items.length})
+              <KindIcon kind={group.category.icon} size={12} /> {group.category.label} ({group.items.length})
             </div>
             {group.items.map((item) => {
               const globalIndex = firstIndex + group.items.indexOf(item)
