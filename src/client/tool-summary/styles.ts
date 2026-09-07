@@ -231,53 +231,43 @@ const CSS = `
   to { left: 100%; }
 }
 
-/* ===== 居中活动弹窗（思考 + 工具）====================================== */
-/* 遮罩类名带 mask：玻璃质感的浮层总选择器按约定跳过遮罩，模糊在此自备
-   （官方配方 bg-mask-1 + --dsw-mask-blur）。 */
-.dts__modal-mask {
+/* ===== 锚定气泡（思考 + 工具）：贴点击行右缘滑出 ======================== */
+/* 透明点罩只负责点空白关闭，不压暗背景。 */
+.dts__popover-veil {
   position: fixed;
   inset: 0;
-  z-index: 9990;
-  background: var(--dsw-alias-bg-mask-1, rgba(15, 17, 21, .45));
-  backdrop-filter: var(--dsw-mask-blur, blur(2px));
-  -webkit-backdrop-filter: var(--dsw-mask-blur, blur(2px));
-  animation: dts-fade-in .16s ease-out;
+  z-index: 9989;
+  background: transparent;
+  animation: dts-pop-veil .12s ease-out;
 }
 
-@keyframes dts-fade-in {
+@keyframes dts-pop-veil {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-.dts__modal {
+.dts__popover {
   --dts-accent: var(--dsw-alias-state-business-primary, #4176e6);
-  /* 内部填充面：跟随文字色的中性半透明纱（浅色=淡黑、深色=淡白）。
-   * 不用 bg-layer-* 实色 token——浅色主题下三层 layer 同为纯白，卡在白
-   * 面板上完全看不出层次；半透明纱还能直接叠在玻璃质感的模糊面上，
-   * 不会形成「模糊之上再蒙一层厚纱」。 */
   --dts-fill: var(--dsh-flow-veil, color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent));
   --dts-fill-strong: color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent);
   position: fixed;
-  top: 50%;
-  left: 50%;
-  z-index: 9991;
+  z-index: 9990;
   display: flex;
   flex-direction: column;
-  width: min(760px, 92vw);
-  max-height: min(84vh, 860px);
+  width: min(420px, calc(100vw - 16px));
   border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22));
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--dsw-alias-bg-layer-1, #fff);
   box-shadow:
     0 1px 2px rgba(15,17,21,.06),
-    0 24px 64px rgba(15,17,21,.22);
-  transform: translate(-50%, -50%);
-  animation: dts-modal-in .18s cubic-bezier(.2, .8, .2, 1);
+    0 16px 48px rgba(15,17,21,.2);
+  transform-origin: 0 24px;
+  animation: dts-pop-in .34s cubic-bezier(.2, .8, .2, 1);
 }
 
-@keyframes dts-modal-in {
-  from { transform: translate(-50%, -48%) scale(.97); opacity: .4; }
-  to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+@keyframes dts-pop-in {
+  from { opacity: 0; transform: translateX(-18px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 .dts__modal-head {
@@ -1072,7 +1062,6 @@ const CSS = `
 
 /* ── 移动端：活动弹窗全屏、对话流内下载卡片不设最小宽 ─────────── */
 @media (max-width: 767.98px) {
-  .dts__modal{width:100vw;max-width:100vw;max-height:100vh;max-height:100dvh;border-radius:0;top:0;left:0;transform:none}
   .dts__download-card{min-width:0}
 }
 
@@ -1082,8 +1071,8 @@ const CSS = `
   .dts__process-chevron,
   .dts__dot[data-state="running"],
   .dts__progress::after,
-  .dts__modal,
-  .dts__modal-mask {
+  .dts__popover,
+  .dts__popover-veil {
     animation: none;
     transition: none;
   }

@@ -42,10 +42,19 @@ export interface ActivityHandlers {
   readonly inspectCall: (callId: string) => void
 }
 
+/** Click-position anchor: the popover slides out beside this rect. */
+export interface PopoverAnchor {
+  readonly top: number
+  readonly left: number
+  readonly right: number
+  readonly bottom: number
+}
+
 export interface ActivityStore {
   readonly openTurn: number | null
   readonly activeMode: ViewMode | null
-  open(turn: number, mode: ViewMode): void
+  readonly openAnchor: PopoverAnchor | undefined
+  open(turn: number, mode: ViewMode, anchor?: PopoverAnchor): void
   close(): void
   setReasoning(turn: number, items: readonly ActivityReasoningItem[]): void
   setTools(turn: number, nodes: readonly ChatNode<'tool-call'>[], cwd: string | undefined, turnStart: number | undefined): void
@@ -66,6 +75,7 @@ export function activityStore(): ActivityStore {
   const data = new Map<number, ActivityTurnData>()
   let openTurn: number | null = null
   let activeMode: ViewMode | null = null
+  let openAnchor: PopoverAnchor | undefined
   let handlers: ActivityHandlers = { openFile: () => {}, inspectCall: () => {} }
   const notify = (): void => {
     for (const fn of [...listeners]) {
@@ -75,8 +85,9 @@ export function activityStore(): ActivityStore {
   const store: ActivityStore = {
     get openTurn() { return openTurn },
     get activeMode() { return activeMode },
-    open: (turn, mode) => { openTurn = turn; activeMode = mode; notify() },
-    close: () => { openTurn = null; activeMode = null; notify() },
+    get openAnchor() { return openAnchor },
+    open: (turn, mode, anchor) => { openTurn = turn; activeMode = mode; openAnchor = anchor; notify() },
+    close: () => { openTurn = null; activeMode = null; openAnchor = undefined; notify() },
     setReasoning: (turn, items) => {
       data.set(turn, { ...(data.get(turn) ?? {}), reasoning: items })
       notify()
@@ -190,11 +201,12 @@ function ReasoningGroups({ items, activeIndex }: {
   )
 }
 
-/** The centered modal: two separate panels — thinking and tools. */
-function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
+/** The anchored popover: two separate panels — thinking and tools. */
+function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
   readonly turn: number
   readonly data: ActivityTurnData | undefined
   readonly store: ActivityStore
+  readonly anchor: PopoverAnchor | undefined
   readonly openFile: (path: string) => void
   readonly inspectCall: (callId: string) => void
 }) {
@@ -254,10 +266,24 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
   // cleared by effects and are unreliable across re-renders).
   const [activeIndex] = useState<number | null>(null)
 
+  // 气泡定位：贴着点击行的右缘向下展开（右侧弹不出就翻到左侧）。锚点从
+  // props 来；没有锚点（键盘路径/旧调用）就居右兜底。
+  const POPOVER_WIDTH = 420
+  const GAP = 10
+  const viewportH = typeof window !== 'undefined' ? window.innerHeight : 900
+  const anchorTop = Math.max(8, Math.min((anchor?.top ?? 80), viewportH - 120))
+  const anchorLeft = anchor !== undefined
+    ? (anchor.right + GAP + POPOVER_WIDTH <= (typeof window !== 'undefined' ? window.innerWidth : 1440)
+      ? anchor.right + GAP
+      : Math.max(8, anchor.left - GAP - POPOVER_WIDTH))
+    : (typeof window !== 'undefined' ? window.innerWidth - POPOVER_WIDTH - 24 : 996)
+  const maxH = Math.min(640, viewportH - anchorTop - 24)
+  const popHeight = maxH > 280 ? maxH : 320
+
   return (
     <>
-      <div className="dts__modal-mask" onClick={close} aria-hidden />
-      <div className="dts__modal" role="dialog" aria-label={`第 ${turn} 轮活动详情`}>
+      <div className="dts__popover-veil" onClick={close} aria-hidden />
+      <div className="dts__popover" role="dialog" aria-label={`第 ${turn} 轮活动详情`} style={{ top: anchorTop, left: anchorLeft, height: popHeight }}>
         <header className="dts__modal-head">
           <span className="dts__modal-title">
             第 {turn} 轮
@@ -341,16 +367,35 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
 function DrawerApp() {
   const [openTurn, setOpenTurn] = useState<number | null>(null)
   const [data, setData] = useState<ActivityTurnData | undefined>(undefined)
+  const [anchor, setAnchor] = useState<PopoverAnchor | undefined>(undefined)
   useEffect(() => {
     const store = activityStore()
     const render = (): void => {
       const turn = store.openTurn
       setOpenTurn(turn)
       setData(turn === null ? undefined : store.get(turn))
+      setAnchor(turn === null ? undefined : store.openAnchor)
     }
     render()
     return store.subscribe(render)
   }, [])
+  // Esc 关气泡。
+  useEffect(() => {
+    if (openTurn === null) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') activityStore().close()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  }, [openTurn])
+  // 滚动时气泡跟着锚走：锚是打开瞬间的屏幕坐标，列表一滚气泡必须收起
+  // （跟手但不跟随，避免每帧重算的抖动——官方 popover 也是这个策略）。
+  useEffect(() => {
+    if (openTurn === null) return
+    const onScroll = (): void => { activityStore().close() }
+    window.addEventListener('scroll', onScroll, { passive: true, capture: true })
+    return () => { window.removeEventListener('scroll', onScroll, { capture: true } as EventListenerOptions) }
+  }, [openTurn])
   if (openTurn === null) return null
   const store = activityStore()
   const handlers = store.handlers()
@@ -360,6 +405,7 @@ function DrawerApp() {
       turn={openTurn}
       data={data}
       store={store}
+      anchor={anchor}
       openFile={handlers.openFile}
       inspectCall={handlers.inspectCall}
     />
