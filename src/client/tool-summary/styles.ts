@@ -380,21 +380,35 @@ const CSS = `
   outline-offset: 1px;
 }
 
-/* 指示条：用渐变而非纯色块——中间一段实线、两端各自淡出 4px，远看是
-   「文字底下浮着一条细线」，不是一块砖。长度仍是量的文字宽（两侧收 3px）。 */
-.dts__tabs-indicator {
+/* 下划线：选中页签自己的 ::after——left/right 内收、height 1px 全部由 CSS
+   锁死，不依赖 JS 量宽，任何缩放/缓存下都是一条细线。两端 6px 淡出。
+   切换页签时 data-active 翻转重建伪元素，播放 0.22s 展开动画 = 传递感。 */
+.dts__tab {
+  position: relative;
+}
+
+.dts__tab[data-active="true"]::after {
+  content: '';
   position: absolute;
-  bottom: 2px;
+  left: 9px;
+  right: 9px;
+  bottom: -6px;
   height: 1px;
   background: linear-gradient(
     90deg,
     transparent 0,
-    color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 60%, transparent) 4px,
-    color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 60%, transparent) calc(100% - 4px),
+    color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 62%, transparent) 6px,
+    color-mix(in srgb, var(--dsw-alias-label-primary, #1a1a1a) 62%, transparent) calc(100% - 6px),
     transparent 100%
   );
   pointer-events: none;
-  transition: left .28s cubic-bezier(.2,.8,.2,1), width .28s cubic-bezier(.2,.8,.2,1);
+  transform-origin: 50% 50%;
+  animation: dts-tab-line-in .22s cubic-bezier(.2,.8,.2,1);
+}
+
+@keyframes dts-tab-line-in {
+  from { transform: scaleX(.35); opacity: 0; }
+  to { transform: scaleX(1); opacity: 1; }
 }
 
 .dts__modal-scroll {
@@ -1102,7 +1116,8 @@ const CSS = `
 
 /* ── 尊重系统「减少动态效果」：高光/呼吸/滑动动画一律停 ─────────── */
 @media (prefers-reduced-motion: reduce) {
-  .dts__tabs-indicator,
+  .dts__tab[data-active="true"]::after,
+  .dts__tab[data-active="true"]::after,
   .dts__process-chevron,
   .dts__dot[data-state="running"],
   .dts__progress::after,
@@ -1115,10 +1130,15 @@ const CSS = `
 
 `
 
-/** Inject the stylesheet once. */
+/** Inject the stylesheet (idempotent, self-healing: existing tag gets the fresh CSS). */
 export function injectStyles(): void {
   if (typeof document === 'undefined') return
-  if (document.getElementById('dsh-tool-summary-styles') !== null) return
+  const existing = document.getElementById('dsh-tool-summary-styles')
+  if (existing !== null) {
+    // 热更新/重复 apply 时旧样式表必须跟着换新，否则新标记配旧 CSS 会走样。
+    if (existing.textContent !== CSS) existing.textContent = CSS
+    return
+  }
   const style = document.createElement('style')
   style.id = 'dsh-tool-summary-styles'
   style.textContent = CSS

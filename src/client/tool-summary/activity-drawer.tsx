@@ -8,7 +8,7 @@
  * the bus is created lazily by whichever plugin touches it first.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { IconApiOutline14, IconThinkOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -212,29 +212,8 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
   const [tab, setTab] = useState<DrawerTab>(mode ?? (reasoning.length > 0 ? 'reasoning' : 'tools'))
   useEffect(() => { if (mode !== null) setTab(mode) }, [mode])
   const showTabs = reasoning.length > 0 && toolNodes.length > 0
-  // 下划线指示条：量选中页签文字位置，left/width 过渡即“传递”动画。
-  const tabsRef = useRef<HTMLSpanElement | null>(null)
-  const thinkTextRef = useRef<HTMLSpanElement | null>(null)
-  const toolsTextRef = useRef<HTMLSpanElement | null>(null)
-  const [indicator, setIndicator] = useState<{ readonly left: number; readonly width: number } | null>(null)
-  const measureIndicator = useCallback((): void => {
-    const host = tabsRef.current
-    const target = tab === 'reasoning' ? thinkTextRef.current : toolsTextRef.current
-    if (host === null || target === null) { setIndicator(null); return }
-    const hostBox = host.getBoundingClientRect()
-    const box = target.getBoundingClientRect()
-    // 两侧各收 3px：横线比文字略短，不再横贯整个按钮。
-    const inset = 3
-    const next = { left: box.left - hostBox.left + inset, width: Math.max(8, box.width - inset * 2) }
-    setIndicator(prev => (prev !== null && prev.left === next.left && prev.width === next.width ? prev : next))
-  }, [tab])
-  useLayoutEffect(() => { measureIndicator() }, [measureIndicator, showTabs, reasoning.length, toolNodes.length])
-  useEffect(() => {
-    window.addEventListener('resize', measureIndicator)
-    const fonts = (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts
-    if (fonts !== undefined) void fonts.ready.then(() => { measureIndicator() }).catch(() => {})
-    return () => { window.removeEventListener('resize', measureIndicator) }
-  }, [measureIndicator])
+  // 下划线用选中页签自己的 ::after 画（纯 CSS，见 styles），切换时新线展开
+  // 0.22s——不量位置、不插指示条元素，任何环境都不会走样。
 
   // Live elapsed time + auto-scroll while the turn is still working.
   const reasoningRunning = reasoning.some(item => item.running)
@@ -296,7 +275,7 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
             )}
           </span>
           {showTabs && (
-            <span className="dts__tabs" role="tablist" aria-label="分区" ref={tabsRef}>
+            <span className="dts__tabs" role="tablist" aria-label="分区">
               <button
                 type="button"
                 role="tab"
@@ -305,7 +284,7 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
                 data-active={tab === 'reasoning' || undefined}
                 onClick={() => { setTab('reasoning') }}
               >
-                <IconThinkOutline14 size={13} aria-hidden /> <span ref={thinkTextRef}>思考 {reasoning.length}</span>
+                <IconThinkOutline14 size={13} aria-hidden /> 思考 {reasoning.length}
               </button>
               <button
                 type="button"
@@ -315,11 +294,8 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall }: {
                 data-active={tab === 'tools' || undefined}
                 onClick={() => { setTab('tools') }}
               >
-                <IconApiOutline14 size={13} aria-hidden /> <span ref={toolsTextRef}>工具 {toolNodes.length}</span>
+                <IconApiOutline14 size={13} aria-hidden /> 工具 {toolNodes.length}
               </button>
-              {indicator !== null && (
-                <span className="dts__tabs-indicator" aria-hidden style={{ left: indicator.left, width: indicator.width }} />
-              )}
             </span>
           )}
           <button type="button" className="dts__modal-close" onClick={close} aria-label="关闭">✕</button>
