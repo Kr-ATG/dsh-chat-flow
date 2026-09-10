@@ -19,6 +19,7 @@ import { KindIcon } from './icons.tsx'
 import { useNow } from './use-now.ts'
 import { groupReasoning } from './reasoning-classify.ts'
 import { ToolCallTreeList } from './ToolGroupNodeView.tsx'
+import { ErrorBoundary } from '../error-boundary.tsx'
 
 /** One reasoning block stranded in the drawer. */
 export interface ActivityReasoningItem {
@@ -49,6 +50,22 @@ export interface ActivityHandlers {
  */
 export interface PopoverAnchor {
   readonly el: HTMLElement
+}
+
+/**
+ * 锍点自救：虚拟列表滚动/重排可能把点击时拿到的内层 label 元素换掉
+ *（旧 el.isConnected === false），直接 close 会让气泡“点不开”。
+ * 所有入口按钮都带 `data-turn-process="N"`，换掉后按回合号重新找一个同轮锍点就能继续贴住。
+ */
+export function resolveLiveAnchor(turn: number, el: HTMLElement | undefined): HTMLElement | undefined {
+  if (el !== undefined && el.isConnected) return el
+  if (typeof document === 'undefined') return undefined
+  try {
+    const fresh = document.querySelector('[data-turn-process="' + turn + '"]')
+    return (fresh as HTMLElement | null) ?? undefined
+  } catch {
+    return undefined
+  }
 }
 
 export interface ActivityStore {
@@ -290,8 +307,9 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
   const POPOVER_WIDTH = 480
   const GAP = 8
   const relayout = useCallback((): void => {
-    const el = anchor?.el
-    if (el === undefined || !el.isConnected) { store.close(); return }
+    // 先用自救查找把被虚拟列表换掉的锍点换回来，找不到才关闭。
+    const el = resolveLiveAnchor(turn, anchor?.el)
+    if (el === undefined) { store.close(); return }
     const box = el.getBoundingClientRect()
     const viewportW = window.innerWidth
     const viewportH = window.innerHeight
@@ -312,10 +330,10 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
     const tail = Math.max(10, Math.min((box.top + box.height / 2) - top - 8, height - 40))
     const left = Math.max(8, Math.min(box.right + GAP, viewportW - POPOVER_WIDTH - 8))
     setPos(prev => (prev.top === top && prev.left === left && prev.height === height && prev.tail === tail ? prev : { top, left, height, tail }))
-  }, [anchor, store])
+  }, [anchor, store, turn])
   useLayoutEffect(() => { relayout() }, [relayout])
   useEffect(() => {
-    const el = anchor?.el
+    const el = resolveLiveAnchor(turn, anchor?.el)
     if (el === undefined) return
     // 滚动在 capture 阶段接住所有容器（含虚拟列表内部滚动），rAF 节流。
     let frame = 0
@@ -333,7 +351,7 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
       observer.disconnect()
       if (frame !== 0) cancelAnimationFrame(frame)
     }
-  }, [anchor, relayout])
+  }, [anchor, relayout, turn])
   const { top: anchorTop, left: anchorLeft, height: popHeight, tail: popTail } = pos
 
   return (
@@ -485,17 +503,38 @@ function DrawerApp() {
     )
   }
   const handlers = store.handlers()
+  const closeAll = (): void => { store.close() }
   return (
     <>
-      <DrawerPanel
+      <ErrorBoundary
         key={openTurn}
-        turn={openTurn}
-        data={data}
-        store={store}
-        anchor={anchor}
-        openFile={handlers.openFile}
-        inspectCall={handlers.inspectCall}
-      />
+        label={'活动气泡（第 ' + openTurn + ' 轮）'}
+        fallback={(
+          <div
+            className="dts__popover"
+            role="dialog"
+            aria-label={'第 ' + openTurn + ' 轮活动详情'}
+            style={{ top: 80, left: '50%', transform: 'translateX(-50%)', height: 'auto', maxHeight: '40vh' }}
+          >
+            <header className="dts__modal-head">
+              <span className="dts__modal-title">第 {openTurn} 轮</span>
+              <button type="button" className="dts__modal-close" onClick={closeAll} aria-label="关闭">✕</button>
+            </header>
+            <div className="dts__modal-scroll">
+              <div className="dts__empty">气泡渲染失败，详情见控制台（F12）。关闭后换一轮重开可重试。</div>
+            </div>
+          </div>
+        )}
+      >
+        <DrawerPanel
+          turn={openTurn}
+          data={data}
+          store={store}
+          anchor={anchor}
+          openFile={handlers.openFile}
+          inspectCall={handlers.inspectCall}
+        />
+      </ErrorBoundary>
       {preview !== null && (
         <div className="dtt__reasoning-live dts__preview" style={{ position: 'fixed', top: preview.top, left: preview.left, maxWidth: 520 }} aria-live="polite">{preview.text}</div>
       )}
@@ -505,14 +544,48 @@ function DrawerApp() {
 
 let mounted = false
 
-/** Mount the drawer root once (idempotent). */
+/** 抽屉根的 React 句柄（自愈重挂用）。 */
+let drawerRoot: import('react-dom/client').Root | null = null
+
+/**
+ * Mount the drawer root (idempotent + self-healing).
+ *
+ * 保留 first-writer-wins：若宿主已存在且有内容（另一个兼容版本的抽屉正在工作），
+ * 直接复用不覆盖；只有宿主为空壳（旧根被异常卸载剩下空 div）时才重新 render 自愈。
+ * 根外再包一层错误边界，DrawerApp 本体抛错也不会卸载整个根。
+ */
 export function mountActivityDrawer(): void {
-  if (mounted) return
-  mounted = true
   if (typeof document === 'undefined') return
-  if (document.getElementById('dsh-activity-drawer-root') !== null) return
-  const host = document.createElement('div')
-  host.id = 'dsh-activity-drawer-root'
-  document.body.appendChild(host)
-  createRoot(host).render(<DrawerApp />)
+  let host = document.getElementById('dsh-activity-drawer-root')
+  if (host !== null && host.childNodes.length > 0) {
+    // 有内容：别人（或之前的自己）正在用，幂等返回。
+    mounted = true
+    return
+  }
+  if (host === null) {
+    host = document.createElement('div')
+    host.id = 'dsh-activity-drawer-root'
+    document.body.appendChild(host)
+  }
+  try {
+    drawerRoot?.unmount()
+  } catch {
+    /* 旧句柄已死，忽略直接重建 */
+  }
+  drawerRoot = createRoot(host)
+  drawerRoot.render(
+    <ErrorBoundary label="活动抽屉根" fallback={null}>
+      <DrawerApp />
+    </ErrorBoundary>,
+  )
+  mounted = true
+  // 调试钩子：控制台可 `__dshChatFlowDrawer.store` 查 openTurn / 手动 remount。
+  try {
+    ;(globalThis as Record<string, unknown>).__dshChatFlowDrawer = {
+      remount: mountActivityDrawer,
+      store: activityStore(),
+    }
+  } catch {
+    /* 非浏览器环境忽略 */
+  }
 }
