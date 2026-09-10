@@ -76,8 +76,7 @@ function resolveLocal(raw: string, cwd: string | undefined): string | null {
 /**
  * 收集正文里提到的本地 HTML 并探测高度，得到可注入截图卡片的内嵌项。
  *
- * 与对话预览共用同一套抽取规则（src/shared/html-paths.ts），否则会出现
- * 「对话里能预览、截图里认不出」的两边漂移。任何一条探测失败都只是少一张
+ * 抽取规则见 src/shared/html-paths.ts。任何一条探测失败都只是少一张
  * 图，不影响整张截图。
  * @param messages - 待截图的消息。
  * @param cwd - 会话工作目录（相对路径基准）。

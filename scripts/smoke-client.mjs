@@ -4,10 +4,11 @@
  * Executes `lib/client.js` under a stubbed DSH client environment and asserts:
  *   1. registers exactly one `__ModuleLoader__` entry with id "dsh-chat-flow"
  *   2. the factory exports `apply` (function) and `inject` (array = ['slots'])
- *   3. `apply(ctx)` mounts the shared activity drawer (body 级宿主) + 注入四枚
+ *   3. `apply(ctx)` mounts the shared activity drawer (body 级宿主) + 注入七枚
  *      <style>（dsh-chat-flow-styles / dsh-tool-summary-styles /
  *      dsh-chat-flow-shot-styles / dsh-modal-animation-styles /
- *      dsh-chat-flow-proto-styles）
+ *      dsh-chat-flow-proto-styles / dsh-chat-flow-diagram-styles /
+ *      dsh-chat-flow-download-styles）
  *   4. `apply(ctx)` registers all three seats:
  *        conversation.chat.node / tool-call        priority -100
  *        conversation.chat.node / assistant-step   priority -100
@@ -283,12 +284,11 @@ for (const expected of [
   'dsh-chat-flow-shot-styles', 'dsh-modal-animation-styles',
   'dsh-chat-flow-proto-styles', 'dsh-chat-flow-diagram-styles',
   'dsh-chat-flow-download-styles',
-  'dsh-chat-flow-html-preview-styles',
 ]) {
   if (!styleIds.includes(expected)) fail(`missing injected <style id=${expected}>`)
 }
-if (styleIds.length === 8) pass('injected eight <style> sheets (dtt__ + dts__ + tsh__ + modal + proto + diagram + download + html-preview)')
-else if (styleIds.length > 8) fail(`unexpected extra styles: ${styleIds.join(', ')}`)
+if (styleIds.length === 7) pass('injected seven <style> sheets (dtt__ + dts__ + tsh__ + modal + proto + diagram + download)')
+else if (styleIds.length > 7) fail(`unexpected extra styles: ${styleIds.join(', ')}`)
 
 // 四个 keyed 槽位阴影注册 + 截图按钮注册（+ download toolview）。
 const cell = (key) => registeredSlots.find((s) => s?.slot === 'conversation.chat.node' && s?.key === key)

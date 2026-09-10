@@ -77,7 +77,7 @@ export interface ActivityStore {
   readonly previewTurn: number | null
   setPreviewAnchor(el: HTMLElement | undefined, turn: number | null): void
   open(turn: number, mode: ViewMode, anchor?: PopoverAnchor): void
-  close(): void
+  close(reason?: string): void
   setReasoning(turn: number, items: readonly ActivityReasoningItem[]): void
   setTools(turn: number, nodes: readonly ChatNode<'tool-call'>[], cwd: string | undefined, turnStart: number | undefined): void
   setHandlers(handlers: ActivityHandlers): void
@@ -118,8 +118,20 @@ export function activityStore(): ActivityStore {
       previewTurn = turn
       notify()
     },
-    open: (turn, mode, anchor) => { openTurn = turn; activeMode = mode; openAnchor = anchor; notify() },
-    close: () => { openTurn = null; activeMode = null; openAnchor = undefined; notify() },
+    open: (turn, mode, anchor) => {
+      // 点击时自愈：如果抽屉根被 React 异常卸载（空壳 div）或 HMR 后失活，
+      // 这里同步重挂，否则就是“点了没气泡”（store 变了没人渲染）。
+      try {
+        ensureDrawerMounted()
+      } catch (healError) {
+        console.warn('[dsh-chat-flow] 气泡 open 前自愈挂载失败：', healError)
+      }
+      openTurn = turn; activeMode = mode; openAnchor = anchor; notify()
+      try {
+        console.log('[dsh-chat-flow] 气泡 open：第 ' + turn + ' 轮 / ' + mode)
+      } catch { /* 日志永不挡路 */ }
+    },
+    close: (reason?: string) => { openTurn = null; activeMode = null; openAnchor = undefined; notify() },
     setReasoning: (turn, items) => {
       data.set(turn, { ...(data.get(turn) ?? {}), reasoning: items })
       notify()
@@ -309,11 +321,21 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
   const relayout = useCallback((): void => {
     // 先用自救查找把被虚拟列表换掉的锍点换回来，找不到才关闭。
     const el = resolveLiveAnchor(turn, anchor?.el)
-    if (el === undefined) { store.close(); return }
+    if (el === undefined) {
+      try {
+        console.warn('[dsh-chat-flow] 气泡自动关闭：第 ' + turn + ' 轮找不到锚点（虚拟列表已回收且按回合号也找不到）')
+      } catch { /* 日志永不挡路 */ }
+      store.close('anchor-missing'); return
+    }
     const box = el.getBoundingClientRect()
     const viewportW = window.innerWidth
     const viewportH = window.innerHeight
-    if (box.bottom < 0 || box.top > viewportH) { store.close(); return }
+    if (box.bottom < 0 || box.top > viewportH) {
+      try {
+        console.log('[dsh-chat-flow] 气泡自动关闭：第 ' + turn + ' 轮锚点已滚出视口')
+      } catch { /* 日志永不挡路 */ }
+      store.close('anchor-out-of-view'); return
+    }
     const MIN_H = 300
     const MARGIN = 12
     // 高度：优先从锚点下方铺到窗口底；低于 MIN_H 时把气泡顶抬到锚点上方
@@ -440,6 +462,7 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
 /** Drawer app: subscribes to the bus and renders the panel when open. */
 function DrawerApp() {
   const [openTurn, setOpenTurn] = useState<number | null>(null)
+  const [openMode, setOpenMode] = useState<ViewMode | null>(null)
   const [data, setData] = useState<ActivityTurnData | undefined>(undefined)
   const [anchor, setAnchor] = useState<PopoverAnchor | undefined>(undefined)
   useEffect(() => {
@@ -447,6 +470,7 @@ function DrawerApp() {
     const render = (): void => {
       const turn = store.openTurn
       setOpenTurn(turn)
+      setOpenMode(turn === null ? null : store.activeMode)
       setData(turn === null ? undefined : store.get(turn))
       setAnchor(turn === null ? undefined : store.openAnchor)
     }
@@ -507,7 +531,7 @@ function DrawerApp() {
   return (
     <>
       <ErrorBoundary
-        key={openTurn}
+        key={openTurn + ':' + (openMode ?? '')}
         label={'活动气泡（第 ' + openTurn + ' 轮）'}
         fallback={(
           <div
@@ -547,6 +571,20 @@ let mounted = false
 /** 抽屉根的 React 句柄（自愈重挂用）。 */
 let drawerRoot: import('react-dom/client').Root | null = null
 
+/** 根挂载代数：每次重挂 +1，用作根错误边界的 key（崩了下次重挂自动清错，不粘死）。 */
+let mountGen = 0
+
+/**
+ * store.open 调用前的同步自愈：根空了（被 React 异常卸载 / HMR 失活）就地重建。
+ * 与 mountActivityDrawer 共用同一套创建逻辑，但可被 store 提前调用。
+ */
+export function ensureDrawerMounted(): void {
+  if (typeof document === 'undefined') return
+  const host = document.getElementById('dsh-activity-drawer-root')
+  if (host !== null && host.childNodes.length > 0) return
+  mountActivityDrawer()
+}
+
 /**
  * Mount the drawer root (idempotent + self-healing).
  *
@@ -573,8 +611,29 @@ export function mountActivityDrawer(): void {
     /* 旧句柄已死，忽略直接重建 */
   }
   drawerRoot = createRoot(host)
+  mountGen += 1
+  const gen = mountGen
   drawerRoot.render(
-    <ErrorBoundary label="活动抽屉根" fallback={null}>
+    <ErrorBoundary
+      key={gen}
+      label="活动抽屉根"
+      fallback={null}
+      onError={() => {
+        // 根崩（DrawerApp 本体抛错）会自动卸载整个根，之后点击全部无反应。
+        // 下一微任务重挂一个新根（key 代数 +1，老错不残留）；若重挂也崩，
+        // 控制台会留下两条渲染崩溃日志用于定位，不会静默死掉。
+        try {
+          console.error('[dsh-chat-flow] 活动抽屉根崩溃，正在自愈重挂…')
+        } catch { /* 日志永不挡路 */ }
+        queueMicrotask(() => {
+          try { mountActivityDrawer() } catch (remountError) {
+            try {
+              console.error('[dsh-chat-flow] 活动抽屉根自愈重挂失败：', remountError)
+            } catch { /* 忽略 */ }
+          }
+        })
+      }}
+    >
       <DrawerApp />
     </ErrorBoundary>,
   )
@@ -583,6 +642,7 @@ export function mountActivityDrawer(): void {
   try {
     ;(globalThis as Record<string, unknown>).__dshChatFlowDrawer = {
       remount: mountActivityDrawer,
+      ensure: ensureDrawerMounted,
       store: activityStore(),
     }
   } catch {

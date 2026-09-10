@@ -1,9 +1,8 @@
 /**
- * dsh-chat-flow — 本地 HTML 路径抽取（shared：client 预览卡与 host 截图共用）。
+ * dsh-chat-flow — 本地 HTML 路径抽取（截图管线用：正文里提到的本地 HTML 内嵌进截图）。
  *
- * 从助手正文（markdown 源文本）里找出指向本地 .html/.htm 的路径。规则与
- * 降噪四条的来由见 src/client/html-preview/parse.ts 的转发注释与本文件内注释。
- * 零依赖纯函数：两侧都能直接 import，不引运行时包。
+ * 从助手正文（markdown 源文本）里找出指向本地 .html/.htm 的路径。
+ * 零依赖纯函数，不引运行时包。
  */
 /** 一条候选路径。 */
 export interface HtmlPathHit {
