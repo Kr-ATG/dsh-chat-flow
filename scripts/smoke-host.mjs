@@ -2,10 +2,11 @@
  * dsh-chat-flow — host 半身冒烟测试。
  *
  * 断言 lib/index.js 在裸 node（无 tsx、无 DSH 运行时）下可加载，并导出
- * 合法的 Cordis 插件形状。host 半身现在注册两条路由：
+ * 合法的 Cordis 插件形状。host 半身现在注册三条路由：
  *
  *   1. GET  /api/chat-flow/generated-images（exact）：spill 图片读取；
- *   2. prefix /api/chat-flow/screenshot（prefix）：对话截图渲染
+ *   2. prefix /api/chat-flow/download（prefix）：下载工具实时进度；
+ *   3. prefix /api/chat-flow/screenshot（prefix）：对话截图渲染
  *      （render/save/reveal/image/diagnose）。
  *
  * 两者都走 `ctx.inject(['webServer'], cb)` —— 延迟注入，绝不是 apply 直接读
@@ -121,8 +122,8 @@ if (registeredTools.length !== 1 || registeredTools[0]?.name !== 'download') {
 if (!effectRan) fail('deferred webServer callback never ran')
 else pass('deferred webServer callback executed')
 
-if (registered.length !== 4) {
-  fail(`expected exactly 4 route registrations, got ${registered.length}: ${JSON.stringify(registered)}`)
+if (registered.length !== 3) {
+  fail(`expected exactly 3 route registrations, got ${registered.length}: ${JSON.stringify(registered)}`)
 } else {
   const exact = registered.find(spec => spec?.kind === 'exact')
   const prefix = registered.filter(spec => spec?.kind === 'prefix')
@@ -142,12 +143,6 @@ if (registered.length !== 4) {
     fail(`unexpected prefix route spec: ${JSON.stringify(prefix)}`)
   } else {
     pass('registered /api/chat-flow/screenshot (kind=prefix, render/save/reveal/image/diagnose)')
-  }
-  const htmlRoute = prefix.find(spec => spec?.path === '/api/chat-flow/html')
-  if (htmlRoute === undefined) {
-    fail('missing local html preview route (prefix /api/chat-flow/html)')
-  } else {
-    pass('registered /api/chat-flow/html (kind=prefix, meta/view/raw/open)')
   }
   for (const spec of registered) {
     if (typeof spec?.handler !== 'function') fail(`route handler is not a function: ${spec?.path}`)
