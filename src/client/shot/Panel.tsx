@@ -29,6 +29,7 @@ const RANGE_LABEL: Record<ShotRange, string> = {
 
 const THEME_LABEL: Record<ShotTheme, string> = {
   light: '浅色',
+  reader: '阅读版',
   dark: '深色',
   glass: '玻璃',
   'glass-dark': '玻璃深色',

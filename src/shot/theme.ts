@@ -13,11 +13,11 @@
  */
 
 /** 截图主题（与 client 端选项一一对应）。 */
-export type ShotTheme = 'light' | 'dark' | 'glass' | 'glass-dark'
+export type ShotTheme = 'light' | 'dark' | 'glass' | 'glass-dark' | 'reader'
 
-/** 主题基色：玻璃主题按深浅分别复用浅 / 深调色板。 */
+/** 主题基色：玻璃主题按深浅分别复用浅 / 深调色板；阅读版归入浅色基底。 */
 export function baseOf(theme: ShotTheme): 'light' | 'dark' {
-  return theme === 'light' || theme === 'glass' ? 'light' : 'dark'
+  return theme === 'light' || theme === 'glass' || theme === 'reader' ? 'light' : 'dark'
 }
 
 /** 是否玻璃质感主题（半透明卡片 + 壁纸背景）。 */
@@ -29,7 +29,7 @@ export function isGlass(theme: ShotTheme): boolean {
  * mermaid 主题变量（与 client 端 markdown/diagram.tsx 的 LIGHT_VARS /
  * DARK_VARS 对齐，保证截图里的图和界面里的图长得一样）。
  */
-const MERMAID_VARS: Record<'light' | 'dark', Record<string, string>> = {
+const MERMAID_VARS: Record<'light' | 'dark' | 'reader', Record<string, string>> = {
   light: {
     background: 'transparent',
     primaryColor: '#eef2ff',
@@ -56,6 +56,19 @@ const MERMAID_VARS: Record<'light' | 'dark', Record<string, string>> = {
     clusterBorder: '#41506a',
     fontSize: '14px',
   },
+  reader: {
+    background: 'transparent',
+    primaryColor: '#f4ede2',
+    primaryTextColor: '#2c2724',
+    primaryBorderColor: '#d8cbb8',
+    lineColor: '#7a7064',
+    secondaryColor: '#faf6f0',
+    tertiaryColor: '#ede4d5',
+    edgeLabelBackground: '#fcfbf8',
+    clusterBkg: '#f5eee4',
+    clusterBorder: '#d8cbb8',
+    fontSize: '14px',
+  },
 }
 
 /**
@@ -64,6 +77,7 @@ const MERMAID_VARS: Record<'light' | 'dark', Record<string, string>> = {
  */
 export function mermaidConfigJson(theme: ShotTheme): string {
   const dark = baseOf(theme) === 'dark'
+  const varsKey = theme === 'reader' ? 'reader' : (dark ? 'dark' : 'light')
   return JSON.stringify({
     startOnLoad: false,
     securityLevel: 'strict',
@@ -71,13 +85,13 @@ export function mermaidConfigJson(theme: ShotTheme): string {
     suppressErrorRendering: true,
     theme: dark ? 'dark' : 'default',
     fontFamily: 'inherit',
-    themeVariables: MERMAID_VARS[dark ? 'dark' : 'light'],
+    themeVariables: MERMAID_VARS[varsKey],
     flowchart: { htmlLabels: true, curve: 'basis' },
   })
 }
 
 /** 调色板（编译进截图 HTML 的 CSS 变量值）。 */
-const PALETTE: Record<'light' | 'dark', Record<string, string>> = {
+const PALETTE: Record<'light' | 'dark' | 'reader', Record<string, string>> = {
   light: {
     canvas: '#eaeef6',
     canvasGlow: 'radial-gradient(72rem 44rem at 50% -12%, rgba(65,118,230,.16), transparent 68%)',
@@ -113,6 +127,24 @@ const PALETTE: Record<'light' | 'dark', Record<string, string>> = {
     theadBg: '#161b22',
     zebra: '#151a21',
     shadow: '0 28px 68px rgba(0,0,0,.55),0 2px 10px rgba(0,0,0,.35)',
+  },
+  reader: {
+    canvas: '#f2ede4',
+    canvasGlow: 'radial-gradient(72rem 44rem at 50% -12%, rgba(200,150,100,.18), transparent 68%), radial-gradient(40rem 30rem at 85% 90%, rgba(180,130,90,.08), transparent 65%)',
+    card: '#fcfbf8',
+    fg: '#2c2724',
+    fg2: '#5e564f',
+    fg3: '#948b81',
+    border: '#e8e1d5',
+    border2: '#f0eae0',
+    accent: '#b85836',
+    accentSoft: 'rgba(184,88,54,.10)',
+    codeBg: '#f4efe6',
+    inlineCode: '#a8482a',
+    quoteBg: '#f7f2ea',
+    theadBg: '#eee7db',
+    zebra: '#f9f6f0',
+    shadow: '0 24px 64px rgba(60,48,36,.09),0 2px 10px rgba(60,48,36,.04)',
   },
 }
 
@@ -198,12 +230,22 @@ export function canvasPadY(width: number): { top: number; bottom: number } {
 export function buildCardCss(theme: ShotTheme, width: number, minHeight: number): string {
   const base = baseOf(theme)
   const glass = isGlass(theme)
-  const p = PALETTE[base]
+  const p = theme === 'reader' ? PALETTE.reader : PALETTE[base]
   const m = metrics(width)
   const vars = Object.entries(p).map(([key, value]) => `--${key}:${value}`).join(';')
   const canvas = glass
     ? (base === 'dark' ? WALLPAPER_DARK : WALLPAPER_LIGHT)
     : `background-color:var(--canvas);background-image:var(--canvasGlow)`
+  const readerStyles = theme === 'reader' ? `
+.content{line-height:1.92;letter-spacing:.012em}
+.content p{margin:0 0 1.08em}
+.content h1,.content h2,.content h3{letter-spacing:-.005em}
+.content blockquote{border-left:3.5px solid var(--accent);padding:.65em 1.25em;background:var(--quoteBg);border-radius:0 10px 10px 0}
+.content pre{background:var(--codeBg);border-color:var(--border);box-shadow:inset 0 1px 2px rgba(60,48,36,.03)}
+.content code{background:rgba(184,88,54,.08);color:var(--inlineCode)}
+.content pre code{background:none}
+.rail{background:linear-gradient(90deg,var(--accent) 0%,color-mix(in srgb,var(--accent) 45%,#d89b6e) 55%,transparent 100%)}
+` : ''
   return `:root{${vars};--w:${width}px;--pad:${m.pad}px;--radius:${m.radius}px}
 *{margin:0;padding:0;box-sizing:border-box}
 html{font-size:16px;-webkit-text-size-adjust:100%}
@@ -270,8 +312,9 @@ body{${canvas};padding:${m.outer}px ${m.outer}px ${Math.round(m.outer * 1.2)}px;
 .foot .whale{display:flex;align-items:center;color:var(--fg2)}
 .foot .sign{color:var(--fg2);font-weight:500;letter-spacing:.01em}
 .foot .right{margin-left:auto;font-variant-numeric:tabular-nums}
-// 手机窄幅：页头放不下「品牌 + 徽章 + 时间」一行，收起时间戳并缩小徽标块。
-// 宽度是编译期已知值，直接按宽度出条件 CSS，不用媒体查询。
+/* 手机窄幅：页头放不下「品牌 + 徽章 + 时间」一行，收起时间戳并缩小徽标块。
+   宽度是编译期已知值，直接按宽度出条件 CSS，不用媒体查询。 */
 ${width < 640 ? `.head{gap:10px;padding-top:calc(var(--pad) * .9)}.mark{width:30px;height:30px;border-radius:9px}.mark svg{width:17px;height:13px}.stamp{display:none}.chip{height:20px;padding:0 8px;font-size:11px}.foot{font-size:12px}` : ''}
+${readerStyles}
 ${glass ? glassLayer(base === 'dark') : ''}`
 }
