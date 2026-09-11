@@ -20,7 +20,8 @@
  *
  * 安全约束（只做必要最小暴露）：
  *  - 只允许读取 `ctx.spillStore` 的 root 之内的文件（路径穿越一律 403）；
- *  - 只接受后缀 `.txt` 且大小 ≤ 8MB（生图结果约 2MB，护栏防呆）；
+ *  - 只接受后缀 `.txt` 且大小 ≤ 24MB（当前生图模型最高 2720×1536，
+ *    base64 约 9MB，护栏防呆不拦正常结果）；
  *  - 只返回从文件里解析出的图片 URL 列表（data: 或 http(s)），绝不回传
  *    文件原文；解析失败返回 ok:false，绝不 500 泄出错误细节。
  */
@@ -34,8 +35,8 @@ export { applyDownloadRoutes, downloadTool, readDownloadState, watchShellDownloa
 /** Stable Cordis plugin name. */
 export const name = 'dsh-chat-flow'
 
-/** 生图结果 spill 文件（纯文本 JSON）大小上限：单张 1024px PNG base64 约 2MB。 */
-const MAX_SPILL_BYTES = 8 * 1024 * 1024
+/** 生图结果 spill 文件（纯文本 JSON）大小上限：2720×1536 PNG base64 约 9MB，留余量到 24MB。 */
+const MAX_SPILL_BYTES = 24 * 1024 * 1024
 
 /** 从 OpenAI 兼容响应体提取图片 URL（b64_json → data URL，其次 url）。 */
 function collectImageUrls(data: unknown): string[] {

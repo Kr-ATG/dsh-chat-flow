@@ -21,7 +21,7 @@
 | **对话流卡片** | 总结卡头部 chip 含 Git 操作计数（本轮 git 调用次数，悬停看动词摘要）；头部单色分层（标签弱化 + 数值加强 + 状态圆点，仅对勾留一笔语义绿，hover 上浮）；全卡片去底色（1px 超细发丝边条 + 轻阴影，深浅主题各配色） | 回合中间的已完成片段 = 轻量步骤卡（无框）；回合最终回复 = 总结卡（「本轮完成」徽章 + 用时/步骤/工具/思考统计 chip；中断回合变琥珀色「已中断」）。**卡片只在回合结束后出现**，流式期间一律平铺，流式输出不被卡片吞掉 |
 | **共享活动抽屉** | 浏览器侧居中弹窗（mask + 面板，z-index 9990/9991），头部分区页签（思考 N / 工具 N，两边都有内容时可切，行点击只决定初始分区），思考按语义分类成组（实施编写/原因排查/验证确认/规划方案/决策权衡/总结汇报/探索分析），工具调用按树展开；Esc/点空白关闭 |
 | **可交互卡片** | 正文里的 proto-tabs 围栏渲染成可点击的 Tab 卡片（信息分层 pill / 可展开卡片 / AI 流光三种形态，缺省 pill）；解析失败自动回退原文，绝不崩卡 |
-| **对话截图** | assistant 消息操作栏相机按钮 → 截图面板（范围本条回复/这一轮/整段会话 × 版式电脑/手机 × 画质 1080P/2K/4K × 画幅 × 四套主题；标题/徽章可编辑；预览后保存/复制/下载/打开目录；「元素删除」编辑模式点击页面删元素再重新生成）。正文里提到的本地 HTML 会自动内嵌进截图（走 file:// iframe，同目录样式图片照常加载，只嵌页面本身，最多 3 张）；host 端常驻无头浏览器渲染卡片（markdown-it + shiki + mermaid 真图），保存目录 `~/.dsh/storages/dsh-chat-flow-screenshot` |
+| **对话截图** | assistant 消息操作栏相机按钮 → 截图面板（范围本条回复/这一轮/整段会话 × 版式电脑/手机 × 画质 1080P/2K/4K × 画幅 × 五套主题（浅/深/玻璃/玻璃深/阅读版）；标题/徽章可编辑；预览后保存/复制/下载/打开目录；「元素删除」编辑模式点击页面删元素再重新生成）。正文里提到的本地 HTML 会自动内嵌进截图（走 file:// iframe，同目录样式图片照常加载，只嵌页面本身，最多 3 张）；host 端常驻无头浏览器渲染卡片（markdown-it + shiki + mermaid 真图），保存目录 `~/.dsh/storages/dsh-chat-flow-screenshot` |
 | **会话头部视图标签** | 官方把「对话 / 轨迹」两个视图标签独占标题下方一整行（header 76px）；本插件把 header 改成单行 flex，标签钉到右上角与标题同行（header 收回 45px，省下的 31px 还给正文），下划线贴字、hover 从中心展开、选中常驻蓝条。纯 CSS 注入，选择器只用 `header` / `role=tablist` / CSS Module 的 `_titleRow`、`_tab` 后缀，不依赖构建 hash 前缀；单视图（无 tablist）时 `:has` 不匹配，零影响 |
 | **download 下载工具** | host 半身注册 wire 工具 `download`（url / dest / overwrite，Node 流式写盘，优先于用 pwsh 跑 curl）+ 进度路由 `GET /api/chat-flow/download/progress?callId=`；client 半身 keyed `tool.call.toolview`（key=download）渲染实时进度条（已收/总量、速度、ETA，确定填充+辉光游标/不定长游标滑动两态），完成态读结果 meta 显示落盘路径 + 大小 + 用时 + 「打开」按钮。进度按 callId 严格对齐（run_code 子调用 `<parent>:code:<n>` 两端同源），对话流 chip 与抽屉行同步显示百分比；缺省保存 `~/.dsh/storages/dsh-chat-flow-downloads/` |
 
@@ -148,7 +148,7 @@ src/
 │   ├── index.ts                     — /api/chat-flow/screenshot 路由（render/save/reveal/image/diagnose）
 │   ├── card.ts                      — 卡片 HTML 组装（页头/标题/正文/页脚/鲸鱼署名）
 │   ├── markdown.ts                  — markdown-it + shiki + mermaid 围栏识别
-│   ├── theme.ts                     — 四套主题 CSS 编译（浅/深/玻璃/玻璃深）
+│   ├── theme.ts                     — 五套主题 CSS 编译（浅/深/玻璃/玻璃深/阅读版）
 │   ├── presets.ts                   — 设备×画质档位（host/client 共用纯数据）
 │   ├── renderer.ts                  — 常驻无头浏览器 + 串行渲染队列 + 长图分段拼接
 │   └── stitch.ts                    — PNG 拼接（零依赖手写 filter/CRC32）

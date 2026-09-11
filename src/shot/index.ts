@@ -202,7 +202,7 @@ function parseMessages(input: unknown): ShotMessage[] {
 
 /** 规整主题（未知值回退浅色）。 */
 function parseTheme(input: unknown): ShotTheme {
-  return input === 'dark' || input === 'glass' || input === 'glass-dark' ? input : 'light'
+  return input === 'dark' || input === 'glass' || input === 'glass-dark' || input === 'reader' ? input : 'light'
 }
 
 /** 文件名安全化（用标题做文件名，去掉路径与非法字符）。 */

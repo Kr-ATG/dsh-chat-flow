@@ -10,7 +10,7 @@ import type { ShotAspect, ShotDevice, ShotQuality } from '../../shot/presets.ts'
 const ROUTE = '/api/chat-flow/screenshot'
 
 /** 截图主题（与 host 端 ShotTheme 对齐）。 */
-export type ShotTheme = 'light' | 'dark' | 'glass' | 'glass-dark'
+export type ShotTheme = 'light' | 'dark' | 'glass' | 'glass-dark' | 'reader'
 
 /** 渲染结果。 */
 export interface RenderResult {
