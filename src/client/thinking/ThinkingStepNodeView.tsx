@@ -79,8 +79,9 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: 
   const elapsed = thinkingStart !== undefined ? Math.max(0, now - thinkingStart) : undefined
   // 抽屉开合态：与官方 turn-process 行同行（data-open 把 chevron 转下来）。
   const drawerOpen = useDrawerOpen(turn)
-  // 官方 control 行接管时（紧凑模式 closed 回合）本行让位：control 影子行是
-  // 唯一的入口（running 与接管互斥，接管要求回合 closed，见工具入口同注释）。
+  // 官方 control 行存在时（紧凑模式 closed 回合）本行让位：官方行保持原生，
+  // 抽屉入口搬到总结卡的思考 chip（见 flow-card.tsx）。running 与官方 control
+  // 互斥（control foldable 要求回合 closed），见工具入口同注释。
   const controlActive = turnProcess?.foldable === true
   // 无工具调用的回合只剩这一行：文案取官方 turn-process 的「已思考」。
   const label = running
@@ -407,6 +408,11 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     labels,
     t,
   })
+  // 总结卡工具/思考 chip → 活动抽屉（官方 turn-process 行保持原生，
+  // 抽屉入口搬到这里；气泡锚在被点的 chip 上）。
+  const openDrawerFromCard = useCallback((mode: 'tools' | 'reasoning', el: HTMLElement) => {
+    if (turnNumber !== undefined) activityStore().open(turnNumber, mode, { el })
+  }, [turnNumber])
   if (!hasVisible && chip === undefined && gallery === undefined) return null
 
   return (
@@ -414,7 +420,7 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
       <div className="dtt__assistant-body">
         {chip}
         {rendered.length > 0 && (variant !== undefined
-          ? <FlowCard variant={variant} meta={cardMeta} interrupted={interrupted}>{rendered}{gallery}</FlowCard>
+          ? <FlowCard variant={variant} meta={cardMeta} interrupted={interrupted} turn={turnNumber} onOpenDrawer={openDrawerFromCard}>{rendered}{gallery}</FlowCard>
           : <>{rendered}{gallery}</>)}
         {rendered.length === 0 && gallery}
         {interrupted && <span className="dtt__stopped">{t('message.stopped')}</span>}

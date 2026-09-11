@@ -196,6 +196,13 @@ const CSS = `
   box-shadow: 0 6px 16px rgba(15,17,21,.1);
 }
 
+/* 抽屉入口 chip 是 button：复位 UA 样式，其余沿用 chip 外观 + 手型。 */
+button.dtt__card-chip {
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
 .dtt__card-chip-value {
   color: var(--dsw-alias-label-primary);
   font-variant-numeric: tabular-nums;

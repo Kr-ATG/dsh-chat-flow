@@ -30,7 +30,6 @@ import { injectDownloadStyles } from './download/styles.ts'
 import { DownloadCard } from './download/DownloadCard.tsx'
 import { mountActivityDrawer } from './tool-summary/activity-drawer.tsx'
 import { ToolGroupNodeView } from './tool-summary/ToolGroupNodeView.tsx'
-import { TurnProcessShadowView } from './tool-summary/TurnProcessShadowView.tsx'
 import { ThinkingStepNodeView } from './thinking/ThinkingStepNodeView.tsx'
 import { applyMessageScreenshot } from './shot/index.tsx'
 
@@ -60,17 +59,10 @@ export function apply(ctx: ClientContext): void {
   // 对话截图：assistant 消息操作栏相机按钮 → 截图面板（独立 id，无副作用）。
   guarded(ctx, 'screenshot seat', () => { applyMessageScreenshot(ctx) })
 
-  // 官方 control 行影子：紧凑模式 closed 回合的 control 位只留一行（正文进
-  // 抽屉、chevron 走官方折叠），成员槽位让位，避免出现两行一样的。无 control
-  // 时成员槽位回退到自有行。
-  guarded(ctx, 'turn-process seat', () => {
-    ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
-      name: 'conversation.chat.node',
-      key: 'turn-process',
-      priority: -100,
-      locale: 'chat',
-    }, TurnProcessShadowView))
-  })
+  // 官方 turn-process 行：保持原生、不接管（点击即官方内联展开）。成员槽位
+  // （工具入口/思考 chip）在官方 control 存在时让位、只登记抽屉数据；活动
+  // 抽屉入口 = 总结卡的工具/思考 chip（紧凑 closed 回合）+ 成员自有行
+  // （流式/非紧凑模式）。
 
   // 工具调用聚合：替换内置 tool-call 渲染器，每回合一枚 chip + 抽屉。
   guarded(ctx, 'tool-call seat', () => {

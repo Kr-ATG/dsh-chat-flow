@@ -7,6 +7,8 @@
  *  - **总结卡**（`variant="reply"`）：回合最终回复。带头部（完成标记 + 本轮
  *    统计 chip：用时 / 步数 / 工具次数 / 思考次数）与顶部高光，正文用官方
  *    MarkdownText 渲染（流式期不包卡，见 thinking/ThinkingStepNodeView）。
+ *    其中工具 / 思考 chip 是可点击的活动抽屉入口（官方 turn-process 行保持
+ *    原生、不再接管，见 tool-summary/ToolGroupNodeView 头注释）。
  *
  * 统计数字全部来自已有的会话投影（TurnLocation 的 start/end 事件、本回合的
  * assistant step 与 tool-call 节点数），不新增任何轮询或订阅。
@@ -60,11 +62,40 @@ function Chip({ label, value, kind, title }: { readonly label: string; readonly 
   )
 }
 
+/** 活动抽屉入口 chip：点击按回合打开工具/思考分区（气泡锚在 chip 上）。 */
+function DrawerChip({ turn, mode, label, value, title, onOpen }: {
+  readonly turn: number
+  readonly mode: 'tools' | 'reasoning'
+  readonly label: string
+  readonly value: string
+  readonly title: string
+  readonly onOpen: (mode: 'tools' | 'reasoning', el: HTMLElement) => void
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      className="dtt__card-chip"
+      data-kind={mode === 'tools' ? 'tools' : 'thinking'}
+      data-turn-process={turn}
+      title={title}
+      aria-label={title}
+      onClick={(event) => { event.stopPropagation(); onOpen(mode, event.currentTarget) }}
+    >
+      <span className="dtt__card-chip-label">{label}</span>
+      <span className="dtt__card-chip-value">{value}</span>
+    </button>
+  )
+}
+
 /** 卡片外壳：step 轻量、reply 带总结头部。 */
-export function FlowCard({ variant, meta, interrupted, children }: {
+export function FlowCard({ variant, meta, interrupted, turn, onOpenDrawer, children }: {
   readonly variant: 'step' | 'reply'
   readonly meta?: ReplyCardMeta | undefined
   readonly interrupted?: boolean | undefined
+  /** 回合号：给了 + onOpenDrawer 才渲染工具/思考入口 chip。 */
+  readonly turn?: number | undefined
+  /** 活动抽屉入口回调（chip 被点时，气泡锚在 chip 元素上）。 */
+  readonly onOpenDrawer?: ((mode: 'tools' | 'reasoning', el: HTMLElement) => void) | undefined
   readonly children: ReactNode
 }): JSX.Element {
   if (variant === 'step') {
@@ -72,8 +103,13 @@ export function FlowCard({ variant, meta, interrupted, children }: {
   }
   const duration = meta?.durationMs !== undefined && meta.durationMs > 0 ? formatSpan(meta.durationMs) : ''
   const steps = meta?.steps ?? 0
+  const tools = meta?.tools ?? 0
+  const thinking = meta?.thinking ?? 0
   const git = meta?.git
   const gitDetail = meta?.gitDetail
+  const drawerEntry = turn !== undefined && onOpenDrawer !== undefined
+    ? { turn, onOpen: onOpenDrawer } as const
+    : undefined
   return (
     <div
       className="dtt__card dtt__card--reply"
@@ -87,6 +123,14 @@ export function FlowCard({ variant, meta, interrupted, children }: {
         <span className="dtt__card-chips">
           {duration !== '' && <Chip label="用时" value={duration} kind="time" />}
           {steps > 1 && <Chip label="步骤" value={String(steps)} kind="steps" />}
+          {drawerEntry !== undefined && tools > 0 && (
+            <DrawerChip turn={drawerEntry.turn} mode="tools" label="工具" value={String(tools)}
+              title={`查看本轮 ${tools} 次工具调用`} onOpen={drawerEntry.onOpen} />
+          )}
+          {drawerEntry !== undefined && thinking > 0 && (
+            <DrawerChip turn={drawerEntry.turn} mode="reasoning" label="思考" value={String(thinking)}
+              title={`查看本轮 ${thinking} 段思考`} onOpen={drawerEntry.onOpen} />
+          )}
           {git !== undefined && git > 0 && <Chip label="Git" value={String(git)} kind="git" title={gitDetail !== undefined && gitDetail !== '' ? `Git 操作 ${git} 次（${gitDetail}）` : `Git 操作 ${git} 次`} />}
         </span>
       </div>

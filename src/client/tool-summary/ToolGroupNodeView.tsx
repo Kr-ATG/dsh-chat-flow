@@ -21,11 +21,38 @@ import { classifyKind, type ActivityKind } from './activity-kind.ts'
 import { KindIcon } from './icons.tsx'
 import { useNow } from './use-now.ts'
 import { activityStore, useDrawerOpen, type ActivityHandlers, type ActivityStore } from './activity-drawer.tsx'
-import { useTurnActivityCounts } from './TurnProcessShadowView.tsx'
 import { LiveDownloadCard } from '../download/DownloadCard.tsx'
 import { downloadPercent, useDownloadState } from '../download/api.ts'
 
 const NS = 'dts'
+
+/** Per-turn activity counts (tool-call nodes + reasoning blocks, drawer 口径一致）. */
+export function useTurnActivityCounts(turn: number, useChat: ChatNodeViewProps<'tool-call'>['useChat']): {
+  readonly tools: number
+  readonly reasoning: number
+  /** 本轮仍有 assistant-step 在流式输出。 */
+  readonly streaming: boolean
+} {
+  return useChat((snapshot) => {
+    let tools = 0
+    let reasoning = 0
+    let streaming = false
+    for (const key of snapshot.locations.getTurn(turn)) {
+      const candidate = snapshot.nodes.get(key)
+      if (candidate === undefined) continue
+      if (candidate.kind === 'tool-call') {
+        tools += 1
+      } else if (candidate.kind === 'assistant-step') {
+        const step = candidate as ChatNode<'assistant-step'>
+        if (step.data.status === 'running') streaming = true
+        for (const block of step.data.blocks) {
+          if (block.kind === 'reasoning') reasoning += 1
+        }
+      }
+    }
+    return { tools, reasoning, streaming }
+  })
+}
 
 const EMPTY: readonly ChatNode<'tool-call'>[] = []
 
@@ -217,10 +244,11 @@ const ToolEntry = memo(function ToolEntry({
   const stats = useMemo(() => computeStats(nodes.map(node => node.data.root)), [nodes])
   const activity = useTurnActivityCounts(turn, useChat)
   const running = stats.running > 0
-  // 官方 control 行接管时（紧凑模式 closed 回合）本行让位：只登记抽屉数据，
-  // 不占行（control 影子行是唯一的入口）。running 与接管互斥（接管要求回合
-  // closed，运行时 control 不 foldable），因此直接整体返回 null 即可，实时卡
-  // 片只在运行时出现、不受影响。
+  // 官方 control 行存在时（紧凑模式 closed 回合）本行让位：官方行保持原生
+  // （点击即官方内联展开，不再接管），只登记抽屉数据、不占行；抽屉入口搬到
+  // 总结卡的工具/思考 chip（见 flow-card.tsx）。running 与官方 control 互斥
+  // （control foldable 要求回合 closed，运行时 control 不 foldable），因此
+  // 直接整体返回 null 即可，实时卡片只在运行时出现、不受影响。
   const controlActive = turnProcess?.foldable === true
   // 抽屉开合态：官方 turn-process 行靠 data-open 把 chevron 转下来，这里同行。
   const drawerOpen = useDrawerOpen(turn)
