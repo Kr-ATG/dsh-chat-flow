@@ -14,7 +14,7 @@
  */
 import type { ReactNode } from 'react'
 
-/** 本轮统计（全部可缺省：拿不到就不显示对应 chip）。 */
+/** 本轮统计（全部可缺省）。 */
 export interface ReplyCardMeta {
   /** 本回合总耗时（ms）。 */
   readonly durationMs?: number | undefined
@@ -30,39 +30,8 @@ export interface ReplyCardMeta {
   readonly gitDetail?: string | undefined
 }
 
-/** 紧凑时长：1.2s / 45s / 2m30s。 */
-function formatSpan(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return ''
-  const seconds = ms / 1000
-  if (seconds < 10) return `${Math.round(seconds * 10) / 10}s`
-  if (seconds < 60) return `${Math.round(seconds)}s`
-  const minutes = Math.floor(seconds / 60)
-  const rest = Math.round(seconds - minutes * 60)
-  if (minutes < 60) return `${minutes}m${rest.toString().padStart(2, '0')}s`
-  const hours = Math.floor(minutes / 60)
-  return `${hours}h${(minutes % 60).toString().padStart(2, '0')}m`
-}
-
-function CheckIcon(): JSX.Element {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
-      <path d="M2.5 6.4 4.7 8.6 9.5 3.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-/** 一枚统计 chip。 */
-function Chip({ label, value, kind, title }: { readonly label: string; readonly value: string; readonly kind: string; readonly title?: string | undefined }): JSX.Element {
-  return (
-    <span className="dtt__card-chip" data-kind={kind} title={title ?? `${label} ${value}`}>
-      <span className="dtt__card-chip-label">{label}</span>
-      <span className="dtt__card-chip-value">{value}</span>
-    </span>
-  )
-}
-
-/** 卡片外壳：step 轻量、reply 带总结头部。 */
-export function FlowCard({ variant, meta, interrupted, children }: {
+/** 卡片外壳：step 轻量竖线卡、reply 总结卡。正常完成仅保留纯净卡片外壳；仅在中断时展示「已中断」头。 */
+export function FlowCard({ variant, interrupted, children }: {
   readonly variant: 'step' | 'reply'
   readonly meta?: ReplyCardMeta | undefined
   readonly interrupted?: boolean | undefined
@@ -71,26 +40,18 @@ export function FlowCard({ variant, meta, interrupted, children }: {
   if (variant === 'step') {
     return <div className="dtt__card dtt__card--step">{children}</div>
   }
-  const duration = meta?.durationMs !== undefined && meta.durationMs > 0 ? formatSpan(meta.durationMs) : ''
-  const steps = meta?.steps ?? 0
-  const git = meta?.git
-  const gitDetail = meta?.gitDetail
   return (
     <div
       className="dtt__card dtt__card--reply"
       data-interrupted={interrupted === true ? '' : undefined}
     >
-      <div className="dtt__card-head">
-        <span className="dtt__card-badge" data-interrupted={interrupted === true ? '' : undefined}>
-          <CheckIcon />
-          {interrupted === true ? '已中断' : '本轮完成'}
-        </span>
-        <span className="dtt__card-chips">
-          {duration !== '' && <Chip label="用时" value={duration} kind="time" />}
-          {steps > 1 && <Chip label="步骤" value={String(steps)} kind="steps" />}
-          {git !== undefined && git > 0 && <Chip label="Git" value={String(git)} kind="git" title={gitDetail !== undefined && gitDetail !== '' ? `Git 操作 ${git} 次（${gitDetail}）` : `Git 操作 ${git} 次`} />}
-        </span>
-      </div>
+      {interrupted === true && (
+        <div className="dtt__card-head">
+          <span className="dtt__card-badge" data-interrupted="">
+            已中断
+          </span>
+        </div>
+      )}
       <div className="dtt__card-body">{children}</div>
     </div>
   )

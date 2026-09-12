@@ -45,7 +45,29 @@ export function argsPath(argsRaw: string): string | undefined {
     const parsed: unknown = JSON.parse(argsRaw)
     if (typeof parsed !== 'object' || parsed === null) return undefined
     const record = parsed as Record<string, unknown>
-    for (const key of ['file_path', 'path', 'dir', 'url']) {
+    for (const key of [
+      'TargetFile', 'target_file', 'targetFile',
+      'file_path', 'filePath', 'path',
+      'AbsolutePath', 'absolute_path',
+      'dir', 'url',
+    ]) {
+      const value = record[key]
+      if (typeof value === 'string' && value !== '') return value
+    }
+    return undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Extract command string from tool args (run_command/bash/cmd/etc). */
+export function argsCommand(argsRaw: string): string | undefined {
+  if (argsRaw === '') return undefined
+  try {
+    const parsed: unknown = JSON.parse(argsRaw)
+    if (typeof parsed !== 'object' || parsed === null) return undefined
+    const record = parsed as Record<string, unknown>
+    for (const key of ['CommandLine', 'command_line', 'command', 'cmd', 'script']) {
       const value = record[key]
       if (typeof value === 'string' && value !== '') return value
     }
@@ -121,9 +143,13 @@ export function gitVerbOf(block: ToolCallBlock): string | undefined {
 
 /** Shorten a path against the session cwd (display only). */
 export function shortenPath(path: string, cwd: string | undefined): string {
-  if (cwd !== undefined && cwd !== '' && path.startsWith(cwd)) {
-    const rest = path.slice(cwd.length).replace(/^[\\/]+/, '')
-    return rest === '' ? path : rest
+  if (cwd !== undefined && cwd !== '') {
+    const normPath = path.replace(/\\/g, '/')
+    const normCwd = cwd.replace(/\\/g, '/').replace(/\/+$/, '')
+    if (normPath.toLowerCase().startsWith(normCwd.toLowerCase())) {
+      const rest = normPath.slice(normCwd.length).replace(/^\/+/, '')
+      return rest === '' ? path : rest
+    }
   }
   return path
 }
@@ -243,3 +269,4 @@ export function parseDownload(block: ToolCallBlock): DownloadInfo | undefined {
 function joinDisplay(dir: string, file: string): string {
   return dir.replace(/[\\/]+$/, '') + '\\' + file
 }
+

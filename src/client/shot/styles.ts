@@ -89,7 +89,7 @@ const SHEET = `
 .tsh-stage::-webkit-scrollbar{width:8px;height:8px}
 .tsh-stage::-webkit-scrollbar-thumb{background:var(--dsw-alias-scrollbar-bg-l2,#333);border-radius:4px}
 .tsh-canvas{display:flex;align-items:center;justify-content:center;min-height:100%;width:100%}
-.tsh-img{max-width:100%;height:auto;display:block;border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.28)}
+.tsh-img{max-width:100%;height:auto;display:block;border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.28);margin:auto}
 .tsh-spinner{width:26px;height:26px;border-radius:50%;border:2px solid var(--dsw-alias-border-l2,#333);border-top-color:var(--dsw-alias-state-business-primary,#4176e6);animation:tsh-spin .8s linear infinite}
 @keyframes tsh-spin{to{transform:rotate(360deg)}}
 .tsh-hint{display:flex;flex-direction:column;align-items:center;gap:10px;font-size:13px;color:var(--dsw-alias-label-tertiary,#888)}
@@ -98,18 +98,15 @@ const SHEET = `
 /* ── 元素删除编辑模式 ── */
 /* 编辑中：选项条整体减淡并禁止交互（改了选项会脱离编辑，需要先退出重渲染）。 */
 .tsh-panel[data-editing] .tsh-bar{opacity:.55;pointer-events:none}
-/* 编辑工具条：吸附在预览台顶部，滑入动画（减少动态偏好时直接显示）。 */
-.tsh-edit-bar{position:sticky;top:-18px;z-index:5;flex:none;box-sizing:border-box;width:100%;display:flex;align-items:center;gap:10px;margin:-18px 0 14px;padding:9px 14px;background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2,#16181d));border-bottom:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));animation:tsh-editbar-in 180ms ease}
+/* 编辑工具条：位于选项条下方、预览台上方，滑入动画。 */
+.tsh-edit-bar{flex:none;box-sizing:border-box;width:100%;display:flex;align-items:center;gap:12px;padding:9px 16px;background:var(--dsw-specific-menu,var(--dsw-alias-bg-layer-2,#16181d));border-bottom:1px solid var(--dsw-alias-border-l1,rgba(255,255,255,.08));animation:tsh-editbar-in 180ms ease}
 @keyframes tsh-editbar-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 .tsh-edit-hint{font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary,#bbb);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tsh-edit-count{flex:none;font-size:12px;color:var(--dsw-alias-label-tertiary,#888);white-space:nowrap}
-.tsh-edit-count[data-n]{color:var(--dsw-alias-state-error-primary,#e5484d)}
+.tsh-edit-count[data-n]{color:var(--dsw-alias-state-error-primary,#e5484d);font-weight:600}
 .tsh-edit-spacer{flex:1}
-/* 编辑画布：iframe 内是真实宽度的页面，容器负责横纵滚动。 */
-.tsh-editor{flex:none;box-sizing:border-box;width:100%;overflow:auto;border:1px solid var(--dsw-alias-border-l2,#333);border-radius:10px;background:var(--dsw-alias-bg-module-platform,rgba(255,255,255,.02));scrollbar-width:thin}
-.tsh-editor::-webkit-scrollbar{width:8px;height:8px}
-.tsh-editor::-webkit-scrollbar-thumb{background:var(--dsw-alias-scrollbar-bg-l2,#333);border-radius:4px}
-.tsh-frame{display:block;box-sizing:border-box;width:100%;height:1600px;border:none;background:#fff}
+/* 编辑画布：iframe 与普通预览图保持完全相同的尺寸、阴影、圆角与居中排版。 */
+.tsh-frame{display:block;box-sizing:border-box;border:none;border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.28);background:transparent;margin:auto;flex:none}
 .tsh-frame:focus{outline:none}
 
 /* ── 底栏 ── */

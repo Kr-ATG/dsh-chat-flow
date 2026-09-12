@@ -249,8 +249,8 @@ export function buildCardCss(theme: ShotTheme, width: number, minHeight: number)
   return `:root{${vars};--w:${width}px;--pad:${m.pad}px;--radius:${m.radius}px}
 *{margin:0;padding:0;box-sizing:border-box}
 html{font-size:16px;-webkit-text-size-adjust:100%}
-body{${canvas};padding:${m.outer}px ${m.outer}px ${Math.round(m.outer * 1.2)}px;color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
-.card{width:var(--w);min-height:${minHeight}px;margin:0 auto;display:flex;flex-direction:column;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+body{${canvas};min-height:100vh;box-sizing:border-box;padding:${m.outer}px ${m.outer}px ${Math.round(m.outer * 1.2)}px;display:flex;flex-direction:column;align-items:center;color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.card{width:var(--w);min-height:${minHeight}px;margin:auto;display:flex;flex-direction:column;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
 /* 顶部强调色导轨 */
 .rail{flex:none;height:3px;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 25%,transparent) 62%,transparent)}
 /* 页头：徽标块 + 品牌 + 角色标签 + 右侧时间 */

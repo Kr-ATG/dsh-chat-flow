@@ -243,15 +243,9 @@ async function handleRender(req: IncomingMessage, res: ServerResponse): Promise<
   const viewportWidth = preset.cssWidth + canvasPad(preset.cssWidth) * 2
   // 相对路径的基准（会话工作目录）；客户端没带就退回进程 cwd。
   const cwd = typeof body.cwd === 'string' && body.cwd !== '' ? body.cwd : undefined
-  // 固定画幅（16:9 等）：目标视口高 = 视口宽 / 比例；卡片 min-height 同步
-  // 反推（扣除画布上下留白），短内容时由背景精确补满比例。内容更高时渲染
-  // 器会自动加高成长图——保内容完整优先于死守比例，aspectLocked 会告知前端。
+  // 画幅比例（16:9、4:3、1:1、9:16、3:4 等，null 为跟随内容的自适应长图）
   const ratio = shotAspectRatio(body.aspect)
-  const padY = ratio !== null ? canvasPadY(preset.cssWidth) : null
-  const targetHeight = ratio !== null ? Math.round(viewportWidth / ratio) : preset.minHeight
-  const cardMinHeight = padY !== null
-    ? Math.max(120, targetHeight - padY.top - padY.bottom)
-    : preset.minHeight
+  const cardMinHeight = ratio !== null ? 160 : Math.min(preset.minHeight, 320)
   try {
     // 编辑模式：直接用前端传来的 HTML（已由面板删除过元素）；否则组装卡片。
     // 正文提到的本地 HTML 先探测高度再内嵌（每张要多导航一次）。
@@ -270,7 +264,8 @@ async function handleRender(req: IncomingMessage, res: ServerResponse): Promise<
     const base64 = await renderPng({
       html,
       width: viewportWidth,
-      height: targetHeight,
+      height: preset.minHeight,
+      aspectRatio: ratio,
       scale: preset.scale,
       needsMermaid: editedHtml === null && html.includes('class="mermaid"'),
     })
@@ -278,12 +273,14 @@ async function handleRender(req: IncomingMessage, res: ServerResponse): Promise<
     const size = pngSize(png)
     const id = `shot-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
     cachePut(id, { png, ...size, title: typeof body.title === 'string' ? body.title : '', at: Date.now() })
+    const actualRatio = size.width / size.height
+    const aspectLocked = ratio === null ? true : Math.abs(actualRatio - ratio) / ratio < 0.05
     json(res, 200, {
       ok: true,
       id,
       imageUrl: `${ROUTE}/image?id=${encodeURIComponent(id)}`,
       bytes: png.length,
-      aspectLocked: size.height === targetHeight * preset.scale,
+      aspectLocked,
       // 回传本次渲染用的完整 HTML，面板的「元素删除」编辑模式从这里取页面。
       html,
       ...size,

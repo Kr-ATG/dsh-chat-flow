@@ -31,16 +31,19 @@ import { collectMessages, type ShotMessage, type ShotRange } from './collect.ts'
 import { ShotPanel } from './Panel.tsx'
 import { cls, ensureStyles } from './styles.ts'
 
-/** 相机图标（16px 线性，与操作栏其他图标同风格）。 */
+/** 相机图标（16px 线性精致镂空，与操作栏复制/分支图标同规格）。 */
 function CameraIcon(): JSX.Element {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path
-        fill="currentColor"
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M9.9 1.8h-3.8l-1.3 2H3a2 2 0 0 0-2 2v6.4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5.8a2 2 0 0 0-2-2h-1.8l-1.3-2zM8 9.6a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4z"
+        d="M9.75 2.5H6.25L4.85 4.5H3C2.17 4.5 1.5 5.17 1.5 6V12.5C1.5 13.33 2.17 14 3 14H13C13.83 14 14.5 13.33 14.5 12.5V6C14.5 5.17 13.83 4.5 13 4.5H11.15L9.75 2.5Z"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
+      <circle cx="8" cy="9.25" r="2.25" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="12" cy="6.75" r="0.6" fill="currentColor" />
     </svg>
   )
 }

@@ -15,10 +15,16 @@
  * 时长 + 实时文字滚动预览），点击打开共享活动抽屉看全文；同一回合其余步骤
  * 只渲染自己的正文。think 块一律不内联展示（避免长思考链拖拽滚动）。
  */
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Fragment } from 'react'
-import { IconChevronDownOutline14, JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  DisclosureRow,
+  IconChevronDownOutline14,
+  IconThinkOutline14,
+  JsonBlock,
+  MarkdownText,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   AssistantChatData, ChatNode, ChatNodeViewProps, ChatViewSlotProps, TurnTailOwnerProps,
@@ -43,6 +49,108 @@ import { useGeneratedImages } from '../generated-images/use-generated-images.ts'
 const EMPTY_STEPS: readonly ChatNode<'assistant-step'>[] = []
 const EMPTY_TOOLS: readonly ChatNode<'tool-call'>[] = []
 
+function firstLine(text: string): string {
+  const newline = text.indexOf('\n')
+  return newline === -1 ? text : text.slice(0, newline)
+}
+
+function latestLine(text: string): string {
+  const visible = text.trimEnd()
+  const newline = visible.lastIndexOf('\n')
+  return newline === -1 ? visible : visible.slice(newline + 1)
+}
+
+/** 官方原生思考行组件（思考灯泡 + 思考摘要 + 点击折叠展开） */
+export const ReasoningRow = memo(function ReasoningRow({
+  text,
+  running,
+  t,
+}: {
+  readonly text: string
+  readonly running: boolean
+  readonly t: ChatViewSlotProps['t']
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const summary = (running ? latestLine(text) : firstLine(text)).replaceAll('**', '')
+
+  return (
+    <div
+      className="dtt__reasoning-root"
+      data-variant="think"
+      data-state={running ? 'running' : 'ok'}
+      data-expanded={expanded || undefined}
+    >
+      <DisclosureRow
+        rowClassName="dtt__reasoning-row"
+        leadingClassName="dtt__reasoning-leading"
+        titleClassName="dtt__reasoning-title"
+        chevronClassName="dtt__reasoning-chevron"
+        icon={<IconThinkOutline14 size={14} />}
+        title={t('message.think')}
+        open={expanded}
+        expandable={true}
+        expandOnRowClick={true}
+        onToggle={() => { setExpanded(v => !v) }}
+        collapsedContent={
+          <>
+            <span className="dtt__reasoning-sep" aria-hidden="true" />
+            <span className="dtt__reasoning-summary" data-follow-end={running || undefined}>
+              <span className="dtt__reasoning-summary-text">{summary}</span>
+            </span>
+          </>
+        }
+      >
+        <div className="dtt__reasoning-body">
+          {text}
+        </div>
+      </DisclosureRow>
+    </div>
+  )
+})
+
+const NOOP = (): void => {}
+
+/** 官方同款 searchable-hidden hook：折叠隐藏但在页面 Ctrl+F 搜索到内容时自动触发展开。 */
+function useSearchableHidden(hidden: boolean | undefined, reveal: () => void) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el === null) return
+    if (hidden && el.contains(el.ownerDocument?.activeElement ?? null)) {
+      reveal()
+      return
+    }
+    if (hidden) el.setAttribute('hidden', 'until-found')
+    else el.removeAttribute('hidden')
+  }, [hidden, reveal])
+  useEffect(() => {
+    const el = ref.current
+    if (el === null) return
+    el.addEventListener('beforematch', reveal)
+    return () => {
+      el.removeEventListener('beforematch', reveal)
+    }
+  }, [reveal])
+  return ref
+}
+
+function ProcessReasoning({
+  hidden,
+  reveal,
+  children,
+}: {
+  readonly hidden?: boolean | undefined
+  readonly reveal?: (() => void) | undefined
+  readonly children: ReactNode
+}) {
+  const ref = useSearchableHidden(hidden, reveal ?? NOOP)
+  return (
+    <div ref={ref} data-turn-process-inline={hidden || undefined}>
+      {children}
+    </div>
+  )
+}
+
 /** Localized copy adapters for Cordis-free Markdown primitives（官方同款）。 */
 function markdownLabelsFrom(t: ChatViewSlotProps['t']): MarkdownLabels {
   return {
@@ -58,102 +166,26 @@ interface ReasoningItem {
   readonly running: boolean
 }
 
-/**
- * Turn-level reasoning ENTRY: instead of rendering reasoning inline (and
- * fighting the transcript scroll), one compact chip per turn opens the shared
- * activity drawer with the full reasoning material. While the turn is still
- * thinking the chip labels itself "思考中…".
- */
-function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: {
-  items: readonly ReasoningItem[]
-  running: boolean
-  turn: number
-  thinkingStart?: number | undefined
-  t: ChatViewSlotProps['t']
-  turnProcess?: { readonly foldable: boolean } | undefined
-}) {
-  const store = activityStore()
-  // 思考材料登记挪到父组件（本轮有工具调用时 chip 不挂载、不占行，
-  // 抽屉里仍要有思考分区）。
-  const now = useNow(running)
-  const elapsed = thinkingStart !== undefined ? Math.max(0, now - thinkingStart) : undefined
-  // 抽屉开合态：与 control 影子行同行（data-open 把 chevron 转下来）。
-  const drawerOpen = useDrawerOpen(turn)
-  // 官方 control 行接管时（紧凑模式 closed 回合）本行让位：control 影子行是
-  // 唯一的入口（点正文进抽屉思考分区、点 chevron 官方展开）。running 与接管
-  // 互斥（接管要求回合 closed），见工具入口同注释。
-  const controlActive = turnProcess?.foldable === true
-  // 无工具调用的回合只剩这一行：文案取官方 turn-process 的「已思考」。
-  const label = running
-    ? elapsed !== undefined ? `思考中 · ${formatDuration(elapsed)}` : '思考中…'
-    : t('message.turnProcess.thoughtForAWhile')
-  // 当前正在输出的思考文字（最后一个仍 running 的 reasoning 文本）。
-  const liveText = useMemo(() => {
-    if (!running) return ''
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index]
-      if (item !== undefined && item.running) return item.text
-    }
-    return ''
-  }, [items, running])
-  // 跟随最新：思考文字增长时把预览框滚到底——但仅当读者停在底部。
-  // 向上翻阅即停止自动跟随（想看哪里自己滚），滚回底部（≤24px）自动恢复；
-  // 阈值与 ChatView 的 FOLLOW_THRESHOLD 一致。
-  const liveRef = useRef<HTMLDivElement | null>(null)
-  const livePinnedRef = useRef(true)
-  const onLiveScroll = useCallback((event: React.UIEvent<HTMLDivElement>): void => {
-    const el = event.currentTarget
-    livePinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 24
-  }, [])
-  useEffect(() => {
-    if (!running) return
-    const el = liveRef.current
-    if (el === null) return
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-    // 双保险：滚动事件尚未派发的一帧内，几何距离也能拦住一次误跟随。
-    if (!livePinnedRef.current && distance > 24) return
-    el.scrollTop = el.scrollHeight
-  }, [liveText, running])
-
-  if (controlActive) return null
-  return (
-    <div className="dtt__reasoning" data-running={running || undefined}>
-      <button
-        type="button"
-        className="dtt__process"
-        data-open={drawerOpen || undefined}
-        data-running={running || undefined}
-        data-turn-process={turn}
-        data-turn-process-tool-calls={0}
-        data-turn-process-messages={0}
-        data-turn-process-subagents={0}
-        aria-expanded={drawerOpen}
-        aria-label={label}
-        onClick={(event) => {
-          const label = event.currentTarget.querySelector('[class*="__process-label"]')
-          store.open(turn, 'reasoning', { el: (label ?? event.currentTarget) as HTMLElement })
-        }}
-      >
-        <span className="dtt__process-label">{label}</span>
-        <IconChevronDownOutline14 className="dtt__process-chevron" />
-      </button>
-      {running && liveText !== '' && (
-        <div className="dtt__reasoning-live" ref={liveRef} onScroll={onLiveScroll} aria-live="polite">
-          {liveText}
-        </div>
-      )}
-    </div>
-  )
-}
-
 type AssistantBlockLike = AssistantBlock
 
-/** 助手正文：text 走官方 MarkdownText、image 走官方槽、未知块 JsonBlock。 */
-function AssistantBody({ blocks, streaming, interrupted, renderMessageImages, mentions, labels, t }: {
+/** 助手正文：text 走官方 MarkdownText、reasoning 走官方 ReasoningRow（受折叠控制）、image 走官方槽、未知块 JsonBlock。 */
+function AssistantBody({
+  blocks,
+  streaming,
+  interrupted,
+  renderMessageImages,
+  reasoningHidden = false,
+  revealProcess,
+  mentions,
+  labels,
+  t,
+}: {
   blocks: readonly AssistantBlockLike[]
   streaming: boolean
   interrupted?: boolean | undefined
   renderMessageImages: RenderMessageImages
+  reasoningHidden?: boolean | undefined
+  revealProcess?: (() => void) | undefined
   mentions?: MarkdownFileMentions | undefined
   labels: MarkdownLabels
   t: ChatViewSlotProps['t']
@@ -210,7 +242,16 @@ function AssistantBody({ blocks, streaming, interrupted, renderMessageImages, me
         break
       }
       case 'reasoning':
-        // 回合级聚合进 chip；此处不渲染任何内联思考。
+        // 官方原生思考行（折叠态由 ProcessReasoning 隐藏，展开态展示）
+        rendered.push(
+          <ProcessReasoning key={index} hidden={reasoningHidden} reveal={revealProcess}>
+            <ReasoningRow
+              text={block.text}
+              running={streaming && index === coalesced.length - 1}
+              t={t}
+            />
+          </ProcessReasoning>,
+        )
         break
       case 'image': {
         const start = index
@@ -327,38 +368,13 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     return runningStep?.data.time
   }, [steps])
 
-  const visibleBlocks = useMemo(
-    () => data.blocks.filter(block => block.kind !== 'reasoning'),
-    [data.blocks],
-  )
-  // 本轮工具调用次数与耗时：复用已有的会话投影（无新增订阅）。
-  const toolCount = useChat((snapshot) => {
-    if (turnNumber === undefined) return 0
-    let count = 0
-    for (const key of snapshot.locations.getTurn(turnNumber)) {
-      if (snapshot.nodes.get(key)?.kind === 'tool-call') count += 1
-    }
-    return count
-  })
-  // 思考材料登记（首步负责）：本轮有工具调用时思考行并入工具行（与官方
-  // turn-process 一致，推理折叠不单独占行），chip 不挂载也得登记，抽屉里
-  // 才有思考分区。
+  // 思考材料登记（首步负责）：抽屉里仍可查看思考分区
   useEffect(() => {
     if (isFirstStep && reasoningItems.length > 0 && turnNumber !== undefined) {
       activityStore().setReasoning(turnNumber, reasoningItems)
     }
   }, [isFirstStep, reasoningItems, turnNumber])
-  const folded = toolCount > 0
-  const chip = isFirstStep && reasoningItems.length > 0 && !folded
-    ? <ReasoningChip
-        items={reasoningItems}
-        running={turnRunning}
-        turn={turnNumber as number}
-        thinkingStart={thinkingStart}
-        t={t}
-        turnProcess={turnProcess}
-      />
-    : undefined
+
   // 本轮 git 相关调用：扫工具节点参数里的 git <动词>（见 tool-stats.gitVerbOf）。
   const gitVerbs = useMemo(() => {
     const verbs: string[] = []
@@ -391,34 +407,45 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     return {
       durationMs: start !== undefined && end !== undefined ? Math.max(0, end - start) : undefined,
       steps: steps.length,
-      tools: toolCount,
+      tools: toolNodes.length,
       thinking: reasoningItems.length,
       git: gitVerbs.length > 0 ? gitVerbs.length : undefined,
       gitDetail: gitDetail !== '' ? gitDetail : undefined,
     }
-  }, [showCard, reasoningItems.length, steps.length, timing, toolCount, gitVerbs, gitDetail])
+  }, [showCard, reasoningItems.length, steps.length, timing, toolNodes.length, gitVerbs, gitDetail])
   const labels = useMemo(() => markdownLabelsFrom(t), [t])
 
+  // 官方折叠规则：如果是紧凑折叠回合的最终回复步且未展开，隐藏思考行
+  const reasoningHidden = turnProcess !== undefined
+    && turnProcess.foldable
+    && turnProcess.spec.answerStep === data.step
+    && turnProcess.spec.inlineReasoning
+    && !turnProcess.open
+  const revealProcess = useCallback(() => {
+    turnProcess?.setOpen(true)
+  }, [turnProcess])
+
   const { hasVisible, rendered } = AssistantBody({
-    blocks: visibleBlocks,
+    blocks: data.blocks,
     streaming,
     interrupted,
     renderMessageImages,
+    reasoningHidden,
+    revealProcess,
     mentions,
     labels,
     t,
   })
-  if (!hasVisible && chip === undefined && gallery === undefined) return null
+  if (!hasVisible && gallery === undefined) return null
 
   return (
     <div className="dtt__assistant" data-streaming={streaming || undefined}>
       <div className="dtt__assistant-body">
-        {chip}
         {rendered.length > 0 && (variant !== undefined
           ? <FlowCard variant={variant} meta={cardMeta} interrupted={interrupted}>{rendered}{gallery}</FlowCard>
           : <>{rendered}{gallery}</>)}
         {rendered.length === 0 && gallery}
-        {interrupted && <span className="dtt__stopped">{t('message.stopped')}</span>}
+        {interrupted && variant === undefined && <span className="dtt__stopped">已中断</span>}
       </div>
     </div>
   )

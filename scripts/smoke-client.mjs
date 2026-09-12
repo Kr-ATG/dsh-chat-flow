@@ -293,31 +293,25 @@ for (const expected of [
 if (styleIds.length === 7) pass('injected seven <style> sheets (dtt__ + dts__ + tsh__ + modal + proto + diagram + download)')
 else if (styleIds.length > 7) fail(`unexpected extra styles: ${styleIds.join(', ')}`)
 
-// 三个 keyed 槽位阴影注册 + 截图按钮注册（+ download toolview）。
+// 注册槽位：1 个 keyed 槽位（assistant-step）+ 截图按钮 + download toolview
 const cell = (key) => registeredSlots.find((s) => s?.slot === 'conversation.chat.node' && s?.key === key)
-if (registeredSlots.length !== 5) {
-  fail(`expected 5 slot registrations, got ${registeredSlots.length}: ${JSON.stringify(registeredSlots)}`)
+if (registeredSlots.length !== 3) {
+  fail(`expected 3 slot registrations, got ${registeredSlots.length}: ${JSON.stringify(registeredSlots)}`)
 } else {
-  pass(`registered ${registeredSlots.length} seats (3 chat-node keyed + 1 actions + 1 download toolview)`)
+  pass(`registered ${registeredSlots.length} seats (1 chat-node keyed + 1 actions + 1 download toolview)`)
 }
 const downloadSeat = registeredSlots.find((s) => s?.slot === 'tool.call.toolview' && s?.key === 'download')
 if (downloadSeat === undefined) fail('missing keyed toolview seat tool.call.toolview / download')
 else pass('seat tool.call.toolview / download (keyed by wire tool name)')
-for (const expected of [
-  { key: 'turn-process', priority: -100 },
-  { key: 'tool-call', priority: -100 },
-  { key: 'assistant-step', priority: -100 },
-]) {
-  const found = cell(expected.key)
-  if (found === undefined) {
-    fail(`missing registration for key ${expected.key}`)
-  } else if (found.priority !== expected.priority) {
-    fail(`key ${expected.key} priority = ${found.priority}, expected ${expected.priority}`)
-  } else if (found.locale !== 'chat') {
-    fail(`key ${expected.key} locale = ${found.locale}, expected "chat"`)
-  } else {
-    pass(`seat conversation.chat.node / ${expected.key} @ priority ${expected.priority}`)
-  }
+const assistantSeat = cell('assistant-step')
+if (assistantSeat === undefined) {
+  fail('missing registration for key assistant-step')
+} else if (assistantSeat.priority !== -100) {
+  fail(`key assistant-step priority = ${assistantSeat.priority}, expected -100`)
+} else if (assistantSeat.locale !== 'chat') {
+  fail(`key assistant-step locale = ${assistantSeat.locale}, expected "chat"`)
+} else {
+  pass('seat conversation.chat.node / assistant-step @ priority -100')
 }
 const shot = registeredSlots.find((s) => s?.slot === 'conversation.chat.assistant-actions')
 if (shot === undefined) {

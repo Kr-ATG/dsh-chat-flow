@@ -87,7 +87,7 @@ const CSS = `
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 26%, transparent), transparent 42%),
     var(--dsh-flow-veil, color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent));
-  box-shadow: 0 1px 2px rgba(15, 17, 21, .04), 0 8px 24px -18px rgba(15, 17, 21, .28);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 2px 6px rgba(0, 0, 0, 0.02);
 }
 
 /* 顶边一条品牌蓝渐隐细线：只在总结卡出现，作为「本轮收尾」的视觉锚点。 */
@@ -537,15 +537,15 @@ const CSS = `
 
 /* 用户要求：对话流卡片去全部底色无边框（只留阴影/文字/动效；hover 反馈保留）。 */
 .dtt__card--step, .dtt__card--reply { background: transparent !important; }
-/* 超细边条：1px 发丝描边（浅色 l3 / 深色白 10%），阴影回到 v0.4.7 的轻档。 */
-.dtt__card--reply { border: 1px solid var(--dsw-alias-border-l3, rgba(127,127,127,.16)) !important; }
+/* 超细边条：1px 发丝描边（浅色 l3 / 深色白 8%），阴影调轻为轻量微阴影。 */
+.dtt__card--reply { border: 1px solid var(--dsw-alias-border-l3, rgba(127,127,127,.16)) !important; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 2px 6px rgba(0, 0, 0, 0.02) !important; }
 .dtt__card--reply::before, .dtt__card--reply[data-interrupted]::before { display: none !important; }
 .dtt__card--step { border: none !important; }
 .dtt__card-chip { border-color: transparent !important; }
 .dtt__card-chip:hover { border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 45%, transparent) !important; }
 .dtt__card-badge, .dtt__card-badge[data-interrupted] { background: transparent !important; }
 .dtt__card-chip, .dtt__card-chip[data-kind="git"] { background: transparent !important; }
-body[data-ds-dark-theme] .dtt__card--reply { box-shadow: 0 12px 32px rgba(0,0,0,.55) !important; border-color: rgba(255,255,255,.10) !important; }
+body[data-ds-dark-theme] .dtt__card--reply { box-shadow: 0 1px 3px rgba(0,0,0,.20), 0 2px 6px rgba(0,0,0,.12) !important; border-color: rgba(255,255,255,.08) !important; }
 
 /* ══ 会话头部视图标签（对话 / 轨迹）移到右上角 ═══════════════════════════
    官方 ui-conversation 把 tablist 作为 header 的第二个块级子元素，独占标题行
@@ -606,6 +606,107 @@ header > [role='tablist'] > [class*='_tab'][class*='_tabActive']::after {
 @media (prefers-reduced-motion: reduce) {
   header > [role='tablist'] > [class*='_tab'],
   header > [role='tablist'] > [class*='_tab']::after { transition: none; }
+}
+
+/* ══ 官方原生思考折叠行样式（与官方 ReasoningRow 1:1 对齐） ══════════════ */
+.dtt__reasoning-root {
+  display: flex;
+  flex-direction: column;
+}
+
+.dtt__reasoning-root:not([data-expanded]) {
+  contain: size layout;
+  height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+.dtt__reasoning-row {
+  position: relative;
+  overflow: hidden;
+}
+
+.dtt__reasoning-root[data-state='running'] .dtt__reasoning-row:after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 300px;
+  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--dsw-alias-bg-base) 60%, transparent) 55%, transparent 100%);
+  pointer-events: none;
+  animation: 2.6s ease-out infinite dtt-reasoning-sweep;
+}
+
+@keyframes dtt-reasoning-sweep {
+  0% { left: -300px; }
+  90%, 100% { left: 100%; }
+}
+
+.dtt__reasoning-leading {
+  flex-shrink: 0;
+}
+
+.dtt__reasoning-chevron {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dtt__reasoning-title {
+  font-weight: 400;
+}
+
+.dtt__reasoning-sep {
+  background: var(--dsw-alias-label-caption);
+  border-radius: 1px;
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+}
+
+.dtt__reasoning-summary {
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  white-space: nowrap;
+  flex: auto;
+  overflow: hidden;
+}
+
+.dtt__reasoning-summary-text {
+  text-overflow: ellipsis;
+  display: block;
+  overflow: hidden;
+}
+
+.dtt__reasoning-summary[data-follow-end] {
+  justify-content: flex-end;
+  display: flex;
+}
+
+.dtt__reasoning-summary[data-follow-end] .dtt__reasoning-summary-text {
+  text-align: start;
+  text-overflow: clip;
+  flex: none;
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
+}
+
+.dtt__reasoning-body {
+  padding: 4px 0 4px calc(22px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 官方折叠思考行隐藏控制（紧凑折叠态未展开时静默隐藏） */
+.dtt__assistant-body > [data-turn-process-inline][hidden],
+.dtt__card-body > [data-turn-process-inline][hidden],
+[data-turn-process-inline][hidden] {
+  display: none !important;
+  margin-bottom: -16px;
 }
 `
 

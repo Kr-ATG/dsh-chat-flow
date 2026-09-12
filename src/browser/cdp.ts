@@ -84,8 +84,11 @@ export class CdpConnection {
     }
   }
 
+  private lastMethod?: string
+
   private onClose() {
-    const err = new Error('CDP 连接已关闭')
+    const detail = this.lastMethod ? `（等待 ${this.lastMethod} 响应时断开）` : ''
+    const err = new Error(`CDP 连接已关闭${detail}`)
     for (const [, p] of this.pending) p.reject(err)
     this.pending.clear()
     this.ws = null
@@ -96,6 +99,7 @@ export class CdpConnection {
    *  等不到合成帧）：超时后 Promise reject，调用方可以降级重试。 */
   send(method: string, params: Record<string, unknown> = {}, sessionId?: string, timeoutMs = 45000): Promise<any> {
     if (!this.connected) throw new Error('CDP 未连接')
+    this.lastMethod = method
     const id = this.nextId++
     const payload: any = { id, method, params }
     if (sessionId) payload.sessionId = sessionId
@@ -237,8 +241,10 @@ export async function waitForPageReady(
     while (Date.now() < deadline) {
       if (loaded) break
       try {
-        const rs = await evaluateJson(session, 'document.readyState', false)
+        const rs = await evaluateJson(session, 'document.readyState', false, 2000)
         if (rs === 'complete') break
+        // 截图等跳过网络空闲的场景：DOM 达到 interactive 即已构建完成，无需苦等阻塞的远端外部资源
+        if (skipNetworkIdle && rs === 'interactive') break
       } catch { /* 上下文尚未就绪（导航切换中），继续等 */ }
       await sleep(70)
     }
@@ -255,12 +261,13 @@ export async function navigateAndWait(
   session: CdpSession,
   url: string,
   timeoutMs = 30000,
+  skipNetworkIdle = false,
 ): Promise<{ url: string; title: string }> {
   const { conn, sessionId } = session
   try { await conn.send('Network.enable', {}, sessionId) } catch { /* 已启用 */ }
   try { await conn.send('Page.enable', {}, sessionId) } catch { /* 已启用 */ }
   await conn.send('Page.navigate', { url }, sessionId)
-  await waitForPageReady(session, timeoutMs)
+  await waitForPageReady(session, timeoutMs, skipNetworkIdle)
   const info: any = await conn.send('Page.getNavigationHistory', {}, sessionId)
   const current = info?.entries?.[info.currentIndex]
   return { url: current?.url || url, title: current?.title || '' }
@@ -472,12 +479,14 @@ export async function evaluateJson(
   session: CdpSession,
   expression: string,
   awaitPromise = true,
+  timeoutMs = 30000,
 ): Promise<any> {
   const { conn, sessionId } = session
   const result: any = await conn.send(
     'Runtime.evaluate',
     { expression, awaitPromise, returnByValue: true },
     sessionId,
+    timeoutMs,
   )
   if (result?.exceptionDetails) {
     const d = result.exceptionDetails
