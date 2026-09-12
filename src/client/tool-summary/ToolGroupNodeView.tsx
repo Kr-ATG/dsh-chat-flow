@@ -20,7 +20,8 @@ import { callDurationMs, callName, callSummary, classifyActivity, collectRunning
 import { classifyKind, type ActivityKind } from './activity-kind.ts'
 import { KindIcon } from './icons.tsx'
 import { useNow } from './use-now.ts'
-import { activityStore, useDrawerOpen, useForceTurnProcessOpen, type ActivityHandlers, type ActivityStore } from './activity-drawer.tsx'
+import { activityStore, useDrawerOpen, type ActivityHandlers, type ActivityStore } from './activity-drawer.tsx'
+import { useTurnActivityCounts } from './TurnProcessShadowView.tsx'
 import { LiveDownloadCard } from '../download/DownloadCard.tsx'
 import { downloadPercent, useDownloadState } from '../download/api.ts'
 
@@ -37,33 +38,6 @@ function turnProcessSpecCounts(turnProcess: unknown): { readonly messageCount: n
     typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
   )
   return { messageCount: num(rec['messageCount']), subagentCount: num(rec['subagentCount']) }
-}
-
-/** Per-turn activity counts (tool-call nodes + reasoning blocks, drawer 口径一致）. */
-export function useTurnActivityCounts(turn: number, useChat: ChatNodeViewProps<'tool-call'>['useChat']): {  readonly tools: number
-  readonly reasoning: number
-  /** 本轮仍有 assistant-step 在流式输出。 */
-  readonly streaming: boolean
-} {
-  return useChat((snapshot) => {
-    let tools = 0
-    let reasoning = 0
-    let streaming = false
-    for (const key of snapshot.locations.getTurn(turn)) {
-      const candidate = snapshot.nodes.get(key)
-      if (candidate === undefined) continue
-      if (candidate.kind === 'tool-call') {
-        tools += 1
-      } else if (candidate.kind === 'assistant-step') {
-        const step = candidate as ChatNode<'assistant-step'>
-        if (step.data.status === 'running') streaming = true
-        for (const block of step.data.blocks) {
-          if (block.kind === 'reasoning') reasoning += 1
-        }
-      }
-    }
-    return { tools, reasoning, streaming }
-  })
 }
 
 const EMPTY: readonly ChatNode<'tool-call'>[] = []
@@ -256,12 +230,12 @@ const ToolEntry = memo(function ToolEntry({
   const stats = useMemo(() => computeStats(nodes.map(node => node.data.root)), [nodes])
   const activity = useTurnActivityCounts(turn, useChat)
   const running = stats.running > 0
-  // 去折叠：本回合强制展开（官方隐藏成员的逻辑只在 !open 时生效），本行永远
-  // 渲染、不再让位；官方 control 行由 CSS 隐藏（见 styles.ts），抽屉入口 =
-  // 本行（点正文）+ 总结卡的工具/思考 chip。running 与折叠互斥（折叠只针对
-  // closed 回合），实时卡片只在运行时出现、不受影响。
-  useForceTurnProcessOpen(turnProcess)
-  // 抽屉开合态：data-open 把 chevron 转下来（与旧官方行同行）。
+  // 官方 control 行接管时（紧凑模式 closed 回合）本行让位：只登记抽屉数据、
+  // 不占行（control 影子行是唯一的入口：点正文进抽屉、点 chevron 官方展开）。
+  // running 与接管互斥（接管要求回合 closed，运行时 control 不 foldable），
+  // 因此直接整体返回 null 即可，实时卡片只在运行时出现、不受影响。
+  const controlActive = turnProcess?.foldable === true
+  // 抽屉开合态：control 影子行靠 data-open 把 chevron 转下来，这里同行。
   const drawerOpen = useDrawerOpen(turn)
   const now = useNow(running)
   // "当前工具"的时长：取仍在运行的最早一个 tool/call 时间，而不是整轮 turn 开始时间。
@@ -332,6 +306,7 @@ const ToolEntry = memo(function ToolEntry({
   const label = running
     ? elapsed !== undefined ? `工具调用中 · ${formatDuration(elapsed)}` : '工具调用中'
     : activity.reasoning > 0 ? `${resting}${separator}${activity.reasoning} 次思考` : resting
+  if (controlActive) return null
 
   return (
     <div className={`${NS}__entry-wrap`}>

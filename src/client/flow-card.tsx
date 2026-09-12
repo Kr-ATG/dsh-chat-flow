@@ -7,8 +7,8 @@
  *  - **总结卡**（`variant="reply"`）：回合最终回复。带头部（完成标记 + 本轮
  *    统计 chip：用时 / 步数 / 工具次数 / 思考次数）与顶部高光，正文用官方
  *    MarkdownText 渲染（流式期不包卡，见 thinking/ThinkingStepNodeView）。
- *    其中工具 / 思考 chip 是可点击的活动抽屉入口（官方 turn-process 行保持
- *    原生、不再接管，见 tool-summary/ToolGroupNodeView 头注释）。
+ *    其中工具 / 思考 chip 是可点击的活动抽屉入口（紧凑 closed 回合的抽屉
+ *    主入口是 control 影子行，见 tool-summary/TurnProcessShadowView）。
  *
  * 统计数字全部来自已有的会话投影（TurnLocation 的 start/end 事件、本回合的
  * assistant step 与 tool-call 节点数），不新增任何轮询或订阅。

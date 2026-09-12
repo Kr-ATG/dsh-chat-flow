@@ -9,11 +9,13 @@
  *      dsh-chat-flow-shot-styles / dsh-modal-animation-styles /
  *      dsh-chat-flow-proto-styles / dsh-chat-flow-diagram-styles /
  *      dsh-chat-flow-download-styles）
- *   4. `apply(ctx)` registers all seats (官方 turn-process 行保持原生、不注册)：
+ *   4. `apply(ctx)` registers all seats (影子行回到 control 位)：
+ *        conversation.chat.node / turn-process      priority -100
  *        conversation.chat.node / tool-call        priority -100
  *        conversation.chat.node / assistant-step   priority -100
  *        conversation.chat.assistant-actions / chat-flow-screenshot  order 5
  *        tool.call.toolview / download             (keyed by wire tool name)
+ *      影子行与成员行文案带消息/subagent 计数（message.turnProcess.*）。
  *
  * Usage: node scripts/smoke-client.mjs
  */
@@ -291,33 +293,18 @@ for (const expected of [
 if (styleIds.length === 7) pass('injected seven <style> sheets (dtt__ + dts__ + tsh__ + modal + proto + diagram + download)')
 else if (styleIds.length > 7) fail(`unexpected extra styles: ${styleIds.join(', ')}`)
 
-// 去折叠规则随主样式下发：官方 turn-process control 行整行隐藏。
-const baseSheet = headItems.find((item) => item?.tagName === 'STYLE' && item?.id === 'dsh-chat-flow-styles')
-if (baseSheet === undefined) fail('missing base <style id=dsh-chat-flow-styles> for the unfold rule')
-else if (typeof baseSheet.textContent !== 'string' || !baseSheet.textContent.includes('data-chat-flow-kind')) fail('base styles missing the turn-process unfold rule')
-else pass('base styles hide the official turn-process control row (unfold)')
-
-// 工具行文案带消息/subagent 计数（官方 turn-process locale 键）。
-for (const key of ['message.turnProcess.messages.one', 'message.turnProcess.subagents.one']) {
-  if (!code.includes(key)) fail(`client bundle missing locale key ${key} (tool row counts)`)
-  else pass(`client bundle references ${key}`)
-}
-
-// 两个 keyed 槽位注册 + 截图按钮注册（+ download toolview）；turn-process
-// 保持官方原生、插件不再注册。
+// 三个 keyed 槽位阴影注册 + 截图按钮注册（+ download toolview）。
 const cell = (key) => registeredSlots.find((s) => s?.slot === 'conversation.chat.node' && s?.key === key)
-if (registeredSlots.length !== 4) {
-  fail(`expected 4 slot registrations, got ${registeredSlots.length}: ${JSON.stringify(registeredSlots)}`)
+if (registeredSlots.length !== 5) {
+  fail(`expected 5 slot registrations, got ${registeredSlots.length}: ${JSON.stringify(registeredSlots)}`)
 } else {
-  pass(`registered ${registeredSlots.length} seats (2 chat-node keyed + 1 actions + 1 download toolview)`)
+  pass(`registered ${registeredSlots.length} seats (3 chat-node keyed + 1 actions + 1 download toolview)`)
 }
-const shadowSeat = cell('turn-process')
-if (shadowSeat !== undefined) fail('turn-process must stay native: unexpected plugin registration for key turn-process')
-else pass('no plugin registration for key turn-process (official row stays native)')
 const downloadSeat = registeredSlots.find((s) => s?.slot === 'tool.call.toolview' && s?.key === 'download')
 if (downloadSeat === undefined) fail('missing keyed toolview seat tool.call.toolview / download')
 else pass('seat tool.call.toolview / download (keyed by wire tool name)')
 for (const expected of [
+  { key: 'turn-process', priority: -100 },
   { key: 'tool-call', priority: -100 },
   { key: 'assistant-step', priority: -100 },
 ]) {

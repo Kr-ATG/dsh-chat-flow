@@ -614,14 +614,6 @@ header > [role='tablist'] > [class*='_tab'][class*='_tabActive']::after {
   header > [role='tablist'] > [class*='_tab'],
   header > [role='tablist'] > [class*='_tab']::after { transition: none; }
 }
-
-/* ── 去折叠：官方 turn-process control 行整行隐藏 ─────────────────────
- * 成员槽位（工具入口 / 思考 chip / 正文）由 useForceTurnProcessOpen 强制
- * 展开（官方隐藏成员的逻辑只在 !open 时生效），control 行只剩一个计数空壳，
- * 直接 display:none。选择器钉官方 ChatNodeSeat 包裹层的 data-chat-flow-kind
- * 属性（见 dsh-client-ui-chat 的 ChatNodeSeat），与 CSS Module hash 无关。
- */
-div[data-chat-flow-kind="turn-process"] { display: none !important; }
 `
 
 /** Inject the stylesheet once. */
