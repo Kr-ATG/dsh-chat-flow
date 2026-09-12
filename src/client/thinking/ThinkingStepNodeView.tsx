@@ -408,11 +408,6 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     labels,
     t,
   })
-  // 总结卡工具/思考 chip → 活动抽屉（官方 turn-process 行保持原生，
-  // 抽屉入口搬到这里；气泡锚在被点的 chip 上）。
-  const openDrawerFromCard = useCallback((mode: 'tools' | 'reasoning', el: HTMLElement) => {
-    if (turnNumber !== undefined) activityStore().open(turnNumber, mode, { el })
-  }, [turnNumber])
   if (!hasVisible && chip === undefined && gallery === undefined) return null
 
   return (
@@ -420,7 +415,7 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
       <div className="dtt__assistant-body">
         {chip}
         {rendered.length > 0 && (variant !== undefined
-          ? <FlowCard variant={variant} meta={cardMeta} interrupted={interrupted} turn={turnNumber} onOpenDrawer={openDrawerFromCard}>{rendered}{gallery}</FlowCard>
+          ? <FlowCard variant={variant} meta={cardMeta} interrupted={interrupted}>{rendered}{gallery}</FlowCard>
           : <>{rendered}{gallery}</>)}
         {rendered.length === 0 && gallery}
         {interrupted && <span className="dtt__stopped">{t('message.stopped')}</span>}
