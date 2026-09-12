@@ -28,7 +28,7 @@ import type { AssistantBlock, RenderMessageImages } from '@deepseek-ai/dsh-clien
 // Seat props) so ChatNodeViewProps resolves its owner / hooks / session share.
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
-import { activityStore, useDrawerOpen, type ActivityReasoningItem } from '../tool-summary/activity-drawer.tsx'
+import { activityStore, useDrawerOpen, useForceTurnProcessOpen, type ActivityReasoningItem } from '../tool-summary/activity-drawer.tsx'
 import { formatDuration } from '../tool-summary/tool-stats.ts'
 import { useNow } from '../tool-summary/use-now.ts'
 import { FlowCard, type ReplyCardMeta } from '../flow-card.tsx'
@@ -77,12 +77,11 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: 
   // 抽屉里仍要有思考分区）。
   const now = useNow(running)
   const elapsed = thinkingStart !== undefined ? Math.max(0, now - thinkingStart) : undefined
-  // 抽屉开合态：与官方 turn-process 行同行（data-open 把 chevron 转下来）。
+  // 抽屉开合态：data-open 把 chevron 转下来。
   const drawerOpen = useDrawerOpen(turn)
-  // 官方 control 行存在时（紧凑模式 closed 回合）本行让位：官方行保持原生，
-  // 抽屉入口搬到总结卡的思考 chip（见 flow-card.tsx）。running 与官方 control
-  // 互斥（control foldable 要求回合 closed），见工具入口同注释。
-  const controlActive = turnProcess?.foldable === true
+  // 去折叠：本回合强制展开，本行永远渲染、不再让位；官方 control 行由 CSS
+  // 隐藏（见 styles.ts 去折叠规则）。running 的回合官方本就不折叠。
+  useForceTurnProcessOpen(turnProcess)
   // 无工具调用的回合只剩这一行：文案取官方 turn-process 的「已思考」。
   const label = running
     ? elapsed !== undefined ? `思考中 · ${formatDuration(elapsed)}` : '思考中…'
@@ -115,7 +114,6 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: 
     el.scrollTop = el.scrollHeight
   }, [liveText, running])
 
-  if (controlActive) return null
   return (
     <div className="dtt__reasoning" data-running={running || undefined}>
       <button
@@ -257,6 +255,8 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
 ) {
   const { node, useTurnData, useChat, openFile, renderMessageImages, fileMentions, t, turnProcess } = props
   const data = node.data
+  // 去折叠：纯文本回合也可能被官方折叠（messageCount），这里同样强制展开。
+  useForceTurnProcessOpen(turnProcess)
   const locationTurn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
     : undefined

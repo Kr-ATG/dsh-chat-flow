@@ -59,10 +59,10 @@ export function apply(ctx: ClientContext): void {
   // 对话截图：assistant 消息操作栏相机按钮 → 截图面板（独立 id，无副作用）。
   guarded(ctx, 'screenshot seat', () => { applyMessageScreenshot(ctx) })
 
-  // 官方 turn-process 行：保持原生、不接管（点击即官方内联展开）。成员槽位
-  // （工具入口/思考 chip）在官方 control 存在时让位、只登记抽屉数据；活动
-  // 抽屉入口 = 总结卡的工具/思考 chip（紧凑 closed 回合）+ 成员自有行
-  // （流式/非紧凑模式）。
+  // 去折叠：官方 turn-process 行由 CSS 整行隐藏（见 styles.ts 去折叠规则），
+  // 各回合经 useForceTurnProcessOpen 强制展开、内容全部平铺。成员槽位
+  // （工具入口/思考 chip）永远渲染；活动抽屉入口 = 成员自有行 +
+  // 总结卡的工具/思考 chip。
 
   // 工具调用聚合：替换内置 tool-call 渲染器，每回合一枚 chip + 抽屉。
   guarded(ctx, 'tool-call seat', () => {

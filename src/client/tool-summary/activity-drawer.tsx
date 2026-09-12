@@ -165,6 +165,24 @@ export function useDrawerOpen(turn: number): boolean {
   return useSyncExternalStore(store.subscribe, () => store.openTurn === turn)
 }
 
+/**
+ * 去折叠：回合强制展开（内容全部平铺，官方折叠条由 CSS 隐藏）。
+ *
+ * 参数取 unknown：官方 turnProcess 形态（{ foldable, open, setOpen }）只在
+ * 运行时保证，不依赖版本间可能漂移的 TS 类型；这里只做运行时窄化。
+ * setOpen(true) 写官方 chat store（turnProcesses），收敛后即停：
+ * 第二次 effect 看到 open 已是 true，不再写。
+ */
+export function useForceTurnProcessOpen(turnProcess: unknown): void {
+  useEffect(() => {
+    if (typeof turnProcess !== 'object' || turnProcess === null) return
+    const proc = turnProcess as { readonly open?: unknown; readonly setOpen?: unknown }
+    if (proc.open === false && typeof proc.setOpen === 'function') {
+      (proc.setOpen as (open: boolean) => void)(true)
+    }
+  }, [turnProcess])
+}
+
 /** Summary card for the drawer's tool section. */
 function DrawerToolSummary({ stats, cwd, openFile, kinds }: {
   readonly stats: ToolStats

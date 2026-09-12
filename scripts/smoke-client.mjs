@@ -291,6 +291,12 @@ for (const expected of [
 if (styleIds.length === 7) pass('injected seven <style> sheets (dtt__ + dts__ + tsh__ + modal + proto + diagram + download)')
 else if (styleIds.length > 7) fail(`unexpected extra styles: ${styleIds.join(', ')}`)
 
+// 去折叠规则随主样式下发：官方 turn-process control 行整行隐藏。
+const baseSheet = headItems.find((item) => item?.tagName === 'STYLE' && item?.id === 'dsh-chat-flow-styles')
+if (baseSheet === undefined) fail('missing base <style id=dsh-chat-flow-styles> for the unfold rule')
+else if (typeof baseSheet.textContent !== 'string' || !baseSheet.textContent.includes('data-chat-flow-kind')) fail('base styles missing the turn-process unfold rule')
+else pass('base styles hide the official turn-process control row (unfold)')
+
 // 两个 keyed 槽位注册 + 截图按钮注册（+ download toolview）；turn-process
 // 保持官方原生、插件不再注册。
 const cell = (key) => registeredSlots.find((s) => s?.slot === 'conversation.chat.node' && s?.key === key)

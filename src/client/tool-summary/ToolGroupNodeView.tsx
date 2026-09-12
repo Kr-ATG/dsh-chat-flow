@@ -20,7 +20,7 @@ import { callDurationMs, callName, callSummary, classifyActivity, collectRunning
 import { classifyKind, type ActivityKind } from './activity-kind.ts'
 import { KindIcon } from './icons.tsx'
 import { useNow } from './use-now.ts'
-import { activityStore, useDrawerOpen, type ActivityHandlers, type ActivityStore } from './activity-drawer.tsx'
+import { activityStore, useDrawerOpen, useForceTurnProcessOpen, type ActivityHandlers, type ActivityStore } from './activity-drawer.tsx'
 import { LiveDownloadCard } from '../download/DownloadCard.tsx'
 import { downloadPercent, useDownloadState } from '../download/api.ts'
 
@@ -244,13 +244,12 @@ const ToolEntry = memo(function ToolEntry({
   const stats = useMemo(() => computeStats(nodes.map(node => node.data.root)), [nodes])
   const activity = useTurnActivityCounts(turn, useChat)
   const running = stats.running > 0
-  // 官方 control 行存在时（紧凑模式 closed 回合）本行让位：官方行保持原生
-  // （点击即官方内联展开，不再接管），只登记抽屉数据、不占行；抽屉入口搬到
-  // 总结卡的工具/思考 chip（见 flow-card.tsx）。running 与官方 control 互斥
-  // （control foldable 要求回合 closed，运行时 control 不 foldable），因此
-  // 直接整体返回 null 即可，实时卡片只在运行时出现、不受影响。
-  const controlActive = turnProcess?.foldable === true
-  // 抽屉开合态：官方 turn-process 行靠 data-open 把 chevron 转下来，这里同行。
+  // 去折叠：本回合强制展开（官方隐藏成员的逻辑只在 !open 时生效），本行永远
+  // 渲染、不再让位；官方 control 行由 CSS 隐藏（见 styles.ts），抽屉入口 =
+  // 本行（点正文）+ 总结卡的工具/思考 chip。running 与折叠互斥（折叠只针对
+  // closed 回合），实时卡片只在运行时出现、不受影响。
+  useForceTurnProcessOpen(turnProcess)
+  // 抽屉开合态：data-open 把 chevron 转下来（与旧官方行同行）。
   const drawerOpen = useDrawerOpen(turn)
   const now = useNow(running)
   // "当前工具"的时长：取仍在运行的最早一个 tool/call 时间，而不是整轮 turn 开始时间。
@@ -309,7 +308,6 @@ const ToolEntry = memo(function ToolEntry({
   const label = running
     ? elapsed !== undefined ? `工具调用中 · ${formatDuration(elapsed)}` : '工具调用中'
     : activity.reasoning > 0 ? `${resting}${t('message.turnProcess.separator') as string}${activity.reasoning} 次思考` : resting
-  if (controlActive) return null
 
   return (
     <div className={`${NS}__entry-wrap`}>
