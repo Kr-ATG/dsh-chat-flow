@@ -146,17 +146,21 @@ export function launchChrome(
 export function killChrome(runtime: ChromeRuntime | null, force = false): void {
   if (!runtime) return
   const { proc } = runtime
-  if (proc && !proc.killed) {
+  if (proc) {
     try {
       if (process.platform === 'win32') {
         // Windows：杀整棵进程树（taskkill /T 带子进程、/F 强制）。只杀主进程
         // 会让 renderer/gpu 等子进程残留，继续占着 profile 目录——紧接着的
         // 重建就会撞上锁（用户数据目录被占时 Chrome 连接后即断开 → 用户看到
         // 「CDP 连接已关闭」反复出现）。
-        try {
-          spawnSync('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true })
-        } catch { /* 进程可能已退出 */ }
-        if (!proc.killed) proc.kill('SIGKILL')
+        if (proc.pid) {
+          try {
+            spawnSync('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true })
+          } catch { /* 进程可能已退出 */ }
+        }
+        if (!proc.killed) {
+          try { proc.kill('SIGKILL') } catch { /* 忽略 */ }
+        }
       } else {
         proc.kill(force ? 'SIGKILL' : 'SIGTERM')
       }

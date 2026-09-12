@@ -19,6 +19,7 @@ import {
   ASPECT_LABEL, DEVICE_LABEL, QUALITY_LABEL, SHOT_ASPECTS, SHOT_PRESETS,
   type ShotAspect, type ShotDevice, type ShotQuality,
 } from '../../shot/presets.ts'
+import { canvasPad } from '../../shot/theme.ts'
 import { cls } from './styles.ts'
 
 const RANGE_LABEL: Record<ShotRange, string> = {
@@ -119,9 +120,15 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
   const [editHtml, setEditHtml] = useState<string | null>(null)
   /** 已标记待删除的元素数（iframe 内点击后同步）。 */
   const [marked, setMarked] = useState(0)
+  /** 编辑预览 iframe 的高度（随内容高度自适应）。 */
+  const [frameHeight, setFrameHeight] = useState<number | null>(null)
   /** 递增令牌：只接受最后一次渲染的结果（快速改选项时防串图）。 */
   const tokenRef = useRef(0)
   const editorRef = useRef<HTMLIFrameElement | null>(null)
+
+  const preset = SHOT_PRESETS[device][quality]
+  const viewportWidth = preset.cssWidth + canvasPad(preset.cssWidth) * 2
+  const displayWidth = result ? Math.round(result.width / preset.scale) : viewportWidth
 
   const messages = useMemo(() => collect(range), [collect, range])
 
@@ -177,17 +184,49 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
     }
     setBaseHtml(html)
     setEditHtml(html)
+    if (result !== null) {
+      setFrameHeight(Math.round(result.height / preset.scale))
+    }
     setMarked(0)
     setEditing(true)
     setError(null)
-  }, [result])
+  }, [result, preset.scale])
 
   /** 重置编辑：回到进入编辑时的原始 HTML（撤销全部标记与删除）。 */
   const resetEdit = useCallback((): void => {
     if (baseHtml === null) return
     setEditHtml(baseHtml)
     setMarked(0)
-  }, [baseHtml])
+    if (result !== null && typeof result.html === 'string' && result.html !== baseHtml) {
+      const token = tokenRef.current + 1
+      tokenRef.current = token
+      setBusy(true)
+      setError(null)
+      render({
+        messages,
+        theme,
+        device,
+        quality,
+        aspect,
+        title: titleText,
+        label: labelText,
+        html: baseHtml,
+      })
+        .then((nextResult) => {
+          if (tokenRef.current !== token) return
+          setResult(nextResult)
+          setFrameHeight(Math.round(nextResult.height / preset.scale))
+        })
+        .catch((cause: unknown) => {
+          if (tokenRef.current !== token) return
+          setError(cause instanceof Error ? cause.message : String(cause))
+        })
+        .finally(() => {
+          if (tokenRef.current !== token) return
+          setBusy(false)
+        })
+    }
+  }, [baseHtml, result, messages, theme, device, quality, aspect, titleText, labelText, preset.scale])
 
   /** 退出编辑：切回 PNG 预览（未应用删除时预览仍是最初渲染图）。 */
   const stopEdit = useCallback((): void => {
@@ -203,41 +242,74 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
     const frame = editorRef.current
     if (frame === null) return undefined
     let disposed = false
+
+    const syncHeight = (doc: Document): void => {
+      if (disposed) return
+      const body = doc.body
+      const root = doc.documentElement
+      if (body === null || root === null) return
+      const h = Math.max(body.scrollHeight, root.scrollHeight)
+      if (h > 0) setFrameHeight(h)
+    }
+
     const attach = (): void => {
       if (disposed) return
       const doc = frame.contentDocument
       if (doc === null || doc.body === null) return
+      if (doc.getElementById('webui-shot-editor-style') !== null) return
+
       const style = doc.createElement('style')
+      style.id = 'webui-shot-editor-style'
       style.textContent = [
+        'html, body { overflow: hidden !important; }',
         '.webui-shot-hover{outline:2px dashed #e5484d !important;outline-offset:2px !important;cursor:crosshair !important}',
-        '.webui-shot-mark{outline:2px solid #e5484d !important;outline-offset:2px !important;position:relative !important}',
-        '.webui-shot-mark::after{content:"已选 · 点击取消";position:absolute;top:-20px;left:0;z-index:9999;padding:1px 6px;border-radius:4px;background:#e5484d;color:#fff;font:11px/16px sans-serif;pointer-events:none;white-space:nowrap}',
+        '.webui-shot-mark{outline:2px solid #e5484d !important;outline-offset:2px !important;position:relative !important;opacity:0.45 !important;overflow:visible !important;cursor:pointer !important}',
+        '.webui-shot-mark::after{content:"已选 · 点击取消";position:absolute;top:-20px;left:0;z-index:9999;padding:1px 6px;border-radius:4px;background:#e5484d;color:#fff;font:11px/16px sans-serif;pointer-events:none;white-space:nowrap;opacity:1 !important}',
       ].join('\n')
       doc.head.appendChild(style)
+
+      syncHeight(doc)
+
+      let ro: ResizeObserver | null = null
+      if (typeof ResizeObserver !== 'undefined' && doc.body !== null) {
+        ro = new ResizeObserver(() => { syncHeight(doc) })
+        ro.observe(doc.body)
+      }
+
       const onOver = (event: MouseEvent): void => {
         const target = event.target as Element | null
-        if (target === null || target === doc.body || target === doc.documentElement) return
+        if (target === null || target === doc.body || target === doc.documentElement || target.classList.contains('card')) return
         doc.querySelectorAll('.webui-shot-hover').forEach(el => el.classList.remove('webui-shot-hover'))
         if (!target.closest('.webui-shot-mark')) target.classList.add('webui-shot-hover')
       }
+
       const onOut = (): void => {
         doc.querySelectorAll('.webui-shot-hover').forEach(el => el.classList.remove('webui-shot-hover'))
       }
+
       const onClick = (event: MouseEvent): void => {
         const target = event.target as Element | null
-        if (target === null || target === doc.body || target === doc.documentElement) return
+        if (target === null || target === doc.body || target === doc.documentElement || target.classList.contains('card')) return
         event.preventDefault()
         event.stopPropagation()
-        target.classList.remove('webui-shot-hover')
-        target.classList.toggle('webui-shot-mark')
+        const existingMark = target.closest('.webui-shot-mark')
+        if (existingMark !== null) {
+          existingMark.classList.remove('webui-shot-mark')
+        } else {
+          target.classList.remove('webui-shot-hover')
+          target.classList.add('webui-shot-mark')
+        }
         setMarked(doc.querySelectorAll('.webui-shot-mark').length)
       }
+
       doc.addEventListener('mouseover', onOver)
       doc.addEventListener('mouseout', onOut)
       doc.addEventListener('click', onClick, true)
       setMarked(doc.querySelectorAll('.webui-shot-mark').length)
     }
-    // srcdoc 挂载后 contentDocument 可能尚未就绪，轮询到可用（最多 1s）。
+
+    frame.addEventListener('load', attach)
+
     let tries = 0
     const timer = window.setInterval(() => {
       tries += 1
@@ -248,8 +320,10 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
         window.clearInterval(timer)
       }
     }, 10)
+
     return () => {
       disposed = true
+      frame.removeEventListener('load', attach)
       window.clearInterval(timer)
     }
   }, [editing, editHtml])
@@ -264,8 +338,9 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
       setError('还没有标记任何元素——先点击想删除的部分')
       return
     }
-    // 先清掉悬停类再移除标记元素，避免序列化残留。
+    // 先清掉悬停类与临时注入的编辑交互样式，再移除标记元素，避免序列化残留。
     doc.querySelectorAll('.webui-shot-hover').forEach(el => el.classList.remove('webui-shot-hover'))
+    doc.getElementById('webui-shot-editor-style')?.remove()
     marks.forEach(el => el.remove())
     const next = `<!DOCTYPE html>${doc.documentElement.outerHTML}`
     const token = tokenRef.current + 1
@@ -288,6 +363,7 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
         // 编辑后的 HTML 回传（宿主原样返回）；iframe 换成删完的版本继续编辑。
         if (typeof nextResult.html === 'string') {
           setEditHtml(nextResult.html)
+          setFrameHeight(Math.round(nextResult.height / preset.scale))
           setMarked(0)
         }
       })
@@ -299,7 +375,7 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
         if (tokenRef.current !== token) return
         setBusy(false)
       })
-  }, [messages, theme, device, quality, aspect, titleText, labelText])
+  }, [messages, theme, device, quality, aspect, titleText, labelText, preset.scale])
 
   const switchRange = useCallback((next: ShotRange): void => {
     // 只切抽取范围；徽章是独立文案（默认 Kr），不跟范围联动。
@@ -332,7 +408,6 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
   }, [savedPath])
 
   const anim = closing ? 'out' : 'in'
-  const preset = SHOT_PRESETS[device][quality]
   // 固定画幅但内容比目标比例更高时，渲染端会保留完整长图（不截断）——明确告知。
   const aspectNote = aspect !== 'auto' && result?.aspectLocked === false ? ' · 内容超出画幅已保留全长' : ''
   const meta = savedPath !== null
@@ -451,62 +526,76 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
           <span className={cls.meta}>输出宽约 {preset.cssWidth * preset.scale} px</span>
         </div>
 
+        {editing && editHtml !== null && (
+          <div className={cls.editBar}>
+            <span className={cls.editHint}>点击页面上的元素进行删除；点击已标记的元素取消标记</span>
+            <span className={cls.editCount} data-n={marked > 0 ? '' : undefined}>已标记 {marked} 个</span>
+            <span className={cls.editSpacer} />
+            <button
+              type="button"
+              className={cls.action}
+              disabled={busy}
+              onClick={resetEdit}
+            >
+              重置
+            </button>
+            <button
+              type="button"
+              className={cls.action}
+              disabled={busy}
+              onClick={stopEdit}
+            >
+              退出编辑
+            </button>
+            <button
+              type="button"
+              className={cls.primary}
+              disabled={busy || marked === 0}
+              onClick={applyDelete}
+            >
+              删除 {marked > 0 ? `${marked} 个` : ''}并重新生成
+            </button>
+          </div>
+        )}
+
         <div className={cls.stage}>
-          {editing && editHtml !== null ? (
-            <>
-              <div className={cls.editBar}>
-                <span className={cls.editHint}>点击页面上的元素进行删除；点击已标记的元素取消标记</span>
-                <span className={cls.editCount} data-n={marked > 0 ? '' : undefined}>已标记 {marked} 个</span>
-                <span className={cls.editSpacer} />
-                <button
-                  type="button"
-                  className={cls.action}
-                  disabled={busy}
-                  onClick={resetEdit}
-                >
-                  重置
-                </button>
-                <button
-                  type="button"
-                  className={cls.action}
-                  disabled={busy}
-                  onClick={stopEdit}
-                >
-                  退出编辑
-                </button>
-                <button
-                  type="button"
-                  className={cls.primary}
-                  disabled={busy || marked === 0}
-                  onClick={applyDelete}
-                >
-                  删除 {marked > 0 ? `${marked} 个` : ''}并重新生成
-                </button>
+          <div className={cls.canvas}>
+            {busy && (
+              <div className={cls.hint}>
+                <span className={cls.spinner} />
+                <span>正在渲染…</span>
               </div>
-              <div className={cls.editor}>
+            )}
+            {!busy && error !== null && <div className={cls.error}>{error}</div>}
+            {!busy && error === null && (
+              editing && editHtml !== null ? (
                 <iframe
                   ref={editorRef}
                   className={cls.frame}
                   srcDoc={editHtml}
                   sandbox="allow-same-origin"
                   title="截图编辑预览"
+                  style={{
+                    width: `${displayWidth}px`,
+                    maxWidth: '100%',
+                    height: frameHeight ? `${frameHeight}px` : undefined,
+                  }}
                 />
-              </div>
-            </>
-          ) : (
-            <div className={cls.canvas}>
-              {busy && (
-                <div className={cls.hint}>
-                  <span className={cls.spinner} />
-                  <span>正在渲染…</span>
-                </div>
-              )}
-              {!busy && error !== null && <div className={cls.error}>{error}</div>}
-              {!busy && error === null && result !== null && (
-                <img className={cls.img} src={result.imageUrl} alt="截图预览" />
-              )}
-            </div>
-          )}
+              ) : (
+                result !== null && (
+                  <img
+                    className={cls.img}
+                    src={result.imageUrl}
+                    alt="截图预览"
+                    style={{
+                      width: `${displayWidth}px`,
+                      maxWidth: '100%',
+                    }}
+                  />
+                )
+              )
+            )}
+          </div>
         </div>
 
         <div className={cls.foot}>

@@ -55,14 +55,23 @@ const MAX_DEVICE_HEIGHT = 28000
  * 合成表面仍按整视口全高合成，照样挂死——必须让视口本身保持小尺寸。
  */
 const MAX_SEGMENT_DEVICE_HEIGHT = 8192
+/**
+ * 单次/单段截图输出设备像素安全上限（约 1800 万像素，留出充足安全裕量）。
+ * 保证软件光栅化单次内存申请 <= 72MB，杜绝 Skia 缓冲区溢出与 CDP 断连崩溃。
+ */
+const MAX_SAFE_SURFACE_PIXELS = 18_000_000
+/** 固定画幅模式下允许的最大输出设备宽度（4096px，对应 4K 宽屏），超出时平滑转为全长长图。 */
+const MAX_DEVICE_WIDTH = 4096
 
 /** 渲染引擎运行时状态。 */
 interface Engine {
   runtime: ChromeRuntime
   conn: CdpConnection
   session: CdpSession
-  /** 该实例的工作目录（profile + 临时页面）。 */
+  /** 该实例的工作目录（临时页面等）。 */
   dir: string
+  /** 该实例独立分配的 profile 目录。 */
+  profileDir: string
 }
 
 let engine: Engine | null = null
@@ -71,24 +80,15 @@ let chain: Promise<unknown> = Promise.resolve()
 /** 工作目录提供者（由 applyScreenshot 注入，指向 storages 下的 .engine）。 */
 let baseDirProvider: () => string = () => join(process.cwd(), '.dsh-shot-engine')
 /**
- * 浏览器候选游标：默认从 0（Edge 优先，用户偏好）开始；渲染失败重试时
- * 顺延到下一个候选（如 Edge 151 无头不稳 → Chrome 152），全部候选都失败
- * 才上报。空闲回收后重置回 0，保持「默认 Edge、坏了自动换」。
+ * 浏览器候选游标：默认从 0（Chrome 优先）开始；渲染失败重试时
+ * 顺延到下一个候选（Chrome 失败 → Edge 兜底），全部候选都失败
+ * 才上报。空闲回收后重置回 0，保持「默认 Chrome、坏了自动换 Edge」。
  */
 let candidateOffset = 0
 
-/** 取截图引擎专用的浏览器可执行文件：**Chrome 硬编码最优先**（本机
- *  Chrome 152 无头验证稳定；Edge 151 无头必现「CDP 连接已关闭」，只作兜底）。
- *  候选游标轮换仅用于「Chrome 不在场」时的 Edge/其他候选中循环。 */
+/** 取截图引擎专用的浏览器可执行文件：默认 Chrome 优先，失败重试时按游标轮换到 Edge 等候选。 */
 function pickChromeCandidate(): string {
-  const PREFERRED = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-  ]
-  for (const candidate of PREFERRED) {
-    if (existsSync(candidate)) return candidate
-  }
-  const usable = DEFAULT_CHROME_CANDIDATES.filter(candidate => existsSync(candidate))
+  const usable = DEFAULT_CHROME_CANDIDATES.filter(candidate => Boolean(candidate && existsSync(candidate)))
   if (usable.length === 0) {
     throw new Error('未找到 Chrome/Edge 可执行文件')
   }
@@ -125,10 +125,11 @@ export async function shutdownRenderer(): Promise<void> {
   if (current === null) return
   try { current.conn.close() } catch { /* 已断开 */ }
   killChrome(current.runtime, true)
-  // 给进程树一点退出时间：Windows 上文件句柄释放有延迟，profile 锁未释放
-  // 就重建会撞上「用户数据目录被占用」→ 新实例连接后即断开（CDP 连接已关闭）。
+  // 给进程树一点退出时间：Windows 上文件句柄释放有延迟
   await new Promise(resolve => setTimeout(resolve, 300))
   await rm(join(current.dir, 'page'), { recursive: true, force: true }).catch(() => {})
+  await rm(current.profileDir, { recursive: true, force: true }).catch(() => {})
+  // 顺带清理可能残留的历史 profile 临时目录
   await rm(join(current.dir, 'profile'), { recursive: true, force: true }).catch(() => {})
 }
 
@@ -154,15 +155,27 @@ async function launch(): Promise<Engine> {
   const chromePath = pickChromeCandidate()
   const port = await findFreePort(9400)
   const dir = baseDirProvider()
-  const profileDir = join(dir, 'profile')
+  // 采用独立带时间戳的 profile 目录，彻底免疫 Windows 下进程残留引发的 SingletonLock 冲突
+  const profileDir = join(dir, `profile-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
   await mkdir(profileDir, { recursive: true })
-  const runtime = launchChrome(chromePath, profileDir, port, ['--headless=new'], join(dir, 'engine.log'))
+  const flags = [
+    '--headless=new',
+    '--disable-gpu',
+    '--allow-file-access-from-files',
+    '--disable-web-security',
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-breakpad',
+    '--disable-sync',
+    '--mute-audio',
+  ]
+  const runtime = launchChrome(chromePath, profileDir, port, flags, join(dir, 'engine.log'))
   try {
     const wsUrl = await fetchBrowserWsUrl(port, 20000)
     const conn = new CdpConnection(wsUrl)
     await conn.connect(10000)
     const session = await createPageSession(conn, 'about:blank')
-    return { runtime, conn, session, dir }
+    return { runtime, conn, session, dir, profileDir }
   } catch (error) {
     killChrome(runtime, true)
     // 启动失败（可能是残留进程占着 profile）：等退出后清掉目录，下次全新启动。
@@ -176,7 +189,12 @@ async function launch(): Promise<Engine> {
 function settleJs(waitMs: number): string {
   return `(async () => {
   const deadline = Date.now() + ${waitMs};
-  try { await document.fonts.ready } catch (e) {}
+  try {
+    await Promise.race([
+      document.fonts ? document.fonts.ready : Promise.resolve(),
+      new Promise((resolve) => setTimeout(resolve, Math.min(${waitMs}, 1200))),
+    ]);
+  } catch (e) {}
   await Promise.all(Array.from(document.images).map((img) => {
     if (img.complete) return null;
     return new Promise((resolve) => {
@@ -188,6 +206,26 @@ function settleJs(waitMs: number): string {
   }));
   return true;
 })()`
+}
+
+/** 测量卡片及外边距的实际渲染高度（CSS px）。 */
+async function measureContentHeight(session: CdpSession): Promise<number> {
+  const value = await evaluateJson(
+    session,
+    `(() => {
+      const card = document.querySelector('.card');
+      const body = document.body;
+      const html = document.documentElement;
+      if (!card) return Math.max(body ? body.scrollHeight : 0, html ? html.scrollHeight : 0);
+      const rect = card.getBoundingClientRect();
+      const style = window.getComputedStyle(body);
+      const padTop = parseFloat(style.paddingTop) || 0;
+      const padBottom = parseFloat(style.paddingBottom) || 0;
+      return Math.round(rect.height + padTop + padBottom);
+    })()`,
+    false,
+  )
+  return Math.round(Number(value)) || 0
 }
 
 /** 测量文档内容高度（CSS px）。 */
@@ -207,6 +245,8 @@ export interface RenderInput {
   width: number
   /** 起始视口高度（CSS px），内容更高时自动扩展成长图。 */
   height: number
+  /** 目标画幅比例（width / height，如 16/9），自适应长图为 null / undefined。 */
+  aspectRatio?: number | null
   /** 输出缩放（deviceScaleFactor；缺省 2x）。 */
   scale?: number
   /** 正文含 mermaid 围栏：投放引擎文件并等图画完再截。 */
@@ -249,10 +289,16 @@ async function waitMermaid(session: CdpSession): Promise<void> {
   const result = await Promise.race([Promise.resolve(hook).catch(() => 'failed'), timeout]);
   // 图是同步插进 DOM 的，但字体/布局要一帧才稳定。
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  try { await document.fonts.ready } catch (error) {}
+  try {
+    await Promise.race([
+      document.fonts ? document.fonts.ready : Promise.resolve(),
+      new Promise((resolve) => setTimeout(resolve, 800)),
+    ]);
+  } catch (error) {}
   return result;
 })()`,
     true,
+    MERMAID_WAIT_MS + 2000,
   ).catch(() => null)
 }
 
@@ -308,20 +354,53 @@ async function renderOnce(target: Engine, input: RenderInput): Promise<string> {
   await writeFile(htmlFile, input.html, 'utf8')
   try {
     await setViewport(target.session, input.width, input.height, scale)
-    await navigateAndWait(target.session, `file:///${htmlFile.replaceAll('\\', '/')}`, 20000)
-    await evaluateJson(target.session, settleJs(3000), true).catch(() => null)
+    await navigateAndWait(target.session, `file:///${htmlFile.replaceAll('\\', '/')}`, 15000, true)
+    await evaluateJson(target.session, settleJs(2500), true, 5000).catch(() => null)
     // 图表要等引擎画完再量高度，否则测到的是源码块的高度（长图会被截断）。
     if (input.needsMermaid === true) await waitMermaid(target.session)
-    // 内容比初始视口高时扩展视口截长图；扩展会触发重排，最多修正两轮。
+    let cssWidth = input.width
     let cssHeight = input.height
-    for (let round = 0; round < 2; round += 1) {
-      const measured = await measureHeight(target.session)
-      const next = Math.min(Math.max(measured, input.height), maxCssHeight)
-      if (next === cssHeight) break
-      cssHeight = next
-      await setViewport(target.session, input.width, cssHeight, scale)
+    const ratio = typeof input.aspectRatio === 'number' && input.aspectRatio > 0 ? input.aspectRatio : null
+
+    // 测量卡片真实内容高度（包含 padding）
+    const measuredHeight = await measureContentHeight(target.session)
+    const contentHeight = Math.max(measuredHeight, input.height)
+
+    // 视口安全宽度上限（按缩放折算成 CSS px，不超过 4K 物理宽 4096px，也不低于基准排版宽）
+    const maxCssWidth = Math.max(input.width, Math.min(2560, Math.floor(MAX_DEVICE_WIDTH / scale)))
+
+    if (ratio !== null) {
+      // 固定画幅比例（width / height = ratio）：
+      // 既包容内容高度（不截断文字），又保持排版宽度不小于基准排版宽。
+      const candidateH = Math.round(input.width / ratio)
+      if (candidateH >= contentHeight) {
+        // 短内容：排版宽度保持不变，高度向下延展补画布以满足比例
+        cssWidth = input.width
+        cssHeight = Math.min(candidateH, maxCssHeight)
+      } else {
+        // 较长内容：高度由卡片内容撑开，宽度向两侧延展以满足画幅比例
+        const candidateW = Math.round(contentHeight * ratio)
+        const totalPixels = candidateW * contentHeight * scale * scale
+        if (candidateW <= maxCssWidth && totalPixels <= MAX_SAFE_SURFACE_PIXELS) {
+          // 在安全尺寸与像素预算内，完全维持画幅比例
+          cssWidth = candidateW
+          cssHeight = Math.min(contentHeight, maxCssHeight)
+        } else {
+          // 极端超长长图：无法在安全分辨率内维持画幅；
+          // 宽度钳制在安全上限，高度完整保留长图（由 aspectLocked = false 告知前端）
+          cssWidth = Math.min(candidateW, maxCssWidth)
+          cssHeight = Math.min(contentHeight, maxCssHeight)
+        }
+      }
+    } else {
+      // 自适应模式：宽度为基准宽度，高度贴合内容长图
+      cssHeight = Math.min(contentHeight, maxCssHeight)
     }
-    return await captureTiled(target.session, input.width, cssHeight, scale)
+
+    await setViewport(target.session, cssWidth, cssHeight, scale)
+    await evaluateJson(target.session, 'new Promise(r => requestAnimationFrame(r))', true).catch(() => null)
+
+    return await captureTiled(target.session, cssWidth, cssHeight, scale)
   } finally {
     await rm(htmlFile, { force: true }).catch(() => {})
   }
@@ -338,10 +417,21 @@ async function captureTiled(
   cssHeight: number,
   scale: number,
 ): Promise<string> {
-  if (Math.round(cssHeight * scale) <= MAX_SEGMENT_DEVICE_HEIGHT) {
+  const deviceWidth = Math.round(cssWidth * scale)
+  const deviceHeight = Math.round(cssHeight * scale)
+  const totalPixels = deviceWidth * deviceHeight
+
+  // 只有当高度在分段上限内且单次输出像素在安全预算内，才走单张直出
+  if (deviceHeight <= MAX_SEGMENT_DEVICE_HEIGHT && totalPixels <= MAX_SAFE_SURFACE_PIXELS) {
     return captureScreenshot(session, 100, 'png', true, 30000)
   }
-  const segCss = Math.floor(MAX_SEGMENT_DEVICE_HEIGHT / scale)
+
+  // 动态分段高度：既不超过 MAX_SEGMENT_DEVICE_HEIGHT，也保证单段设备像素不超 MAX_SAFE_SURFACE_PIXELS
+  const maxSegDeviceHeight = Math.min(
+    MAX_SEGMENT_DEVICE_HEIGHT,
+    Math.floor(MAX_SAFE_SURFACE_PIXELS / Math.max(1, deviceWidth)),
+  )
+  const segCss = Math.max(200, Math.floor(maxSegDeviceHeight / scale))
   const tiles: PngTile[] = []
   // 视口高缓存：参数相同时跳过 setDeviceMetricsOverride（每次覆写都会重置
   // 页面的合成/滚动状态，白付一个 CDP 往返）；最后一段视口=剩余高。
@@ -362,12 +452,12 @@ async function captureTiled(
       png,
       x: 0,
       y: Math.round(y * scale),
-      width: Math.round(cssWidth * scale),
+      width: deviceWidth,
       height: Math.round(segCssHeight * scale),
     })
   }
   const totalHeight = tiles.reduce((sum, tile) => sum + tile.height, 0)
-  return stitchPng(tiles, Math.round(cssWidth * scale), totalHeight).toString('base64')
+  return stitchPng(tiles, deviceWidth, totalHeight).toString('base64')
 }
 
 /**
@@ -386,8 +476,8 @@ export async function probePageHeight(fileUrl: string, cssWidth: number, fallbac
     try {
       const target = await ensureEngine()
       await setViewport(target.session, cssWidth, 800, 1)
-      await navigateAndWait(target.session, fileUrl, 15000)
-      await evaluateJson(target.session, settleJs(2500), true).catch(() => null)
+      await navigateAndWait(target.session, fileUrl, 8000, true)
+      await evaluateJson(target.session, settleJs(1500), true, 4000).catch(() => null)
       const measured = await measureHeight(target.session)
       return Math.max(160, Math.min(2400, measured > 0 ? measured : fallback))
     } catch {
