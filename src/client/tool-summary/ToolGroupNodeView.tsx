@@ -26,9 +26,21 @@ import { downloadPercent, useDownloadState } from '../download/api.ts'
 
 const NS = 'dts'
 
+/** 官方 turnProcess.spec 里的消息 / subagent 计数（运行时窄化，拿不到时为 0）。 */
+function turnProcessSpecCounts(turnProcess: unknown): { readonly messageCount: number; readonly subagentCount: number } {
+  const none = { messageCount: 0, subagentCount: 0 } as const
+  if (typeof turnProcess !== 'object' || turnProcess === null) return none
+  const spec = (turnProcess as { readonly spec?: unknown }).spec
+  if (typeof spec !== 'object' || spec === null) return none
+  const rec = spec as Record<string, unknown>
+  const num = (value: unknown): number => (
+    typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+  )
+  return { messageCount: num(rec['messageCount']), subagentCount: num(rec['subagentCount']) }
+}
+
 /** Per-turn activity counts (tool-call nodes + reasoning blocks, drawer 口径一致）. */
-export function useTurnActivityCounts(turn: number, useChat: ChatNodeViewProps<'tool-call'>['useChat']): {
-  readonly tools: number
+export function useTurnActivityCounts(turn: number, useChat: ChatNodeViewProps<'tool-call'>['useChat']): {  readonly tools: number
   readonly reasoning: number
   /** 本轮仍有 assistant-step 在流式输出。 */
   readonly streaming: boolean
@@ -302,12 +314,24 @@ const ToolEntry = memo(function ToolEntry({
   )
   const showDownload = running && liveActivity.hasDownload && liveDownloadCalls.length === 0
   const showCommand = running && !liveActivity.hasDownload && liveDownloadCalls.length === 0 && liveActivity.hasCommand && (elapsed ?? 0) > 1000
-  // 文案与官方 TurnProcessNodeView 逐字一致（同 chat locale 键）；运行中保持
-  // 原有的实时时长（官方行在流式期不存在，进抽屉前给个活指示）。
-  const resting = t(stats.total === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: stats.total })
+  // 文案与官方 TurnProcessNodeView 逐字一致（同 chat locale 键）：工具调用 +
+  // 消息 / subagent 计数（取官方 turnProcess.spec，与官方折叠行同口径；
+  // 拿不到 spec 时只显示工具调用）。运行中保持原有的实时时长。
+  const specCounts = turnProcessSpecCounts(turnProcess)
+  const separator = t('message.turnProcess.separator') as string
+  const restingParts = [
+    t(stats.total === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: stats.total }),
+  ]
+  if (specCounts.messageCount > 0) {
+    restingParts.push(t(specCounts.messageCount === 1 ? 'message.turnProcess.messages.one' : 'message.turnProcess.messages.other', { count: specCounts.messageCount }))
+  }
+  if (specCounts.subagentCount > 0) {
+    restingParts.push(t(specCounts.subagentCount === 1 ? 'message.turnProcess.subagents.one' : 'message.turnProcess.subagents.other', { count: specCounts.subagentCount }))
+  }
+  const resting = restingParts.join(separator)
   const label = running
     ? elapsed !== undefined ? `工具调用中 · ${formatDuration(elapsed)}` : '工具调用中'
-    : activity.reasoning > 0 ? `${resting}${t('message.turnProcess.separator') as string}${activity.reasoning} 次思考` : resting
+    : activity.reasoning > 0 ? `${resting}${separator}${activity.reasoning} 次思考` : resting
 
   return (
     <div className={`${NS}__entry-wrap`}>
@@ -318,8 +342,8 @@ const ToolEntry = memo(function ToolEntry({
         data-running={running || undefined}
         data-turn-process={turn}
         data-turn-process-tool-calls={stats.total}
-        data-turn-process-messages={0}
-        data-turn-process-subagents={0}
+        data-turn-process-messages={specCounts.messageCount}
+        data-turn-process-subagents={specCounts.subagentCount}
         aria-expanded={drawerOpen}
         aria-label={label}
         onClick={(event) => {

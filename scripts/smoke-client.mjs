@@ -297,6 +297,12 @@ if (baseSheet === undefined) fail('missing base <style id=dsh-chat-flow-styles> 
 else if (typeof baseSheet.textContent !== 'string' || !baseSheet.textContent.includes('data-chat-flow-kind')) fail('base styles missing the turn-process unfold rule')
 else pass('base styles hide the official turn-process control row (unfold)')
 
+// 工具行文案带消息/subagent 计数（官方 turn-process locale 键）。
+for (const key of ['message.turnProcess.messages.one', 'message.turnProcess.subagents.one']) {
+  if (!code.includes(key)) fail(`client bundle missing locale key ${key} (tool row counts)`)
+  else pass(`client bundle references ${key}`)
+}
+
 // 两个 keyed 槽位注册 + 截图按钮注册（+ download toolview）；turn-process
 // 保持官方原生、插件不再注册。
 const cell = (key) => registeredSlots.find((s) => s?.slot === 'conversation.chat.node' && s?.key === key)
