@@ -238,7 +238,10 @@ const CSS = `
   min-width: 0;
   height: 33px;
   margin: 0;
-  padding: 0 0 8px;
+  /* 与 dts__process 同步的上下平衡修正：官方 padding: 0 0 8px 让文字贴行上沿
+     （实测上 6px / 下到发丝线 14px）。这里归零，行盒在 32.5px 内容区居中
+     （上下各 ~10px）；行总高与 margin-bottom 不变，占位与虚拟列表都不受影响。 */
+  padding: 0;
   border: none;
   border-bottom: .5px solid var(--dsw-alias-border-l2);
   background: 0 0;

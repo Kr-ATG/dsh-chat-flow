@@ -43,7 +43,11 @@ const CSS = `
   min-width: 0;
   height: 33px;
   margin: 0;
-  padding: 0 0 8px;
+  /* 上下留白平衡：官方是 padding: 0 0 8px，于是 24px 行盒被顶到行上沿
+     （实测文字上 6px / 下到发丝线 14px，线像悬着）。改成 0，让行盒在
+     32.5px 内容区里居中（上下各 ~10px）。行总高 33px 与 margin-bottom
+     8px 都不动 → 整块占位不变，虚拟列表依旧不跳位。 */
+  padding: 0;
   border: none;
   border-bottom: .5px solid var(--dsw-alias-border-l2);
   background: 0 0;
@@ -54,8 +58,11 @@ const CSS = `
   margin-bottom: 8px;
 }
 
-/* 思考分段：行内第二个可点热区（点工具段走行本体）。 */
+/* 思考分段：行内第二个可点热区（点工具段走行本体）。
+   line-height 显式对齐 label 的 24px 行盒——两段都是 flex 项、各自按自己的
+   行盒居中，不写死就会出现「· 7 次思考」比前面半句高/低半像素的错位。 */
 .dts__process-think {
+  line-height: 24px;
   cursor: pointer;
   color: var(--dsw-alias-label-secondary);
   transition: color .15s ease;
