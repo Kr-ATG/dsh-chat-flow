@@ -8,7 +8,8 @@
   入口 = 总结卡上的「工具 N」「思考 N」两枚 chip）
 - **正文增强**：proto-tabs 可交互卡片（pill / expand / glow）· diagram 流程图围栏
   （JSON → SVG）
-- **界面与工具**：会话头部「对话 / 轨迹」标签钉到右上角控件组（在应用打开 + ···）左侧 · 对话截图（无头浏览器出图，
+- **界面与工具**：会话头部「对话 / 轨迹」标签钉到右上角控件组（在应用打开 + ···）左侧 · 提问行问答卡常驻
+  （官方折叠后就看不见问题原文）· 对话截图（无头浏览器出图，
   可内嵌本地 HTML）· download 下载工具（wire 工具 + 实时进度条）
 
 产物 5.05 MB（host 3.45 MB + 浏览器半身 258 KB + mermaid 资源 968 KB），浏览器侧只加载
@@ -24,6 +25,7 @@
 | **可交互卡片** | 正文里的 proto-tabs 围栏渲染成可点击的 Tab 卡片（信息分层 pill / 可展开卡片 / AI 流光三种形态，缺省 pill）；解析失败自动回退原文，绝不崩卡 |
 | **对话截图** | assistant 消息操作栏相机按钮 → 截图面板（范围本条回复/这一轮/整段会话 × 版式电脑/手机 × 画质 1080P/2K/4K × 画幅 × 五套主题（浅/深/玻璃/玻璃深/阅读版）；标题/徽章可编辑；预览后保存/复制/下载/打开目录；「元素删除」编辑模式点击页面删元素再重新生成）。正文里提到的本地 HTML 会自动内嵌进截图（走 file:// iframe，同目录样式图片照常加载，只嵌页面本身，最多 3 张）；host 端常驻无头浏览器渲染卡片（markdown-it + shiki + mermaid 真图），保存目录 `~/.dsh/storages/dsh-chat-flow-screenshot` |
 | **会话头部视图标签** | 官方把「对话 / 轨迹」两个视图标签独占标题下方一整行；本插件把 header 改成单行 flex，并用 `display:contents` 拍平 `_titleRow`，让 tablist 能与标题簇、`_headerUtilities`（在应用打开 split 按钮 + 「···」更多菜单）、`_headerCorner` 同层排 `order`，最终排成 `[标题 flex:1 收缩截断] [对话 轨迹] [右上角控件组] [右侧栏角标]`——标签落在右上角控件组的左侧、与标题同行。下划线贴字、hover 从中心展开、选中常驻蓝条。纯 CSS 注入，选择器只用 `header` / `role=tablist` / CSS Module 的 `_titleRow`、`_titleCluster`、`_headerUtilities`、`_headerCorner`、`_tab` 后缀，不依赖构建 hash 前缀；单视图（无 tablist）时 `:has` 不匹配，标题行也不被拍平，零影响 |
+| **提问行常驻问答** | 官方 `AskQuestionRow` 把「问题 + 所选答案」的问答卡放在 DisclosureRow 的**展开体**里（`open` 为假时整段根本不挂 DOM），回合跑完回看只剩「提问 · N/M 已回答」一行，问题原文要点「查看」才见得到。本插件接管 keyed `tool.call.toolview` 的 `ask_user_question`（该槽位对官方已覆盖的 key 是**替换**而非共享，所以 running / 已回答 / ASK_CANCELLED / ASK_ABORTED / 其他 error 五个分支全部自己覆盖），把问答卡搬到行下方**常驻**：折叠与否都在，未作答回落 `ask.skipped`，等待与取消/中断态给 verdict + 问题清单；「查看」展开体换成原始 args 与 result 的 JSON，不再和常驻区重复。行样式逐条对齐官方 ToolRow（含 running 扫光），文案全走官方 `conversation` locale 的 `ask.*` 键（另配一份内置兜底：槽位没注入 t 时不至于白屏），渲染异常由 ErrorBoundary 收成一行「提问」 |
 | **download 下载工具** | host 半身注册 wire 工具 `download`（url / dest / overwrite，Node 流式写盘，优先于用 pwsh 跑 curl）+ 进度路由 `GET /api/chat-flow/download/progress?callId=`；client 半身 keyed `tool.call.toolview`（key=download）渲染实时进度条（已收/总量、速度、ETA，确定填充+辉光游标/不定长游标滑动两态），完成态读结果 meta 显示落盘路径 + 大小 + 用时 + 「打开」按钮。进度按 callId 严格对齐（run_code 子调用 `<parent>:code:<n>` 两端同源），对话流 chip 与抽屉行同步显示百分比；缺省保存 `~/.dsh/storages/dsh-chat-flow-downloads/` |
 
 **正文链路保持官方**：text 块用官方 `MarkdownText`（ui-primitives）、图片走官方

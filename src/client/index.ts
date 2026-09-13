@@ -28,6 +28,7 @@ import { injectDiagramStyles } from './diagram/styles.ts'
 import { injectProtoStyles } from './proto/styles.ts'
 import { injectDownloadStyles } from './download/styles.ts'
 import { DownloadCard } from './download/DownloadCard.tsx'
+import { AskRowView } from './ask-question/AskRowView.tsx'
 import { mountActivityDrawer } from './tool-summary/activity-drawer.tsx'
 import { ThinkingStepNodeView } from './thinking/ThinkingStepNodeView.tsx'
 import { applyMessageScreenshot } from './shot/index.tsx'
@@ -68,6 +69,17 @@ export function apply(ctx: ClientContext): void {
       priority: -100,
       locale: 'chat',
     }, ThinkingStepNodeView))
+  })
+
+  // 提问行接管：把「问题 + 所选答案」从官方的展开体里搬出来常驻在行下方
+  // （keyed toolview 对官方已覆盖的 key 是替换，所以 running / 已回答 /
+  // 取消 / 中断 / 其他 error 五个分支都在 AskRowView 里自己覆盖了一遍；
+  // 文案仍走官方 conversation locale 键，插件不自带字符串）。
+  guarded(ctx, 'ask toolview seat', () => {
+    ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
+      { name: 'tool.call.toolview', key: 'ask_user_question', locale: 'conversation' },
+      AskRowView,
+    ))
   })
 
   // download 原子卡片：接管内置 download 工具行（keyed tool.call.toolview，

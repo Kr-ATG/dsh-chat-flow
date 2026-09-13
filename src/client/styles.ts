@@ -554,6 +554,133 @@ button.dtt__card-chip {
 .dtt__card-chip, .dtt__card-chip[data-kind="git"] { background: transparent !important; }
 body[data-ds-dark-theme] .dtt__card--reply { box-shadow: 0 1px 3px rgba(0,0,0,.20), 0 2px 6px rgba(0,0,0,.12) !important; border-color: rgba(255,255,255,.08) !important; }
 
+/* ── 提问行（tool.call.toolview / ask_user_question 接管）：问答卡常驻 ────
+   官方 AskQuestionRow 把「问题 + 所选答案」放在 DisclosureRow 的展开体里
+   （源码 open 为假时直接不渲染 children，折叠时整段不挂 DOM），回合跑完回看只剩
+   「提问 · N/M 已回答」一行。本视图行样式逐条对齐官方 ToolRow（o3BgMG 前缀），
+   问答卡对齐官方 AskQuestionCard（fsXYAq 前缀），差别只有一句：卡片常驻。
+   展开体换成原始 args 与 result 的 JSON，不再和常驻区重复。 */
+.dtt__ask-root {
+  flex-direction: column;
+  display: flex;
+}
+
+.dtt__ask-row {
+  position: relative;
+  overflow: hidden;
+}
+
+/* 等待回答时沿用官方工具行的扫光（同一套 2.6s 缓出无限循环）。 */
+.dtt__ask-root[data-state='running'] .dtt__ask-row::after {
+  content: "";
+  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--dsw-alias-bg-base) 60%, transparent) 55%, transparent 100%);
+  pointer-events: none;
+  width: 300px;
+  animation: 2.6s ease-out infinite dtt-ask-sweep;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+}
+
+@keyframes dtt-ask-sweep {
+  0% { left: -300px; }
+  90%, 100% { left: 100%; }
+}
+
+.dtt__ask-leading { flex-shrink: 0; }
+.dtt__ask-title { font-weight: 400; }
+.dtt__ask-chevron { color: var(--dsw-alias-label-secondary); }
+
+.dtt__ask-sep {
+  background: var(--dsw-alias-label-caption);
+  border-radius: 1px;
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+}
+
+.dtt__ask-summary {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  flex: auto;
+  overflow: hidden;
+}
+
+.dtt__ask-card {
+  border: .5px solid var(--dsw-alias-border-l1, rgba(127,127,127,.14));
+  background: var(--dsw-alias-bg-base);
+  border-radius: 12px;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 360px;
+  margin: 2px 0 4px 4px;
+  padding: 14px 18px;
+  display: flex;
+  overflow-y: auto;
+}
+
+.dtt__ask-item {
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  display: flex;
+}
+
+.dtt__ask-question, .dtt__ask-answer, .dtt__ask-verdict {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  margin: 0;
+}
+
+.dtt__ask-question { color: var(--dsw-alias-label-tertiary); }
+.dtt__ask-answer { color: var(--dsw-alias-label-primary); }
+.dtt__ask-answer-line { display: block; }
+.dtt__ask-skipped { color: var(--dsw-alias-label-caption); }
+.dtt__ask-verdict { color: var(--dsw-alias-label-primary); }
+
+/* 未回答（等待 / 取消 / 中断）：问题列成表。 */
+.dtt__ask-list {
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+}
+
+.dtt__ask-raw {
+  background: var(--dsw-alias-markdown-code-block, rgba(127,127,127,.06));
+  border: .5px solid var(--dsw-alias-border-l1, rgba(127,127,127,.14));
+  border-radius: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+  max-height: 260px;
+  margin: 4px 0 4px 4px;
+  padding: 12px 16px;
+  font-family: var(--dsw-font-markdown-code-block, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 18px;
+  overflow: auto;
+}
+
+.dtt__ask-fallback {
+  align-items: center;
+  gap: 6px;
+  display: flex;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dtt__ask-root[data-state='running'] .dtt__ask-row::after { animation: none; display: none; }
+}
+
 /* ══ 会话头部视图标签（对话 / 轨迹）钉到右上角控件组左侧 ════════════════
    官方 ui-conversation 把 tablist 作为 header 的第二个块级子元素，独占标题行
    下方一整条（header 实测 76px）。这里把 header 改成单行 flex 并用 order 换位：

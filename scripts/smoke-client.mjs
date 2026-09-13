@@ -9,13 +9,14 @@
  *      dsh-chat-flow-shot-styles / dsh-modal-animation-styles /
  *      dsh-chat-flow-proto-styles / dsh-chat-flow-diagram-styles /
  *      dsh-chat-flow-download-styles）
- *   4. `apply(ctx)` registers all seats (影子行回到 control 位)：
- *        conversation.chat.node / turn-process      priority -100
- *        conversation.chat.node / tool-call        priority -100
- *        conversation.chat.node / assistant-step   priority -100
+ *   4. `apply(ctx)` registers all seats：
+ *        conversation.chat.node / assistant-step   priority -100  locale chat
  *        conversation.chat.assistant-actions / chat-flow-screenshot  order 5
  *        tool.call.toolview / download             (keyed by wire tool name)
- *      影子行与成员行文案带消息/subagent 计数（message.turnProcess.*）。
+ *        tool.call.toolview / ask_user_question    locale conversation
+ *   5. 提问行真渲染一遍（折叠态）：问题原文 + 所选答案常驻在行下方，
+ *      summary 走官方 ask.answered 计数，未作答回落 ask.skipped，
+ *      等待态与 ASK_CANCELLED 态各自带 verdict + 问题清单。
  *
  * Usage: node scripts/smoke-client.mjs
  */
@@ -142,6 +143,11 @@ const MODULES = {
     IconDownloadOutline16: stubComponent('IconDownloadOutline16'),
     JsonBlock: stubComponent('JsonBlock'),
     MarkdownText: stubComponent('MarkdownText'),
+    // DisclosureRow 要能把「折叠区 + 展开体」透出来，否则测不到折叠态下还剩什么文字。
+    DisclosureRow: (props) => ({
+      type: 'div',
+      props: { children: [props.collapsedContent, props.open ? props.children : null] },
+    }),
   },
 }
 
@@ -253,7 +259,7 @@ const slotsService = {
     if (comp === undefined) throw new Error('slots.register called without component')
     registeredSlots.push({
       slot: spec?.name, key: spec?.key, priority: spec?.priority, locale: spec?.locale,
-      id: spec?.id, order: spec?.order,
+      id: spec?.id, order: spec?.order, comp,
     })
     return () => {}
   },
@@ -294,15 +300,105 @@ if (styleIds.length === 7) pass('injected seven <style> sheets (dtt__ + dts__ + 
 else if (styleIds.length > 7) fail(`unexpected extra styles: ${styleIds.join(', ')}`)
 
 // 注册槽位：1 个 keyed 槽位（assistant-step）+ 截图按钮 + download toolview
+// + ask_user_question toolview（问答卡常驻）
 const cell = (key) => registeredSlots.find((s) => s?.slot === 'conversation.chat.node' && s?.key === key)
-if (registeredSlots.length !== 3) {
-  fail(`expected 3 slot registrations, got ${registeredSlots.length}: ${JSON.stringify(registeredSlots)}`)
+if (registeredSlots.length !== 4) {
+  fail(`expected 4 slot registrations, got ${registeredSlots.length}: ${JSON.stringify(registeredSlots)}`)
 } else {
-  pass(`registered ${registeredSlots.length} seats (1 chat-node keyed + 1 actions + 1 download toolview)`)
+  pass(`registered ${registeredSlots.length} seats (1 chat-node keyed + 1 actions + 2 toolview)`)
 }
 const downloadSeat = registeredSlots.find((s) => s?.slot === 'tool.call.toolview' && s?.key === 'download')
 if (downloadSeat === undefined) fail('missing keyed toolview seat tool.call.toolview / download')
 else pass('seat tool.call.toolview / download (keyed by wire tool name)')
+const askSeat = registeredSlots.find((s) => s?.slot === 'tool.call.toolview' && s?.key === 'ask_user_question')
+if (askSeat === undefined) {
+  fail('missing keyed toolview seat tool.call.toolview / ask_user_question')
+} else if (askSeat.locale !== 'conversation') {
+  fail(`ask toolview locale = ${JSON.stringify(askSeat.locale)}, expected "conversation"`)
+} else {
+  pass('seat tool.call.toolview / ask_user_question (official row replaced, ask.* keys from conversation locale)')
+}
+
+// ── 提问行常驻渲染：折叠态也必须含问题原文与所选答案 ────────────────────
+// 官方 AskQuestionRow 的问答卡在展开体里（open 为假就不渲染），本插件把它
+// 搬到行下方常驻。这里把组件真正调用一遍，按折叠态（useState 桩返回初值
+// false）收集全部文本，缺内容即判失败。
+function collectText(node, out) {
+  if (node === null || node === undefined || node === false || node === true) return out
+  if (typeof node === 'string') { out.push(node); return out }
+  if (typeof node === 'number') { out.push(String(node)); return out }
+  if (Array.isArray(node)) {
+    for (const item of node) collectText(item, out)
+    return out
+  }
+  if (typeof node !== 'object') return out
+  const type = node.type
+  const props = node.props ?? {}
+  if (typeof type === 'function') {
+    const rendered = type.prototype && typeof type.prototype.render === 'function'
+      ? new type(props).render()
+      : type(props)
+    return collectText(rendered, out)
+  }
+  if ('children' in props) collectText(props.children, out)
+  return out
+}
+
+const askLocale = (key, params) => {
+  if (key === 'ask.answered') return `${params.answered}/${params.total} 已回答`
+  const table = {
+    'ask.rowTitle': '提问',
+    'ask.waiting': '等待回答',
+    'ask.skipped': '未回答',
+    'ask.cancelled': '已取消',
+    'ask.cancelledDetail': '本轮已取消，未提交回答',
+    'ask.interrupted': '已中断',
+    'ask.interruptedDetail': '本轮已中断，未提交回答',
+  }
+  return table[key] ?? key
+}
+
+const askArgs = JSON.stringify({
+  questions: [
+    { id: 'q1', question: '要按哪种方式还原？' },
+    { id: 'q2', question: '要不要顺手推送？' },
+  ],
+})
+const askProps = (block) => ({ callId: 'c1', toolName: 'ask_user_question', block, t: askLocale, openFile: () => {}, loadImage: () => {} })
+
+if (askSeat?.comp === undefined) {
+  fail('ask toolview component was not captured')
+} else {
+  const answered = collectText(askSeat.comp(askProps({
+    kind: 'result',
+    call: { argsRaw: askArgs },
+    content: [{ type: 'text', text: JSON.stringify({ answers: [{ id: 'q1', selected: ['总结卡入口 chip'] }, { id: 'q2', selected: [] }] }) }],
+    isError: false,
+  })), []).join('\n')
+  if (answered.includes('要按哪种方式还原？') && answered.includes('总结卡入口 chip')) {
+    pass('ask row 折叠态常驻问答：问题原文与所选答案都在')
+  } else {
+    fail(`ask row 折叠态缺内容：${answered.slice(0, 240)}`)
+  }
+  if (answered.includes('1/2 已回答')) pass('ask row summary 走官方 ask.answered 计数')
+  else fail(`ask row summary 缺计数：${answered.slice(0, 240)}`)
+  if (answered.includes('未回答')) pass('ask row 未作答项回落 ask.skipped 文案')
+  else fail('ask row 缺 skipped 文案')
+
+  const waiting = collectText(askSeat.comp(askProps({ argsRaw: askArgs })), []).join('\n')
+  if (waiting.includes('等待回答') && waiting.includes('要不要顺手推送？')) pass('ask row 等待态：等待回答 + 问题清单常驻')
+  else fail(`ask row 等待态缺内容：${waiting.slice(0, 240)}`)
+
+  const cancelled = collectText(askSeat.comp(askProps({
+    kind: 'result',
+    call: { argsRaw: askArgs },
+    content: [],
+    isError: true,
+    error: { code: 'ASK_CANCELLED' },
+  })), []).join('\n')
+  if (cancelled.includes('已取消') && cancelled.includes('本轮已取消，未提交回答')) pass('ask row 取消态：verdict + 问题清单常驻')
+  else fail(`ask row 取消态缺内容：${cancelled.slice(0, 240)}`)
+}
 const assistantSeat = cell('assistant-step')
 if (assistantSeat === undefined) {
   fail('missing registration for key assistant-step')
