@@ -547,11 +547,13 @@ const CSS = `
 .dtt__card-chip, .dtt__card-chip[data-kind="git"] { background: transparent !important; }
 body[data-ds-dark-theme] .dtt__card--reply { box-shadow: 0 1px 3px rgba(0,0,0,.20), 0 2px 6px rgba(0,0,0,.12) !important; border-color: rgba(255,255,255,.08) !important; }
 
-/* ══ 会话头部视图标签（对话 / 轨迹）移到右上角 ═══════════════════════════
+/* ══ 会话头部视图标签（对话 / 轨迹）移到左上角 ═══════════════════════════
    官方 ui-conversation 把 tablist 作为 header 的第二个块级子元素，独占标题行
-   下方一整条（header 实测 76px）。这里把 header 改成单行 flex：标题行
-   flex:1 1 auto + min-width:0 负责收缩截断，tablist flex:none 靠 margin-left:auto
-   钉到右上角，与标题垂直同行；header 收回 45px，省下的 31px 全还给正文。
+   下方一整条（header 实测 76px）。这里把 header 改成单行 flex 并用 order 换位：
+   tablist order:0 + flex:none 钉到最左上角（padding-left:8px 让标签文字与面包屑
+   标题左缘对齐——header 左内衬 20px，crumb 自带 8px 内衬），标题行 order:1
+   flex:1 1 auto + min-width:0 紧跟其右、负责收缩截断；header 收回 45px，
+   省下的 31px 全还给正文。
    选择器只用稳定钩子：header 标签、role=tablist、CSS Module 的 _titleRow /
    _tab 后缀（前缀 wSkVaW_ 是构建 hash，会变，一律不写死）。
    :has 只在真的渲染出 tablist（视图数 1 时官方不渲染）时生效，单视图零影响。 */
@@ -561,16 +563,18 @@ header:has(> [role='tablist']) {
   gap: 18px;
 }
 
-header:has(> [role='tablist']) > [class*='_titleRow'] {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
 header:has(> [role='tablist']) > [role='tablist'] {
+  order: 0;
   flex: none;
   gap: 22px;
-  margin: 0 0 0 auto;
-  padding-left: 0;
+  margin: 0;
+  padding-left: 8px;
+}
+
+header:has(> [role='tablist']) > [class*='_titleRow'] {
+  order: 1;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* 标签本体：下划线收回到贴着文字（官方 11px 底衬是给整行贴边用的），
