@@ -296,7 +296,7 @@ function AssistantBody({
 export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
   props: ChatNodeViewProps<'assistant-step'>,
 ) {
-  const { node, useTurnData, useChat, openFile, renderMessageImages, fileMentions, t, turnProcess } = props
+  const { node, useTurnData, useChat, openFile, cwd, inspectCall, renderMessageImages, fileMentions, t, turnProcess } = props
   const data = node.data
   const locationTurn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
@@ -389,6 +389,15 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     if (turnNumber === undefined) return undefined
     return snapshot.legacy.turnTimings.get(turnNumber)
   })
+  // 工具材料 + 两个回调登记（首步负责）：抽屉「工具」分区的数据源。官方
+  // turn-process 行已恢复原生、ToolGroupNodeView / 影子行都不再注册，所以
+  // 这份材料改由总结卡这一侧喂给共享总线——卡片上那两枚 chip 就是气泡唯一入口。
+  useEffect(() => {
+    if (!isFirstStep || turnNumber === undefined || toolNodes.length === 0) return
+    const store = activityStore()
+    store.setTools(turnNumber, toolNodes, cwd, timing?.startTime)
+    store.setHandlers({ openFile, inspectCall })
+  }, [isFirstStep, turnNumber, toolNodes, cwd, timing?.startTime, openFile, inspectCall])
   const streaming = data.status === 'running'
   const interrupted = data.status === 'interrupted'
   // 卡片只在「回合已结束」时出现（含中断）：流式期不包卡，保住流式输出；
@@ -436,13 +445,18 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     labels,
     t,
   })
+  // 总结卡工具/思考 chip → 活动抽屉（官方 turn-process 行保持原生，
+  // 抽屉入口只在卡片上；气泡锚在被点的 chip 上）。
+  const openDrawerFromCard = useCallback((mode: 'tools' | 'reasoning', el: HTMLElement) => {
+    if (turnNumber !== undefined) activityStore().open(turnNumber, mode, { el })
+  }, [turnNumber])
   if (!hasVisible && gallery === undefined) return null
 
   return (
     <div className="dtt__assistant" data-streaming={streaming || undefined}>
       <div className="dtt__assistant-body">
         {rendered.length > 0 && (variant !== undefined
-          ? <FlowCard variant={variant} meta={cardMeta} interrupted={interrupted}>{rendered}{gallery}</FlowCard>
+          ? <FlowCard variant={variant} meta={cardMeta} interrupted={interrupted} turn={turnNumber} onOpenDrawer={openDrawerFromCard}>{rendered}{gallery}</FlowCard>
           : <>{rendered}{gallery}</>)}
         {rendered.length === 0 && gallery}
         {interrupted && variant === undefined && <span className="dtt__stopped">已中断</span>}

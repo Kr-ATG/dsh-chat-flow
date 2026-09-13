@@ -5,16 +5,18 @@
  *  - **步骤卡**（`variant="step"`）：回合中间的 assistant 片段，极轻量——只有
  *    一条左侧竖线 + 淡纱，用来在视觉上把「一步」圈起来，不抢主回复的注意力。
  *  - **总结卡**（`variant="reply"`）：回合最终回复。带头部（完成标记 + 本轮
- *    统计 chip：用时 / 步数 / Git 次数）与顶部高光，正文用官方 MarkdownText
- *    渲染（流式期不包卡，见 thinking/ThinkingStepNodeView）。抽屉入口不在
- *    这里（紧凑 closed 回合走 control 影子行，其余走成员自有行）。
+ *    统计 chip：用时 / 步数 / 工具次数 / 思考次数 / Git 次数）与顶部高光，
+ *    正文用官方 MarkdownText 渲染（流式期不包卡，见 thinking/ThinkingStepNodeView）。
+ *    其中工具 / 思考 chip 是可点击的活动抽屉入口（气泡锚在 chip 上）——
+ *    官方 turn-process 行与思考行都保持原生展开语义，抽屉只有这一个入口，
+ *    所以这两枚 chip 就是「思考 / 工具调用气泡」的唯一门。
  *
  * 统计数字全部来自已有的会话投影（TurnLocation 的 start/end 事件、本回合的
  * assistant step 与 tool-call 节点数），不新增任何轮询或订阅。
  */
 import type { ReactNode } from 'react'
 
-/** 本轮统计（全部可缺省）。 */
+/** 本轮统计（全部可缺省：拿不到就不显示对应 chip）。 */
 export interface ReplyCardMeta {
   /** 本回合总耗时（ms）。 */
   readonly durationMs?: number | undefined
@@ -30,28 +32,109 @@ export interface ReplyCardMeta {
   readonly gitDetail?: string | undefined
 }
 
-/** 卡片外壳：step 轻量竖线卡、reply 总结卡。正常完成仅保留纯净卡片外壳；仅在中断时展示「已中断」头。 */
-export function FlowCard({ variant, interrupted, children }: {
+/** 紧凑时长：1.2s / 45s / 2m30s。 */
+function formatSpan(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return ''
+  const seconds = ms / 1000
+  if (seconds < 10) return `${Math.round(seconds * 10) / 10}s`
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  const minutes = Math.floor(seconds / 60)
+  const rest = Math.round(seconds - minutes * 60)
+  if (minutes < 60) return `${minutes}m${rest.toString().padStart(2, '0')}s`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h${(minutes % 60).toString().padStart(2, '0')}m`
+}
+
+function CheckIcon(): JSX.Element {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
+      <path d="M2.5 6.4 4.7 8.6 9.5 3.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+/** 一枚统计 chip。 */
+function Chip({ label, value, kind, title }: { readonly label: string; readonly value: string; readonly kind: string; readonly title?: string | undefined }): JSX.Element {
+  return (
+    <span className="dtt__card-chip" data-kind={kind} title={title ?? `${label} ${value}`}>
+      <span className="dtt__card-chip-label">{label}</span>
+      <span className="dtt__card-chip-value">{value}</span>
+    </span>
+  )
+}
+
+/** 活动抽屉入口 chip：点击按回合打开工具/思考分区（气泡锚在 chip 上）。 */
+function DrawerChip({ turn, mode, label, value, title, onOpen }: {
+  readonly turn: number
+  readonly mode: 'tools' | 'reasoning'
+  readonly label: string
+  readonly value: string
+  readonly title: string
+  readonly onOpen: (mode: 'tools' | 'reasoning', el: HTMLElement) => void
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      className="dtt__card-chip"
+      data-kind={mode === 'tools' ? 'tools' : 'thinking'}
+      data-turn-process={turn}
+      title={title}
+      aria-label={title}
+      onClick={(event) => { event.stopPropagation(); onOpen(mode, event.currentTarget) }}
+    >
+      <span className="dtt__card-chip-label">{label}</span>
+      <span className="dtt__card-chip-value">{value}</span>
+    </button>
+  )
+}
+
+/** 卡片外壳：step 轻量竖线卡、reply 总结卡（头部徽章 + 统计 chip）。 */
+export function FlowCard({ variant, meta, interrupted, turn, onOpenDrawer, children }: {
   readonly variant: 'step' | 'reply'
   readonly meta?: ReplyCardMeta | undefined
   readonly interrupted?: boolean | undefined
+  /** 回合号：给了 + onOpenDrawer 才渲染工具/思考入口 chip。 */
+  readonly turn?: number | undefined
+  /** 活动抽屉入口回调（chip 被点时，气泡锚在 chip 元素上）。 */
+  readonly onOpenDrawer?: ((mode: 'tools' | 'reasoning', el: HTMLElement) => void) | undefined
   readonly children: ReactNode
 }): JSX.Element {
   if (variant === 'step') {
     return <div className="dtt__card dtt__card--step">{children}</div>
   }
+  const duration = meta?.durationMs !== undefined && meta.durationMs > 0 ? formatSpan(meta.durationMs) : ''
+  const steps = meta?.steps ?? 0
+  const tools = meta?.tools ?? 0
+  const thinking = meta?.thinking ?? 0
+  const git = meta?.git
+  const gitDetail = meta?.gitDetail
+  const drawerEntry = turn !== undefined && onOpenDrawer !== undefined
+    ? { turn, onOpen: onOpenDrawer } as const
+    : undefined
   return (
     <div
       className="dtt__card dtt__card--reply"
       data-interrupted={interrupted === true ? '' : undefined}
     >
-      {interrupted === true && (
-        <div className="dtt__card-head">
-          <span className="dtt__card-badge" data-interrupted="">
-            已中断
-          </span>
-        </div>
-      )}
+      <div className="dtt__card-head">
+        <span className="dtt__card-badge" data-interrupted={interrupted === true ? '' : undefined}>
+          <CheckIcon />
+          {interrupted === true ? '已中断' : '本轮完成'}
+        </span>
+        <span className="dtt__card-chips">
+          {duration !== '' && <Chip label="用时" value={duration} kind="time" />}
+          {steps > 1 && <Chip label="步骤" value={String(steps)} kind="steps" />}
+          {drawerEntry !== undefined && tools > 0 && (
+            <DrawerChip turn={drawerEntry.turn} mode="tools" label="工具" value={String(tools)}
+              title={`查看本轮 ${tools} 次工具调用`} onOpen={drawerEntry.onOpen} />
+          )}
+          {drawerEntry !== undefined && thinking > 0 && (
+            <DrawerChip turn={drawerEntry.turn} mode="reasoning" label="思考" value={String(thinking)}
+              title={`查看本轮 ${thinking} 段思考`} onOpen={drawerEntry.onOpen} />
+          )}
+          {git !== undefined && git > 0 && <Chip label="Git" value={String(git)} kind="git" title={gitDetail !== undefined && gitDetail !== '' ? `Git 操作 ${git} 次（${gitDetail}）` : `Git 操作 ${git} 次`} />}
+        </span>
+      </div>
       <div className="dtt__card-body">{children}</div>
     </div>
   )
