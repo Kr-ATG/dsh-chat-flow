@@ -15,9 +15,8 @@
  * 时长 + 实时文字滚动预览），点击打开共享活动抽屉看全文；同一回合其余步骤
  * 只渲染自己的正文。think 块一律不内联展示（避免长思考链拖拽滚动）。
  */
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Fragment } from 'react'
 import { IconChevronDownOutline14, JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
@@ -29,6 +28,7 @@ import type { AssistantBlock, RenderMessageImages } from '@deepseek-ai/dsh-clien
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { activityStore, useDrawerOpen, type ActivityReasoningItem } from '../tool-summary/activity-drawer.tsx'
+import { useMotionAllowed, useSteppedFollow } from '../motion-utils.ts'
 import { formatDuration } from '../tool-summary/tool-stats.ts'
 import { useNow } from '../tool-summary/use-now.ts'
 import { FlowCard, type ReplyCardMeta } from '../flow-card.tsx'
@@ -56,13 +56,17 @@ interface ReasoningItem {
   readonly text: string
   /** Whether its owning step is still streaming. */
   readonly running: boolean
+  /** The owning assistant step number (for the live card heading). */
+  readonly step: number
 }
 
 /**
  * Turn-level reasoning ENTRY: instead of rendering reasoning inline (and
  * fighting the transcript scroll), one compact chip per turn opens the shared
- * activity drawer with the full reasoning material. While the turn is still
- * thinking the chip labels itself "思考中…".
+ * activity dialog with the full reasoning material. While the turn is still
+ * thinking the chip labels itself "思考中…" with a live transcript card
+ * below it (upstream better-display ReasoningCard language: bounded viewport
+ * with edge fades, follow/pause control, inline expand-to-read).
  */
 function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: {
   items: readonly ReasoningItem[]
@@ -87,32 +91,15 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: 
     ? elapsed !== undefined ? `思考中 · ${formatDuration(elapsed)}` : '思考中…'
     : t('message.turnProcess.thoughtForAWhile')
   // 当前正在输出的思考文字（最后一个仍 running 的 reasoning 文本）。
-  const liveText = useMemo(() => {
-    if (!running) return ''
+  const live = useMemo(() => {
+    if (!running) return { text: '', step: 0 }
     for (let index = items.length - 1; index >= 0; index -= 1) {
       const item = items[index]
-      if (item !== undefined && item.running) return item.text
+      if (item !== undefined && item.running) return { text: item.text, step: item.step }
     }
-    return ''
+    return { text: '', step: 0 }
   }, [items, running])
-  // 跟随最新：思考文字增长时把预览框滚到底——但仅当读者停在底部。
-  // 向上翻阅即停止自动跟随（想看哪里自己滚），滚回底部（≤24px）自动恢复；
-  // 阈值与 ChatView 的 FOLLOW_THRESHOLD 一致。
-  const liveRef = useRef<HTMLDivElement | null>(null)
-  const livePinnedRef = useRef(true)
-  const onLiveScroll = useCallback((event: React.UIEvent<HTMLDivElement>): void => {
-    const el = event.currentTarget
-    livePinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 24
-  }, [])
-  useEffect(() => {
-    if (!running) return
-    const el = liveRef.current
-    if (el === null) return
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-    // 双保险：滚动事件尚未派发的一帧内，几何距离也能拦住一次误跟随。
-    if (!livePinnedRef.current && distance > 24) return
-    el.scrollTop = el.scrollHeight
-  }, [liveText, running])
+  const liveText = live.text
 
   if (controlActive) return null
   return (
@@ -128,17 +115,80 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: 
         data-turn-process-subagents={0}
         aria-expanded={drawerOpen}
         aria-label={label}
-        onClick={(event) => {
-          const label = event.currentTarget.querySelector('[class*="__process-label"]')
-          store.open(turn, 'reasoning', { el: (label ?? event.currentTarget) as HTMLElement })
-        }}
+        onClick={() => { store.open(turn, 'reasoning') }}
       >
         <span className="dtt__process-label">{label}</span>
         <IconChevronDownOutline14 className="dtt__process-chevron" />
       </button>
       {running && liveText !== '' && (
-        <div className="dtt__reasoning-live" ref={liveRef} onScroll={onLiveScroll} aria-live="polite">
-          {liveText}
+        <LiveThinkingCard text={liveText} step={live.step} />
+      )}
+    </div>
+  )
+}
+
+/**
+ * 实时思考预览卡片（chip 行与工具行共用）：分步跟随（上游节拍）+ 边缘渐隐
+ * + 跟随/展开控制。展开只放大本卡视口（弹窗仍是看全文的入口），跟随意图
+ * 与位置保持。调用方保证只在有流式思考文字时挂载。
+ */
+export function LiveThinkingCard({ text, step }: { text: string; step: number }) {
+  // 展开只放大本卡视口，跟随意图与位置保持。
+  const [expanded, setExpanded] = useState(false)
+  // 跟随最新：思考文字增长时分步跟到底（上游 better-display 节拍：
+  // 840ms 停顿、500ms 走两行，burst 不加速追赶）——但仅当读者停在底部。
+  // 上翻/选中/显式暂停即停（想看哪里自己滚），滚回底部或点跟随恢复；
+  // 阈值与 ChatView 的 FOLLOW_THRESHOLD 一致。
+  const motion = useMotionAllowed(true)
+  const { ref, onScroll, onWheel, edges, overflow, following, setFollowing } = useSteppedFollow(text, true, motion)
+  return (
+    <div
+      className="dtt__reasoning-live-card"
+      data-following={following || undefined}
+      data-overflow={overflow || undefined}
+      data-expanded={expanded || undefined}
+    >
+      <div className="dtt__reasoning-live-head">
+        <span className="dtt__reasoning-live-title">思考</span>
+        <span className="dtt__reasoning-live-step">步骤 {step}</span>
+      </div>
+      <div
+        className="dtt__reasoning-live"
+        data-edges={edges}
+        ref={ref}
+        onScroll={onScroll}
+        onWheel={onWheel}
+        role="region"
+        aria-label={`正在思考${overflow ? '，可滚动阅读' : ''}`}
+        tabIndex={overflow ? 0 : undefined}
+        onPointerDown={() => { if (following) setFollowing(false) }}
+        aria-live="polite"
+      >
+        {text}
+      </div>
+      {(overflow || expanded) && (
+        <div className="dtt__reasoning-live-foot">
+          {motion
+            ? (
+              <button
+                type="button"
+                className="dtt__reasoning-live-action"
+                onClick={() => { setFollowing(!following) }}
+                aria-label={following ? '暂停自动跟随思考' : '继续跟随最新思考'}
+              >
+                {following ? '暂停跟随' : '跟随最新'}
+              </button>
+            )
+            : <span className="dtt__reasoning-live-caption">手动阅读</span>}
+          <button
+            type="button"
+            className="dtt__reasoning-live-action"
+            aria-expanded={expanded}
+            aria-label={expanded ? '收起实时思考' : '展开阅读实时思考'}
+            onClick={() => { setExpanded(value => !value) }}
+          >
+            {expanded ? '收起' : '展开阅读'}
+          </button>
         </div>
       )}
     </div>
@@ -146,6 +196,16 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: 
 }
 
 type AssistantBlockLike = AssistantBlock
+
+/**
+ * 新挂载内容在流式期柔和显现（上游 better-display word-motion 的块级近似：
+ * 上游逐字形做 opacity/blur，这里官方 MarkdownText 整块渲染，只能做到
+ * 新挂载块级节点淡入——已显示的旧节点绝不动）。
+ */
+function Fresh({ live, freshKey, children }: { live: boolean; freshKey: string; children: ReactNode }): ReactNode {
+  if (!live) return <>{children}</>
+  return <span className="dtt__fresh" data-fresh key={freshKey}>{children}</span>
+}
 
 /** 助手正文：text 走官方 MarkdownText、image 走官方槽、未知块 JsonBlock。 */
 function AssistantBody({ blocks, streaming, interrupted, renderMessageImages, mentions, labels, t }: {
@@ -184,10 +244,10 @@ function AssistantBody({ blocks, streaming, interrupted, renderMessageImages, me
           if (text === '') return
           splitDiagram(text).forEach((sub, subIndex) => {
             if (sub.kind === 'diagram') {
-              rendered.push(<DiagramCard key={`${key}-dg${subIndex}`} spec={sub.spec} />)
+              rendered.push(<Fresh live={streaming} freshKey={`${key}-dg${subIndex}`}><DiagramCard spec={sub.spec} /></Fresh>)
             } else if (sub.text !== '') {
               rendered.push(
-                <MarkdownText key={`${key}-md${subIndex}`} text={sub.text} streaming={streaming} labels={labels} fileMentions={mentions} />,
+                <Fresh live={streaming} freshKey={`${key}-md${subIndex}`}><MarkdownText text={sub.text} streaming={streaming} labels={labels} fileMentions={mentions} /></Fresh>,
               )
             }
           })
@@ -195,12 +255,12 @@ function AssistantBody({ blocks, streaming, interrupted, renderMessageImages, me
         const parts = splitProtoTabs(block.text)
         if (parts.length === 1 && parts[0]?.kind === 'md' && parts[0].text.indexOf('diagram') < 0) {
           rendered.push(
-            <MarkdownText key={index} text={block.text} streaming={streaming} labels={labels} fileMentions={mentions} />,
+            <Fresh live={streaming} freshKey={`md${index}`}><MarkdownText text={block.text} streaming={streaming} labels={labels} fileMentions={mentions} /></Fresh>,
           )
         } else {
           parts.forEach((part, partIndex) => {
             if (part.kind === 'card') {
-              rendered.push(<ProtoTabsCard key={`${index}-${partIndex}`} spec={part.spec} />)
+              rendered.push(<Fresh live={streaming} freshKey={`proto${index}-${partIndex}`}><ProtoTabsCard spec={part.spec} /></Fresh>)
             } else {
               pushMd(`${index}-${partIndex}`, part.text)
             }
@@ -221,12 +281,12 @@ function AssistantBody({ blocks, streaming, interrupted, renderMessageImages, me
           index += 1
         }
         rendered.push(
-          <Fragment key={start}>
+          <Fresh live={streaming} freshKey={`img${start}`}>
             {renderMessageImages({
               images: group.map(({ attachment }) => ({ attachment })),
               align: 'start',
             })}
-          </Fragment>,
+          </Fresh>,
         )
         break
       }
@@ -235,12 +295,13 @@ function AssistantBody({ blocks, streaming, interrupted, renderMessageImages, me
         break
       default:
         rendered.push(
-          <JsonBlock
-            key={index}
-            label={t('message.unknownBlock')}
-            payload={block.block}
-            truncatedLabel={total => t('json.truncated', { total })}
-          />,
+          <Fresh live={streaming} freshKey={`unknown${index}`}>
+            <JsonBlock
+              label={t('message.unknownBlock')}
+              payload={block.block}
+              truncatedLabel={total => t('json.truncated', { total })}
+            />
+          </Fresh>,
         )
     }
   }
@@ -292,7 +353,7 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     const stepRunning = step.data.status === 'running'
     return step.data.blocks
       .filter((block): block is Extract<AssistantBlockLike, { kind: 'reasoning' }> => block.kind === 'reasoning')
-      .map(block => ({ text: block.text, running: stepRunning }))
+      .map(block => ({ text: block.text, running: stepRunning, step: step.data.step }))
   }), [steps])
   const isFirstStep = steps.length > 0 && node.key === steps[0]?.key
   const turnRunning = steps.some(step => step.data.status === 'running')

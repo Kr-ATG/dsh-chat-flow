@@ -8,36 +8,89 @@
  * order); every sibling node of the same turn renders null.
  */
 
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ChatNode, ChatNodeViewProps, ChatViewSlotProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: activates the ui-chat / ui-tool SlotMap augmentation so ChatNodeViewProps
 // resolves its owner/keyed share (selectedCallId, cwd, openFile, inspectCall…).
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
-import { IconChevronDownOutline14, IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { callDurationMs, callName, callSummary, classifyActivity, collectRunningCalls, computeStats, formatDuration, isRunning, parseDownload, resultText, type DownloadInfo } from './tool-stats.ts'
-import { classifyKind, type ActivityKind } from './activity-kind.ts'
-import { KindIcon } from './icons.tsx'
+import {
+  DiffBlock, IconApiOutline14, IconBrowseOutline16, IconChevronDownOutline14,
+  IconChevronRightOutline14, IconDownloadOutline16, IconEditOutline16, IconSearchOutline16,
+  IconSkillOutline16, IconSparkle16, JsonTree, MarkdownText, ReadBlock, SearchBlock,
+  TerminalBlock, WebBlock,
+} from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import { callDurationMs, callName, classifyActivity, collectRunningCalls, computeStats, formatDuration, isRunning, parseDownload, type DownloadInfo } from './tool-stats.ts'
+import {
+  PHASE_LABEL, argFields, classifyCategory, diffHunksOf, executionFacts, rawResultJson,
+  readWindowOf, resultExtraCount, resultParagraphs, rowSummary, rowTitle, searchViewOf,
+  toolArgsRaw, viewPhase, webViewOf,
+} from './activity-view-model.ts'
+import type { ViewCategory, ViewPhase } from './activity-view-model.ts'
 import { useNow } from './use-now.ts'
 import { activityStore, useDrawerOpen, type ActivityHandlers, type ActivityStore } from './activity-drawer.tsx'
+import { useMotionAllowed, useHeightAnimation } from '../motion-utils.ts'
+import { LiveThinkingCard } from '../thinking/ThinkingStepNodeView.tsx'
 import { useTurnActivityCounts } from './TurnProcessShadowView.tsx'
 import { LiveDownloadCard } from '../download/DownloadCard.tsx'
 import { downloadPercent, useDownloadState } from '../download/api.ts'
 
 const NS = 'dts'
 
-const EMPTY: readonly ChatNode<'tool-call'>[] = []
-
-/** One colored activity badge (SVG glyph + label), keyed by `data-kind` for CSS. */
-function KindBadge({ kind }: { readonly kind: ActivityKind }) {
-  return (
-    <span className={`${NS}__badge`} data-kind={kind.key} title={kind.label}>
-      <span className={`${NS}__badge-icon`} aria-hidden><KindIcon kind={kind.key} size={12} /></span>
-      <span className={`${NS}__badge-text`}>{kind.label}</span>
-    </span>
-  )
+const MD_LABELS: MarkdownLabels = {
+  code: { copyLabel: '复制', copiedLabel: '已复制' },
+  footnotes: '脚注',
 }
+
+const READ_LABELS = {
+  window: (shown: number, total: number) => `显示 ${shown} / ${total} 行`,
+  copy: '复制', copied: '已复制', collapseAria: '收起文件内容',
+  expandAria: (hidden: number) => `展开其余 ${hidden} 行`, collapse: '收起',
+  expand: (hidden: number) => `展开其余 ${hidden} 行`,
+}
+
+const TERMINAL_LABELS = {
+  signal: (signal: string) => `信号 ${signal}`, exitCode: (code: number) => `退出码 ${code}`,
+  running: '执行中', failed: '失败', done: '已完成', copy: '复制', copied: '已复制',
+  noOutput: '没有输出', collapseAria: '收起命令输出', collapse: '收起',
+  expandAria: (hidden: number) => `展开其余 ${hidden} 行`, expand: (hidden: number) => `展开其余 ${hidden} 行`,
+}
+
+const DIFF_LABELS = {
+  copy: '复制', copied: '已复制', collapseAria: '收起差异', collapse: '收起',
+  expandAria: (hidden: number) => `展开其余 ${hidden} 行`, expand: (hidden: number) => `展开其余 ${hidden} 行`,
+  files: (count: number) => `${count} 个文件`,
+}
+
+const SEARCH_LABELS = {
+  pathsSummary: (shown: number, total: number, truncated: boolean) => `${shown} / ${total} 个路径${truncated ? '（结果已截断）' : ''}`,
+  matchesSummary: (shown: number, total: number, files: number, truncated: boolean) => `${shown} / ${total} 处匹配 · ${files} 个文件${truncated ? '（结果已截断）' : ''}`,
+  copy: '复制', copied: '已复制', noResults: '没有结果', collapseAria: '收起搜索结果', collapse: '收起',
+  expandAria: (hidden: number) => `展开其余 ${hidden} 行`, expand: (hidden: number) => `展开其余 ${hidden} 行`,
+}
+
+const WEB_LABELS = {
+  noResults: '没有结果', sourcesTruncated: '来源已截断', http: 'HTTP', contentTruncated: '内容已截断',
+  markdown: MD_LABELS,
+}
+
+const JSON_LABELS = {
+  copyValue: '复制值', copyJson: '复制 JSON', copyPath: '复制路径', copyPrettyJson: '复制格式化 JSON',
+  copyCompactJson: '复制紧凑 JSON', copied: '已复制', copyFailed: '复制失败', collapseNode: '收起节点',
+  expandNode: '展开节点', copyButtonTitle: (action: string) => action,
+}
+
+const CATEGORY_ICONS = {
+  write: IconEditOutline16, read: IconBrowseOutline16, terminal: IconApiOutline14,
+  search: IconSearchOutline16, web: IconSearchOutline16, other: IconSparkle16,
+} satisfies Record<ViewCategory, unknown>
+
+const languageOf = (path: string | undefined): string | undefined => path?.split('.').at(-1)
+const elapsedText = (ms: number): string => ms < 1000 ? `${Math.round(ms)} 毫秒` : `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} 秒`
+
+const EMPTY: readonly ChatNode<'tool-call'>[] = []
 
 /** Turn number owning one chat node, or undefined outside a turn/step location. */
 function turnNumber(node: {
@@ -52,9 +105,129 @@ function turnNumber(node: {
 /** Handoff props the drawer needs from the seat (registered into the store). */
 type HandoffProps = ActivityHandlers
 
+type DetailTab = 'result' | 'input' | 'raw'
+
+/** 输入页签：命令/文件内容优先，其次输入 JSON，末尾附全部输入字段。 */
+function ToolInputView({ name, args, raw }: {
+  readonly name: string
+  readonly args: Record<string, unknown>
+  readonly raw: string
+}) {
+  const command = typeof args.command === 'string' && args.command !== ''
+    ? args.command
+    : typeof args.cmd === 'string' && args.cmd !== '' ? args.cmd
+    : typeof args.script === 'string' && args.script !== '' ? args.script : undefined
+  const cwd = typeof args.workdir === 'string' && args.workdir !== ''
+    ? args.workdir
+    : typeof args.cwd === 'string' && args.cwd !== '' ? args.cwd : undefined
+  const content = typeof args.content === 'string' && args.content !== ''
+    ? args.content
+    : typeof args.new_string === 'string' && args.new_string !== '' ? args.new_string
+    : typeof args.newText === 'string' && args.newText !== '' ? args.newText
+    : typeof args.file_text === 'string' && args.file_text !== '' ? args.file_text : undefined
+  const target = typeof args.file_path === 'string' && args.file_path !== ''
+    ? args.file_path
+    : typeof args.path === 'string' && args.path !== '' ? args.path : undefined
+  if ((name === 'render_ui' || name === 'show_widget') && typeof args.html === 'string') {
+    return <>
+      <p className={`${NS}__tnote`}>交互式组件在弹窗里以输入 JSON 展示，完整交互见原轨迹。</p>
+      <JsonTree data={args} label="工具输入" labels={JSON_LABELS} />
+    </>
+  }
+  if (command !== undefined) {
+    return <>
+      <p className={`${NS}__tnote`}>提交的命令</p>
+      <TerminalBlock command={command} cwd={cwd} labels={TERMINAL_LABELS} />
+      <details className={`${NS}__tall`}>
+        <summary>全部输入字段</summary>
+        <JsonTree data={args} label="输入字段" labels={JSON_LABELS} />
+      </details>
+    </>
+  }
+  if (content !== undefined) {
+    const lines = content.split('\n').map((text, index) => ({ number: index + 1, text }))
+    const visible = lines.slice(0, 1600)
+    return <>
+      <p className={`${NS}__tnote`}>工具输入中的文件内容{lines.length > visible.length ? ' · 预览前 1,600 行，完整内容在原始数据中' : ''}</p>
+      <ReadBlock label={target ?? '文件内容'} lang={languageOf(target)} lines={visible} totalLines={lines.length} maxLines={16} labels={READ_LABELS} />
+      <details className={`${NS}__tall`}>
+        <summary>全部输入字段</summary>
+        <JsonTree data={args} label="输入字段" labels={JSON_LABELS} />
+      </details>
+    </>
+  }
+  return <JsonTree data={args} label={raw === '' ? '输入尚未到达' : '工具输入'} labels={JSON_LABELS} />
+}
+
+/** 结果页签：按分类用原生展示块渲染，文本回退 Markdown。 */
+function ToolResultView({ name, category, block, text }: {
+  readonly name: string
+  readonly category: ViewCategory
+  readonly block: ToolCallBlock
+  readonly text: string
+}) {
+  if (!('kind' in block)) {
+    return <>
+      <p className={`${NS}__tnote`}>工具已开始执行，正在等待结果。</p>
+      <ToolInputView name={name} args={argFields(toolArgsRaw(block))} raw={toolArgsRaw(block)} />
+    </>
+  }
+  if (block.error?.code === 'ABORTED' || block.error?.code === 'interrupted') {
+    return <>
+      <p className={`${NS}__tnote`}>工具已取消，未正常完成。输入和原始返回记录仍可查看。</p>
+      <pre className={`${NS}__traw`}>{text}</pre>
+    </>
+  }
+  if (category === 'terminal') {
+    const facts = executionFacts(block)
+    const output = text.replace(/\n\[(?:exit code: \d+|killed by signal: [^\]\n]+)\]$/, '')
+    const args = argFields(toolArgsRaw(block))
+    const command = typeof args.command === 'string' && args.command !== ''
+      ? args.command
+      : typeof args.cmd === 'string' && args.cmd !== '' ? args.cmd : name
+    const cwd = typeof args.workdir === 'string' && args.workdir !== ''
+      ? args.workdir
+      : typeof args.cwd === 'string' && args.cwd !== '' ? args.cwd : undefined
+    return <TerminalBlock command={command} cwd={cwd} output={output} exitCode={facts.exitCode} signal={facts.signal} maxLines={18} labels={TERMINAL_LABELS} />
+  }
+  if (category === 'read') {
+    const window = readWindowOf(block)
+    if (window !== null) {
+      return <ReadBlock label={window.path} lang={window.lang} lines={window.lines} totalLines={window.totalLines} maxLines={18} labels={READ_LABELS} />
+    }
+  }
+  if (category === 'write') {
+    const diffs = diffHunksOf(block)
+    if (diffs !== null) return <DiffBlock diffs={diffs} maxLines={18} labels={DIFF_LABELS} />
+  }
+  if (category === 'search') {
+    const view = searchViewOf(block)
+    if (view !== null && view.shape === 'paths') {
+      return <SearchBlock kind="paths" paths={view.paths} total={view.total} truncated={view.truncated} maxLines={18} labels={SEARCH_LABELS} />
+    }
+    if (view !== null && view.shape === 'matches') {
+      return <SearchBlock kind="matches" files={view.files} total={view.total} truncated={view.truncated} maxLines={18} labels={SEARCH_LABELS} />
+    }
+  }
+  if (category === 'web') {
+    const view = webViewOf(name, block)
+    if (view !== null && view.shape === 'fetch') {
+      return <WebBlock kind="fetch" url={view.url} statusCode={view.statusCode} truncated={view.truncated} labels={WEB_LABELS} />
+    }
+    if (view !== null && view.shape === 'search') {
+      return <WebBlock kind="search" sources={view.sources} answer={view.answer} truncated={view.truncated} labels={WEB_LABELS} />
+    }
+  }
+  if (text !== '') {
+    return <div className={`${NS}__tdoc`}><MarkdownText text={text} streaming={false} labels={MD_LABELS} /></div>
+  }
+  if (resultExtraCount(block) > 0) return <p className={`${NS}__tnote`}>图片或扩展内容已在轨迹视图中单独展示。</p>
+  return <p className={`${NS}__tnote`}>工具没有返回可展示的内容。</p>
+}
+
 /**
- * One simplified tool row used INSIDE the drawer: state dot, name, one-line
- * summary, and truncated expandable output. Also exported for the drawer.
+ * 弹窗内单次工具调用卡片：图标 + 变体标题 + 一行摘要 + 阶段徽标；
+ * 展开后是台账 + 结果/输入/原始数据页签。子调用沿左侧导轨递归。
  */
 export const SimpleToolRow = memo(function SimpleToolRow({
   block, selected, cwd, openFile, inspectCall,
@@ -65,71 +238,78 @@ export const SimpleToolRow = memo(function SimpleToolRow({
   readonly openFile: (path: string) => void
   readonly inspectCall: (callId: string) => void
 }) {
+  void cwd
+  void openFile
   const [open, setOpen] = useState(false)
+  const [tab, setTab] = useState<DetailTab>('result')
+  const panelId = useId()
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+  // 展开/收起高度补间（260ms，播完再卸载）。
+  const rowMotion = useMotionAllowed(true)
+  const { ref: rowBodyRef, present: rowBodyPresent } = useHeightAnimation(open, rowMotion)
   const running = isRunning(block)
   const name = callName(block)
-  const argsRaw = 'kind' in block ? (block.call?.argsRaw ?? '') : block.argsRaw
-  const summary = callSummary(block)
-  const output = resultText(block)
-  const failed = !running && block.isError
-  const stopped = !running && !block.isError && block.error !== undefined
-  const state = running ? 'running' : failed ? 'error' : stopped ? 'stopped' : 'ok'
+  const raw = toolArgsRaw(block)
+  const args = useMemo(() => argFields(raw), [raw])
+  const category = classifyCategory(name)
+  const title = rowTitle(name, category)
+  const summary = rowSummary(name, category, args, raw)
+  const phase: ViewPhase = viewPhase(block)
+  const facts = executionFacts(block)
+  const text = resultParagraphs(block)
+  const Icon = name === 'skill' ? IconSkillOutline16 : CATEGORY_ICONS[category]
+  const showBadge = phase === 'running' || phase === 'failed' || phase === 'interrupted'
   const now = useNow(running)
   const duration = callDurationMs(block, now)
-  const activity = classifyActivity(block)
-  const kind = classifyKind(block)
-  // download 活动的运行中行：轮询真实进度（工具直查进度表；shell 的看护由
-  // 流卡片注册，这里轮询同一 callId 即可看到百分比），抽屉里也能看到。
-  const dlState = useDownloadState(running && activity === 'download' ? block.callId : undefined, running)
+  // download 运行中：轮询真实进度，台账里显示百分比。
+  const dlState = useDownloadState(running && classifyActivity(block) === 'download' ? block.callId : undefined, running)
   const dlPct = downloadPercent(dlState)
+  const tabs = useMemo(() => [
+    { id: 'result' as const, label: '结果' },
+    { id: 'input' as const, label: '输入' },
+    { id: 'raw' as const, label: '原始数据' },
+  ], [])
+  const activateTab = (index: number): void => {
+    const next = tabs[(index + tabs.length) % tabs.length]
+    if (next === undefined) return
+    setTab(next.id)
+    tabRefs.current[(index + tabs.length) % tabs.length]?.focus()
+  }
+  const toggle = (): void => { setOpen(value => !value) }
 
   return (
     <div
-      className={`${NS}__call`}
+      className={`${NS}__tcall`}
       data-selected={selected || undefined}
-      data-state={state}
+      data-state={phase === 'failed' ? 'error' : phase === 'running' ? 'running' : phase === 'interrupted' ? 'stopped' : 'ok'}
+      data-expanded={open || undefined}
     >
       <div
-        className={`${NS}__row`}
+        className={`${NS}__trow`}
         role="button"
         tabIndex={0}
         aria-expanded={open}
-        onClick={() => { setOpen(value => !value) }}
+        aria-label={`${title}：${summary}`}
+        onClick={toggle}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
-            setOpen(value => !value)
+            toggle()
           }
         }}
       >
-        <span className={`${NS}__dot`} data-state={state} aria-hidden />
-        <span className={`${NS}__row-name`}>{name || block.callId}</span>
-        <KindBadge kind={kind} />
-        <span className={`${NS}__row-summary`} title={summary}>{summary}</span>
-        {running && duration !== undefined && activity === 'download' && (
-          <span className={`${NS}__row-live`} data-kind="download" title="下载中">
-            <span className={`${NS}__progress`} aria-hidden />
-            <span>下载中{dlPct !== null ? ` · ${dlPct}%` : ''} · {formatDuration(duration)}</span>
-          </span>
-        )}
-        {running && duration !== undefined && activity === 'command' && duration > 1000 && (
-          <span className={`${NS}__row-live`} data-kind="command" title="执行中">
-            <span className={`${NS}__progress`} aria-hidden />
-            <span>执行中 · {formatDuration(duration)}</span>
-          </span>
-        )}
-        {running && duration !== undefined
-          && !(activity === 'download' || (activity === 'command' && duration > 1000)) && (
-          <span className={`${NS}__row-time`} data-running title="耗时">
-            ⏳ {formatDuration(duration)}
-          </span>
-        )}
+        <span className={`${NS}__trow-icon`} aria-hidden><Icon size={14} /></span>
+        <span className={`${NS}__trow-main`}>
+          <span className={`${NS}__trow-title`}>{title}</span>
+          <span className={`${NS}__trow-summary`} title={summary}>{summary}</span>
+        </span>
         {!running && duration !== undefined && (
-          <span className={`${NS}__row-time`} title="耗时">{formatDuration(duration)}</span>
+          <span className={`${NS}__trow-time`} title="耗时">{formatDuration(duration)}</span>
         )}
+        {showBadge && <span className={`${NS}__trow-badge`} data-phase={phase}>{PHASE_LABEL[phase]}</span>}
         <button
           type="button"
-          className={`${NS}__inspect`}
+          className={`${NS}__trow-go`}
           title="在轨迹中查看"
           aria-label={`在轨迹中查看 ${name}`}
           onClick={(event) => {
@@ -137,27 +317,80 @@ export const SimpleToolRow = memo(function SimpleToolRow({
             inspectCall(block.callId)
           }}
         >
-          ⤴
+          <IconChevronRightOutline14 size={13} aria-hidden />
         </button>
-        <span className={`${NS}__chevron`} data-open={open || undefined} aria-hidden>▶</span>
+        <IconChevronDownOutline14 size={14} aria-hidden className={`${NS}__trow-chevron`} data-open={open || undefined} />
       </div>
-      {open && (
-        <div className={`${NS}__row-body`}>
-          {argsRaw !== '' && (
-            <div className={`${NS}__row-args`}>
-              <span className={`${NS}__row-label`}>参数</span>
-              <code>{argsRaw}</code>
+      {rowBodyPresent && (
+        <div
+          ref={rowBodyRef}
+          className={`${NS}__tdetail`}
+          data-open={open || undefined}
+          aria-hidden={!open}
+          {...(!open ? { inert: '' } : {})}
+        >
+          <div className={`${NS}__tledger`} aria-live="off">
+            <span>工具 · <span className={`${NS}__tengine`}>{name === '' ? block.callId : name}</span></span>
+            {running && dlPct !== null && <span>下载中 · {dlPct}%{duration !== undefined ? ` · ${formatDuration(duration)}` : ''}</span>}
+            {running && dlPct === null && <span>已提交 · 等待工具返回{duration !== undefined && duration > 1000 ? ` · ${formatDuration(duration)}` : ''}</span>}
+            {!running && phase === 'interrupted' && <span>已停止 · 输入记录保留</span>}
+            {!running && phase !== 'interrupted' && duration !== undefined && <span>执行 {elapsedText(duration)}</span>}
+            {facts.exitCode !== undefined && <span>退出码 {facts.exitCode}</span>}
+            {facts.signal !== undefined && facts.signal !== '' && <span>信号 {facts.signal}</span>}
+          </div>
+          {running && dlPct !== null && (
+            <div className={`${NS}__tprog`} aria-hidden>
+              <span className={`${NS}__tprog-fill`} style={{ width: `${dlPct}%` }} />
             </div>
           )}
-          {output !== '' && (
-            <div className={`${NS}__row-output`}>
-              <span className={`${NS}__row-label`}>输出</span>
-              <pre className={`${NS}__row-pre`}>{output}</pre>
-            </div>
-          )}
-          {argsRaw === '' && output === '' && (
-            <div className={`${NS}__row-empty`}>{running ? '执行中…' : '无输出'}</div>
-          )}
+          <div
+            className={`${NS}__ttabs`}
+            role="tablist"
+            aria-label={`${title}的执行数据`}
+            onKeyDown={(event) => {
+              const index = tabs.findIndex(item => item.id === tab)
+              if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                event.preventDefault()
+                activateTab(index + (event.key === 'ArrowRight' ? 1 : -1))
+              } else if (event.key === 'Home' || event.key === 'End') {
+                event.preventDefault()
+                activateTab(event.key === 'Home' ? 0 : tabs.length - 1)
+              }
+            }}
+          >
+            {tabs.map((item, index) => (
+              <button
+                key={item.id}
+                ref={(element) => { tabRefs.current[index] = element }}
+                type="button"
+                role="tab"
+                id={`${panelId}-${item.id}`}
+                aria-selected={tab === item.id}
+                aria-controls={`${panelId}-panel`}
+                tabIndex={tab === item.id ? 0 : -1}
+                onClick={() => { setTab(item.id) }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div id={`${panelId}-panel`} className={`${NS}__tpanel`} role="tabpanel" aria-labelledby={`${panelId}-${tab}`} tabIndex={0}>
+            {tab === 'result' && <ToolResultView name={name} category={category} block={block} text={text} />}
+            {tab === 'input' && <ToolInputView name={name} args={args} raw={raw} />}
+            {tab === 'raw' && (
+              <>
+                <p className={`${NS}__tnote`}>完整记录 · 只读 · 不执行其中的代码</p>
+                <h4 className={`${NS}__traw-label`}>工具输入</h4>
+                <pre className={`${NS}__traw`}>{raw === '' ? '输入尚未到达' : raw}</pre>
+                {rawResultJson(block) !== '' && (
+                  <>
+                    <h4 className={`${NS}__traw-label`}>工具结果</h4>
+                    <pre className={`${NS}__traw`}>{rawResultJson(block)}</pre>
+                  </>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -181,7 +414,7 @@ export function ToolCallTreeList({ block, cwd, openFile, inspectCall }: {
         inspectCall={inspectCall}
       />
       {block.subCalls.length > 0 && (
-        <div className={`${NS}__subcalls`} data-subcalls>
+        <div className={`${NS}__tsub`} data-subcalls aria-label="子调用">
           {block.subCalls.map(child => (
             <ToolCallTreeList key={child.callId} block={child} cwd={cwd} openFile={openFile} inspectCall={inspectCall} />
           ))}
@@ -235,6 +468,36 @@ const ToolEntry = memo(function ToolEntry({
     return earliest
   }, [nodes])
   const elapsed = toolStart !== undefined ? Math.max(0, now - toolStart) : undefined
+  // 本轮正在流式输出的思考文字（有工具调用时思考 chip 让位，实时预览改挂
+  // 在工具行下方，回合结束自动消失；无工具时 chip 那边渲染，这里拿不到节点）。
+  const liveThinkingText = useChat(snapshot => {
+    if (turn === undefined) return ''
+    let text = ''
+    for (const key of snapshot.locations.getTurn(turn)) {
+      const candidate = snapshot.nodes.get(key)
+      if (candidate === undefined || candidate.kind !== 'assistant-step') continue
+      const step = candidate as ChatNode<'assistant-step'>
+      if (step.data.status !== 'running') continue
+      for (const block of step.data.blocks) {
+        if (block.kind === 'reasoning' && block.text !== '') text = block.text
+      }
+    }
+    return text
+  })
+  const liveThinkingStep = useChat(snapshot => {
+    if (turn === undefined) return 0
+    let step = 0
+    for (const key of snapshot.locations.getTurn(turn)) {
+      const candidate = snapshot.nodes.get(key)
+      if (candidate === undefined || candidate.kind !== 'assistant-step') continue
+      const node = candidate as ChatNode<'assistant-step'>
+      if (node.data.status !== 'running') continue
+      if (node.data.blocks.some(block => block.kind === 'reasoning' && block.text !== '')) {
+        step = node.data.step
+      }
+    }
+    return step
+  })
   // 统计仍在运行的工具类型，决定是否在对话流外面直接显示下载/执行进度卡片。
   const liveActivity = useMemo(() => {
     let hasDownload = false
@@ -296,14 +559,14 @@ const ToolEntry = memo(function ToolEntry({
         data-turn-process-subagents={0}
         aria-expanded={drawerOpen}
         aria-label={label}
-        onClick={(event) => {
-          const label = event.currentTarget.querySelector('[class*="__process-label"]')
-          store.open(turn, 'tools', { el: (label ?? event.currentTarget) as HTMLElement })
-        }}
+        onClick={() => { store.open(turn, 'tools') }}
       >
         <span className={`${NS}__process-label`}>{label}</span>
         <IconChevronDownOutline14 className={`${NS}__process-chevron`} />
       </button>
+      {liveThinkingText !== '' && (
+        <LiveThinkingCard text={liveThinkingText} step={liveThinkingStep} />
+      )}
       {liveDownloadCalls.map(({ block, url, outputPath }) => (
         <LiveDownloadCard key={block.callId} callId={block.callId} url={url} startedAt={block.time} outputPath={outputPath} />
       ))}

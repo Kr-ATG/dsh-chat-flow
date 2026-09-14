@@ -136,9 +136,22 @@ const MODULES = {
   '@deepseek-ai/dsh-client-ui-primitives': {
     IconThinkOutline14: stubComponent('IconThinkOutline14'),
     IconApiOutline14: stubComponent('IconApiOutline14'),
+    IconBrowseOutline16: stubComponent('IconBrowseOutline16'),
+    IconChevronDownOutline14: stubComponent('IconChevronDownOutline14'),
+    IconChevronRightOutline14: stubComponent('IconChevronRightOutline14'),
     IconDownloadOutline16: stubComponent('IconDownloadOutline16'),
+    IconEditOutline16: stubComponent('IconEditOutline16'),
+    IconSearchOutline16: stubComponent('IconSearchOutline16'),
+    IconSkillOutline16: stubComponent('IconSkillOutline16'),
+    IconSparkle16: stubComponent('IconSparkle16'),
+    DiffBlock: stubComponent('DiffBlock'),
     JsonBlock: stubComponent('JsonBlock'),
+    JsonTree: stubComponent('JsonTree'),
     MarkdownText: stubComponent('MarkdownText'),
+    ReadBlock: stubComponent('ReadBlock'),
+    SearchBlock: stubComponent('SearchBlock'),
+    TerminalBlock: stubComponent('TerminalBlock'),
+    WebBlock: stubComponent('WebBlock'),
   },
 }
 

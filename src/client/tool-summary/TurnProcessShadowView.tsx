@@ -88,15 +88,14 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
   const labels: string[] = []
   if (data.toolCallCount > 0) labels.push(t(data.toolCallCount === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: data.toolCallCount }))
   // 思考数缀在官方文案后面（`N 次工具调用 · 思考 M`，与抽屉页签同口径）；
-  // 纯思考回合保持官方「已思考」不动。点哪段开哪个分区，气泡从该段后钻出。
+  // 纯思考回合保持官方「已思考」不动。点哪段开哪个分区，弹窗居中打开。
   const thinkingLabel = labels.length > 0 && counts.reasoning > 0 ? `${counts.reasoning} 次思考` : undefined
   const label = labels.length === 0
     ? t('message.turnProcess.thoughtForAWhile')
     : labels.filter(l => l !== thinkingLabel).join(t('message.turnProcess.separator'))
   const toggle = (): void => { turnProcess.setOpen(!open) }
-  const openFor = (mode: 'tools' | 'reasoning', target: EventTarget & HTMLElement): void => {
-    const el = target.querySelector('[class*="__process-label"]') ?? target.querySelector('[class*="__process-think"]')
-    store.open(data.turn, mode, { el: (el ?? target) as HTMLElement })
+  const openFor = (mode: 'tools' | 'reasoning'): void => {
+    store.open(data.turn, mode)
   }
   return (
     <button
@@ -110,7 +109,7 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
       aria-expanded={open}
       aria-label={[label, thinkingLabel].filter(Boolean).join(' ')}
       onClick={drawerTab !== null
-        ? (event) => { openFor(counts.reasoning > 0 ? 'reasoning' : drawerTab, event.currentTarget) }
+        ? () => { openFor(counts.reasoning > 0 ? 'reasoning' : drawerTab) }
         : undefined}
     >
       <span className={`${NS}__process-label`}>{label}</span>
@@ -123,13 +122,13 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
           aria-label={`查看${counts.reasoning} 次思考`}
           onClick={(event) => {
             event.stopPropagation()
-            store.open(data.turn, 'reasoning', { el: event.currentTarget as HTMLElement })
+            store.open(data.turn, 'reasoning')
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault()
               event.stopPropagation()
-              store.open(data.turn, 'reasoning', { el: event.currentTarget as HTMLElement })
+              store.open(data.turn, 'reasoning')
             }
           }}
         >

@@ -283,16 +283,45 @@ const CSS = `
 .dtt__process[data-open] .dtt__process-chevron {
   transform: rotate(0);
 }
-/* 实时思考预览：流式滚动最新思考文字。底色透明（去蓝）、左侧保留一条强调色导轨点明「这是思考流」。 */
+/* 实时预览卡片（上游 better-display ReasoningCard 同款：标题 + 有界视口 +
+   边缘渐隐 + 跟随/展开控制；展开只放大本卡视口，跟随意图与位置保持）。 */
+.dtt__reasoning-live-card {
+  align-self: stretch;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22));
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-module-platform, transparent);
+}
+
+.dtt__reasoning-live-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dtt__reasoning-live-title { font-weight: 500; }
+
+.dtt__reasoning-live-step { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 有界视口：平时 224px 预览，展开后最高 60vh；上下缘按滚动位置渐隐。 */
 .dtt__reasoning-live {
   align-self: stretch;
   position: relative;
-  max-height: 180px;
+  max-height: 224px;
   overflow-y: auto;
-  border: 1px solid var(--dsw-alias-border-l3, rgba(127,127,127,.16));
-  border-left: 2px solid color-mix(in srgb, var(--dtt-rea-accent) 38%, transparent);
-  border-radius: 4px 12px 12px 4px;
-  padding: 10px 14px;
+  overscroll-behavior-y: contain;
+  scroll-behavior: auto;
+  overflow-anchor: none;
+  border: 0;
+  border-radius: 0;
+  padding: 8px 16px 16px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
@@ -301,6 +330,87 @@ const CSS = `
   word-break: break-word;
   scrollbar-width: thin;
   scrollbar-color: var(--dsw-alias-scrollbar-bg-l2, rgba(127,127,127,.4)) transparent;
+}
+
+.dtt__reasoning-live-card[data-expanded] .dtt__reasoning-live {
+  max-height: min(60vh, 560px);
+}
+
+.dtt__reasoning-live[data-edges="both"],
+.dtt__reasoning-live-card[data-following][data-overflow] .dtt__reasoning-live {
+  -webkit-mask-image: linear-gradient(transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
+}
+
+.dtt__reasoning-live[data-edges="top"] {
+  -webkit-mask-image: linear-gradient(transparent 0, black 28px, black 100%);
+  mask-image: linear-gradient(transparent 0, black 28px, black 100%);
+}
+
+.dtt__reasoning-live[data-edges="bottom"] {
+  -webkit-mask-image: linear-gradient(black 0, black calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(black 0, black calc(100% - 28px), transparent 100%);
+}
+
+.dtt__reasoning-live-card[data-expanded] .dtt__reasoning-live {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.dtt__reasoning-live:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6);
+  outline-offset: -2px;
+}
+
+.dtt__reasoning-live-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 10px 8px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dtt__reasoning-live-action {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dtt__reasoning-live-action:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.dtt__reasoning-live-caption { padding-left: 6px; }
+
+@media (pointer: coarse) {
+  .dtt__reasoning-live-action { min-height: 44px; }
+}
+
+@media (forced-colors: active) {
+  .dtt__reasoning-live { -webkit-mask-image: none !important; mask-image: none !important; }
+}
+
+/* 抽屉的流式悬浮预览（紧凑模式 control 行下方浮层）：独立描边，与卡片视口解耦。 */
+.dtt__reasoning-live.dts__preview {
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22));
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1, #fff);
+  box-shadow: 0 8px 24px rgba(15, 17, 21, .18);
+  padding: 10px 14px;
+  z-index: 9991;
 }
 
 .dtt__reasoning-live::-webkit-scrollbar {
@@ -319,6 +429,40 @@ const CSS = `
 
 .dtt__reasoning-live::-webkit-scrollbar-thumb:hover {
   background: var(--dsw-alias-scrollbar-hover-l2, rgba(127,127,127,.6));
+}
+
+/* ══ 移植动效（github:aa2246740/dsh-better-display，MIT）════════════════
+   1) 新文字淡入：流式期新挂载块 opacity + blur 柔和显现（上游 word-motion
+      的块级近似——上游逐字形做 motion，这里官方 MarkdownText 整块渲染，
+      只能做到新挂载块淡入；已显示的旧节点绝不动）。
+   2) 忙碌标签微光：运行中文案 2s 高光带扫过（上游 think shimmer 的单层
+      等价：底色常驻 + 光带；数字仍等宽）。 */
+.dtt__fresh[data-fresh] {
+  display: block;
+  animation: dtt-fresh-in .3s cubic-bezier(.22, 1, .36, 1);
+}
+
+@keyframes dtt-fresh-in {
+  from { opacity: .15; filter: blur(2px); }
+  to { opacity: 1; filter: none; }
+}
+
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .dtt__process[data-running="true"] .dtt__process-label {
+    background-image: linear-gradient(90deg, var(--dtt-rea-accent, #4176e6) 0%, var(--dtt-rea-accent, #4176e6) 40%, var(--dsw-alias-label-primary) 50%, var(--dtt-rea-accent, #4176e6) 60%, var(--dtt-rea-accent, #4176e6) 100%);
+    background-size: 400% 100%;
+    background-repeat: no-repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    animation: dtt-think-shimmer 2s linear infinite;
+  }
+}
+
+@keyframes dtt-think-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0% 0; }
 }
 
 .dtt__visually-hidden {
@@ -340,6 +484,20 @@ const CSS = `
   }
   .dtt__card-chip { transition: none; }
   .dtt__card-chip:hover { transform: none; }
+  .dtt__fresh[data-fresh] { animation: none; }
+  .dtt__process[data-running="true"] .dtt__process-label {
+    animation: none;
+    color: var(--dtt-rea-accent);
+    -webkit-text-fill-color: currentcolor;
+  }
+}
+
+@media (forced-colors: active) {
+  .dtt__process[data-running="true"] .dtt__process-label {
+    animation: none;
+    color: CanvasText;
+    -webkit-text-fill-color: currentcolor;
+  }
 }
 
 /* ── 生图画廊条（dgi__：SummaryCard 正文区，generate_image 结果）────────

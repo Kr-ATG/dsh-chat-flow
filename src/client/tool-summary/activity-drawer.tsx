@@ -1,14 +1,11 @@
 /**
  * Shared activity drawer: a window-level bus that collects one turn's
- * reasoning and tool-call material from the two shadow plugins, plus the
- * right-side drawer panel that renders it on demand.
- *
- * dsh-better-markdown publishes `reasoning` entries; dsh-tool-summary
- * publishes `tools` and hosts the panel. Both read the same window key, so
- * the bus is created lazily by whichever plugin touches it first.
+ * reasoning and tool-call material from the two entry rows, plus the
+ * centered dialog that renders it on demand (screenshot-panel同款居中弹窗，
+ * modal-animation 进出场）。
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { IconApiOutline14, IconThinkOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -20,6 +17,7 @@ import { useNow } from './use-now.ts'
 import { groupReasoning } from './reasoning-classify.ts'
 import { ToolCallTreeList } from './ToolGroupNodeView.tsx'
 import { ErrorBoundary } from '../error-boundary.tsx'
+import { MODAL_ANIM_MS, modalAnimClass, modalMaskAnimClass, modalStaggerClass } from '../modal-animation.ts'
 
 /** One reasoning block stranded in the drawer. */
 export interface ActivityReasoningItem {
@@ -43,40 +41,14 @@ export interface ActivityHandlers {
   readonly inspectCall: (callId: string) => void
 }
 
-/**
- * Popover anchor: the label ELEMENT the bubble sticks to. Kept as a live
- * element (not a frozen rect) so the bubble can re-position on scroll/resize
- * and stay glued to the text.
- */
-export interface PopoverAnchor {
-  readonly el: HTMLElement
-}
-
-/**
- * 锍点自救：虚拟列表滚动/重排可能把点击时拿到的内层 label 元素换掉
- *（旧 el.isConnected === false），直接 close 会让气泡“点不开”。
- * 所有入口按钮都带 `data-turn-process="N"`，换掉后按回合号重新找一个同轮锍点就能继续贴住。
- */
-export function resolveLiveAnchor(turn: number, el: HTMLElement | undefined): HTMLElement | undefined {
-  if (el !== undefined && el.isConnected) return el
-  if (typeof document === 'undefined') return undefined
-  try {
-    const fresh = document.querySelector('[data-turn-process="' + turn + '"]')
-    return (fresh as HTMLElement | null) ?? undefined
-  } catch {
-    return undefined
-  }
-}
-
 export interface ActivityStore {
   readonly openTurn: number | null
   readonly activeMode: ViewMode | null
-  readonly openAnchor: PopoverAnchor | undefined
   /** 流式思考预览：登记的 control 行元素与回合号（null = 无预览）。 */
   readonly previewAnchorEl: HTMLElement | undefined
   readonly previewTurn: number | null
   setPreviewAnchor(el: HTMLElement | undefined, turn: number | null): void
-  open(turn: number, mode: ViewMode, anchor?: PopoverAnchor): void
+  open(turn: number, mode: ViewMode): void
   close(reason?: string): void
   setReasoning(turn: number, items: readonly ActivityReasoningItem[]): void
   setTools(turn: number, nodes: readonly ChatNode<'tool-call'>[], cwd: string | undefined, turnStart: number | undefined): void
@@ -97,7 +69,6 @@ export function activityStore(): ActivityStore {
   const data = new Map<number, ActivityTurnData>()
   let openTurn: number | null = null
   let activeMode: ViewMode | null = null
-  let openAnchor: PopoverAnchor | undefined
   let previewAnchorEl: HTMLElement | undefined
   let previewTurn: number | null = null
   let handlers: ActivityHandlers = { openFile: () => {}, inspectCall: () => {} }
@@ -109,7 +80,6 @@ export function activityStore(): ActivityStore {
   const store: ActivityStore = {
     get openTurn() { return openTurn },
     get activeMode() { return activeMode },
-    get openAnchor() { return openAnchor },
     get previewAnchorEl() { return previewAnchorEl },
     get previewTurn() { return previewTurn },
     setPreviewAnchor: (el, turn) => {
@@ -118,20 +88,20 @@ export function activityStore(): ActivityStore {
       previewTurn = turn
       notify()
     },
-    open: (turn, mode, anchor) => {
+    open: (turn, mode) => {
       // 点击时自愈：如果抽屉根被 React 异常卸载（空壳 div）或 HMR 后失活，
-      // 这里同步重挂，否则就是“点了没气泡”（store 变了没人渲染）。
+      // 这里同步重挂，否则就是“点了没弹窗”（store 变了没人渲染）。
       try {
         ensureDrawerMounted()
       } catch (healError) {
-        console.warn('[dsh-chat-flow] 气泡 open 前自愈挂载失败：', healError)
+        console.warn('[dsh-chat-flow] 弹窗 open 前自愈挂载失败：', healError)
       }
-      openTurn = turn; activeMode = mode; openAnchor = anchor; notify()
+      openTurn = turn; activeMode = mode; notify()
       try {
-        console.log('[dsh-chat-flow] 气泡 open：第 ' + turn + ' 轮 / ' + mode)
+        console.log('[dsh-chat-flow] 弹窗 open：第 ' + turn + ' 轮 / ' + mode)
       } catch { /* 日志永不挡路 */ }
     },
-    close: (reason?: string) => { openTurn = null; activeMode = null; openAnchor = undefined; notify() },
+    close: (reason?: string) => { void reason; openTurn = null; activeMode = null; notify() },
     setReasoning: (turn, items) => {
       data.set(turn, { ...(data.get(turn) ?? {}), reasoning: items })
       notify()
@@ -178,7 +148,7 @@ function DrawerToolSummary({ stats, cwd, openFile, kinds }: {
       <div className="dts__summary-line">
         共 <b>{stats.total}</b> 次调用
         {stats.running > 0 && <> · <b>{stats.running}</b> 次进行中</>}
-        {stats.errors > 0 && <> · ⚠ <b>{stats.errors}</b> 次失败</>}
+        {stats.errors > 0 && <> · <span className="dts__summary-errors"><b>{stats.errors}</b> 次失败</span></>}
       </div>
       {stats.byTool.length > 0 && (
         <div className="dts__chips">
@@ -233,7 +203,6 @@ function ReasoningGroups({ items, activeIndex }: {
                   className="dts__modal-reasoning-item"
                   data-running={item.running || undefined}
                 >
-                  <span className="dts__modal-reasoning-item-index" aria-hidden>{globalIndex + 1}</span>
                   <span className="dts__modal-reasoning-item-text">{item.text}</span>
                 </div>
               )
@@ -245,14 +214,15 @@ function ReasoningGroups({ items, activeIndex }: {
   )
 }
 
-/** The anchored popover: two separate panels — thinking and tools. */
-function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
+/** The centered dialog: two separate panels — thinking and tools. */
+function DrawerPanel({ turn, data, store, openFile, inspectCall, closing }: {
   readonly turn: number
   readonly data: ActivityTurnData | undefined
   readonly store: ActivityStore
-  readonly anchor: PopoverAnchor | undefined
   readonly openFile: (path: string) => void
   readonly inspectCall: (callId: string) => void
+  /** 出场中：播出场动画再卸载（见 DrawerApp 的 closing 状态机）。 */
+  readonly closing: boolean
 }) {
   const reasoning = data?.reasoning ?? []
   const toolNodes = data?.tools ?? []
@@ -310,76 +280,10 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
   // cleared by effects and are unreliable across re-renders).
   const [activeIndex] = useState<number | null>(null)
 
-  // 气泡定位：实时贴住锚点文字（滚动/缩放跟手）。从文字右缘 8px 缝钻出，
-  // 顶与文字顶对齐（尾巴指向文字行中心）；右侧放不下就贴窗口右缘；底部
-  // 空间不足时气泡整体上移并缩高度，保证完整可见。锚点被虚拟列表收走
-  // （disconnect/移出 DOM）就关闭。
-  const popRef = useRef<HTMLDivElement | null>(null)
-  const [pos, setPos] = useState<{ readonly top: number; readonly left: number; readonly height: number; readonly tail: number }>(() => ({ top: 80, left: 1020, height: 480, tail: 10 }))
-  const POPOVER_WIDTH = 480
-  const GAP = 8
-  const relayout = useCallback((): void => {
-    // 先用自救查找把被虚拟列表换掉的锍点换回来，找不到才关闭。
-    const el = resolveLiveAnchor(turn, anchor?.el)
-    if (el === undefined) {
-      try {
-        console.warn('[dsh-chat-flow] 气泡自动关闭：第 ' + turn + ' 轮找不到锚点（虚拟列表已回收且按回合号也找不到）')
-      } catch { /* 日志永不挡路 */ }
-      store.close('anchor-missing'); return
-    }
-    const box = el.getBoundingClientRect()
-    const viewportW = window.innerWidth
-    const viewportH = window.innerHeight
-    if (box.bottom < 0 || box.top > viewportH) {
-      try {
-        console.log('[dsh-chat-flow] 气泡自动关闭：第 ' + turn + ' 轮锚点已滚出视口')
-      } catch { /* 日志永不挡路 */ }
-      store.close('anchor-out-of-view'); return
-    }
-    const MIN_H = 300
-    const MARGIN = 12
-    // 高度：优先从锚点下方铺到窗口底；低于 MIN_H 时把气泡顶抬到锚点上方
-    // （上最多用到窗口 55% 高度），保证常见屏上有足够内容高度。
-    const below = viewportH - MARGIN - (box.top - 4)
-    let height = Math.min(680, below)
-    let top = box.top - 4
-    if (height < MIN_H) {
-      height = Math.min(680, Math.max(MIN_H, Math.round(viewportH * 0.55)))
-      top = Math.max(MARGIN, Math.min(box.top - 4, viewportH - MARGIN - height))
-    } else {
-      top = Math.max(MARGIN, top)
-    }
-    const tail = Math.max(10, Math.min((box.top + box.height / 2) - top - 8, height - 40))
-    const left = Math.max(8, Math.min(box.right + GAP, viewportW - POPOVER_WIDTH - 8))
-    setPos(prev => (prev.top === top && prev.left === left && prev.height === height && prev.tail === tail ? prev : { top, left, height, tail }))
-  }, [anchor, store, turn])
-  useLayoutEffect(() => { relayout() }, [relayout])
-  useEffect(() => {
-    const el = resolveLiveAnchor(turn, anchor?.el)
-    if (el === undefined) return
-    // 滚动在 capture 阶段接住所有容器（含虚拟列表内部滚动），rAF 节流。
-    let frame = 0
-    const onMove = (): void => {
-      if (frame !== 0) return
-      frame = requestAnimationFrame(() => { frame = 0; relayout() })
-    }
-    window.addEventListener('scroll', onMove, { passive: true, capture: true })
-    window.addEventListener('resize', onMove)
-    const observer = new ResizeObserver(onMove)
-    observer.observe(el)
-    return () => {
-      window.removeEventListener('scroll', onMove, { capture: true } as EventListenerOptions)
-      window.removeEventListener('resize', onMove)
-      observer.disconnect()
-      if (frame !== 0) cancelAnimationFrame(frame)
-    }
-  }, [anchor, relayout, turn])
-  const { top: anchorTop, left: anchorLeft, height: popHeight, tail: popTail } = pos
-
   return (
     <>
-      <div className="dts__popover-veil" onClick={close} aria-hidden />
-      <div className="dts__popover" ref={popRef} role="dialog" aria-label={`第 ${turn} 轮活动详情`} style={{ top: anchorTop, left: anchorLeft, height: popHeight, ['--dts-pop-tail' as string]: `${popTail}px` }}>
+      <div className={`dts__dialog-mask ${modalMaskAnimClass(closing)}`} onClick={close} aria-hidden />
+      <div className={`dts__dialog ${modalAnimClass(closing)}`} role="dialog" aria-modal="true" aria-label={`第 ${turn} 轮活动详情`}>
         <header className="dts__modal-head">
           <span className="dts__modal-title">
             第 {turn} 轮
@@ -416,7 +320,7 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
           )}
           <button type="button" className="dts__modal-close" onClick={close} aria-label="关闭">✕</button>
         </header>
-        <div className="dts__modal-scroll" ref={scrollRef} onScroll={onScrollPin}>
+        <div className={`dts__modal-scroll ${modalStaggerClass}`} ref={scrollRef} onScroll={onScrollPin}>
           {tab === 'reasoning' && reasoning.length > 0 && (
             <div className="dts__modal-panel">
               <header className="dts__modal-panel-head">
@@ -462,22 +366,31 @@ function DrawerPanel({ turn, data, store, anchor, openFile, inspectCall }: {
 /** Drawer app: subscribes to the bus and renders the panel when open. */
 function DrawerApp() {
   const [openTurn, setOpenTurn] = useState<number | null>(null)
+  const [lastTurn, setLastTurn] = useState<number | null>(null)
   const [openMode, setOpenMode] = useState<ViewMode | null>(null)
   const [data, setData] = useState<ActivityTurnData | undefined>(undefined)
-  const [anchor, setAnchor] = useState<PopoverAnchor | undefined>(undefined)
+  // 出场过渡：store 关闭后多留一帧播出场动画再卸载（时长与 modal-animation 对齐）。
+  const [closing, setClosing] = useState(false)
   useEffect(() => {
     const store = activityStore()
     const render = (): void => {
       const turn = store.openTurn
       setOpenTurn(turn)
-      setOpenMode(turn === null ? null : store.activeMode)
-      setData(turn === null ? undefined : store.get(turn))
-      setAnchor(turn === null ? undefined : store.openAnchor)
+      if (turn === null) return
+      setLastTurn(turn)
+      setOpenMode(store.activeMode)
+      setData(store.get(turn))
     }
     render()
     return store.subscribe(render)
   }, [])
-  // Esc 关气泡。
+  useEffect(() => {
+    if (openTurn !== null || lastTurn === null) { setClosing(false); return undefined }
+    setClosing(true)
+    const id = window.setTimeout(() => { setClosing(false) }, MODAL_ANIM_MS)
+    return () => window.clearTimeout(id)
+  }, [openTurn, lastTurn])
+  // Esc 关弹窗。
   useEffect(() => {
     if (openTurn === null) return
     const onKey = (event: KeyboardEvent): void => {
@@ -518,45 +431,47 @@ function DrawerApp() {
       window.clearInterval(id)
     }
   }, [])
-  // 滚动跟随由气泡面板内部的 relayout 负责（锚点是活元素，实时贴住）。
+  // 滚动跟随由抽屉内部的钉底逻辑负责。
   const store = activityStore()
-  if (openTurn === null) {
-    // 无气泡时仍可渲染流式思考预览。
+  const shownTurn = openTurn ?? lastTurn
+  if (shownTurn === null || (openTurn === null && !closing)) {
+    // 无弹窗时仍可渲染流式思考预览。
     return preview === null ? null : (
       <div className="dtt__reasoning-live dts__preview" style={{ position: 'fixed', top: preview.top, left: preview.left, maxWidth: 520 }} aria-live="polite">{preview.text}</div>
     )
   }
+  const turn = shownTurn
   const handlers = store.handlers()
   const closeAll = (): void => { store.close() }
   return (
     <>
       <ErrorBoundary
-        key={openTurn + ':' + (openMode ?? '')}
-        label={'活动气泡（第 ' + openTurn + ' 轮）'}
+        key={turn + ':' + (openMode ?? '')}
+        label={'活动弹窗（第 ' + turn + ' 轮）'}
         fallback={(
           <div
-            className="dts__popover"
+            className="dts__dialog"
             role="dialog"
-            aria-label={'第 ' + openTurn + ' 轮活动详情'}
-            style={{ top: 80, left: '50%', transform: 'translateX(-50%)', height: 'auto', maxHeight: '40vh' }}
+            aria-modal="true"
+            aria-label={'第 ' + turn + ' 轮活动详情'}
           >
             <header className="dts__modal-head">
-              <span className="dts__modal-title">第 {openTurn} 轮</span>
+              <span className="dts__modal-title">第 {turn} 轮</span>
               <button type="button" className="dts__modal-close" onClick={closeAll} aria-label="关闭">✕</button>
             </header>
             <div className="dts__modal-scroll">
-              <div className="dts__empty">气泡渲染失败，详情见控制台（F12）。关闭后换一轮重开可重试。</div>
+              <div className="dts__empty">弹窗渲染失败，详情见控制台（F12）。关闭后换一轮重开可重试。</div>
             </div>
           </div>
         )}
       >
         <DrawerPanel
-          turn={openTurn}
+          turn={turn}
           data={data}
           store={store}
-          anchor={anchor}
           openFile={handlers.openFile}
           inspectCall={handlers.inspectCall}
+          closing={closing}
         />
       </ErrorBoundary>
       {preview !== null && (
