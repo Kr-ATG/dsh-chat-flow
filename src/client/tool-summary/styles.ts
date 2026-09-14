@@ -283,9 +283,8 @@ const CSS = `
   border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22));
   border-radius: 14px;
   background: var(--dsw-alias-bg-layer-1, #fff);
-  box-shadow:
-    0 1px 2px rgba(15,17,21,.06),
-    0 16px 48px rgba(15,17,21,.28);
+  /* 去外阴影：只留边框定界，遮罩本身已压暗背景。 */
+  box-shadow: none;
   overflow: hidden;
 }
 
