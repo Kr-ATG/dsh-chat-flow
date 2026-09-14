@@ -265,29 +265,18 @@ const CSS = `
   inset: 0;
   z-index: 9989;
   background: var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, .45));
-  /* 常驻高斯模糊终态；进出场另有 blur 补间（与共享的透明度动画叠加）。 */
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
-/* 背景模糊进出场：与 dsh-modal-mask-in/out 的透明度动画叠加播出。
-   双类名提权，盖过共享样式表的单类规则；时长与 MODAL_ANIM_MS 对齐。 */
-.dts__dialog-mask.dsh-modal-mask-in {
-  animation: dsh-modal-mask-in 240ms ease, dts-mask-blur-in 240ms ease;
-}
-
+/* 进出场放慢：遮罩与窗口统一 420ms（共享 modal-animation 默认 240ms 太赶，
+   只改本弹窗，不动截图面板等其他共用方）。 */
+.dts__dialog-mask.dsh-modal-mask-in,
 .dts__dialog-mask.dsh-modal-mask-out {
-  animation: dsh-modal-mask-out 240ms ease forwards, dts-mask-blur-out 240ms ease forwards;
+  animation-duration: 420ms;
 }
 
-@keyframes dts-mask-blur-in {
-  from { backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); }
-  to { backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-}
-
-@keyframes dts-mask-blur-out {
-  from { backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-  to { backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); }
+.dts__dialog.dsh-modal-slide-in,
+.dts__dialog.dsh-modal-slide-out {
+  animation-duration: 420ms;
 }
 
 .dts__dialog {

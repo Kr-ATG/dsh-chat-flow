@@ -284,7 +284,7 @@ const CSS = `
   transform: rotate(0);
 }
 /* 实时预览卡片（上游 better-display ReasoningCard 同款：标题 + 有界视口 +
-   边缘渐隐 + 跟随/展开控制；展开只放大本卡视口，跟随意图与位置保持）。 */
+   边缘渐隐；无底部控制按钮，上翻即停、滚回底部自动恢复跟随）。 */
 .dtt__reasoning-live-card {
   align-self: stretch;
   min-width: 0;
@@ -310,7 +310,7 @@ const CSS = `
 
 .dtt__reasoning-live-step { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* 有界视口：平时 224px 预览，展开后最高 60vh；上下缘按滚动位置渐隐。 */
+/* 有界视口：平时 224px 预览；上下缘按滚动位置渐隐。 */
 .dtt__reasoning-live {
   align-self: stretch;
   position: relative;
@@ -332,10 +332,6 @@ const CSS = `
   scrollbar-color: var(--dsw-alias-scrollbar-bg-l2, rgba(127,127,127,.4)) transparent;
 }
 
-.dtt__reasoning-live-card[data-expanded] .dtt__reasoning-live {
-  max-height: min(60vh, 560px);
-}
-
 .dtt__reasoning-live[data-edges="both"],
 .dtt__reasoning-live-card[data-following][data-overflow] .dtt__reasoning-live {
   -webkit-mask-image: linear-gradient(transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
@@ -352,51 +348,9 @@ const CSS = `
   mask-image: linear-gradient(black 0, black calc(100% - 28px), transparent 100%);
 }
 
-.dtt__reasoning-live-card[data-expanded] .dtt__reasoning-live {
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-
 .dtt__reasoning-live:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6);
   outline-offset: -2px;
-}
-
-.dtt__reasoning-live-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 2px 10px 8px;
-  font-size: 12px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.dtt__reasoning-live-action {
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  gap: 5px;
-  min-height: 28px;
-  padding: 4px 6px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.dtt__reasoning-live-action:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.dtt__reasoning-live-caption { padding-left: 6px; }
-
-@media (pointer: coarse) {
-  .dtt__reasoning-live-action { min-height: 44px; }
 }
 
 @media (forced-colors: active) {

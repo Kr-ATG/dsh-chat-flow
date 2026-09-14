@@ -15,7 +15,7 @@
  * 时长 + 实时文字滚动预览），点击打开共享活动抽屉看全文；同一回合其余步骤
  * 只渲染自己的正文。think 块一律不内联展示（避免长思考链拖拽滚动）。
  */
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { IconChevronDownOutline14, JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -66,7 +66,7 @@ interface ReasoningItem {
  * activity dialog with the full reasoning material. While the turn is still
  * thinking the chip labels itself "思考中…" with a live transcript card
  * below it (upstream better-display ReasoningCard language: bounded viewport
- * with edge fades, follow/pause control, inline expand-to-read).
+ * with edge fades; no footer controls).
  */
 function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: {
   items: readonly ReasoningItem[]
@@ -128,16 +128,14 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: 
 }
 
 /**
- * 实时思考预览卡片（chip 行与工具行共用）：分步跟随（上游节拍）+ 边缘渐隐
- * + 跟随/展开控制。展开只放大本卡视口（弹窗仍是看全文的入口），跟随意图
- * 与位置保持。调用方保证只在有流式思考文字时挂载。
+ * 实时思考预览卡片（chip 行与工具行共用）：分步跟随（上游节拍）+ 边缘渐隐。
+ * 无底部控制按钮：上翻/选中/点按即停，滚回底部自动恢复跟随。调用方保证只在
+ * 有流式思考文字时挂载。
  */
 export function LiveThinkingCard({ text, step }: { text: string; step: number }) {
-  // 展开只放大本卡视口，跟随意图与位置保持。
-  const [expanded, setExpanded] = useState(false)
   // 跟随最新：思考文字增长时分步跟到底（上游 better-display 节拍：
   // 840ms 停顿、500ms 走两行，burst 不加速追赶）——但仅当读者停在底部。
-  // 上翻/选中/显式暂停即停（想看哪里自己滚），滚回底部或点跟随恢复；
+  // 上翻/选中/点按即停（想看哪里自己滚），滚回底部自动恢复；
   // 阈值与 ChatView 的 FOLLOW_THRESHOLD 一致。
   const motion = useMotionAllowed(true)
   const { ref, onScroll, onWheel, edges, overflow, following, setFollowing } = useSteppedFollow(text, true, motion)
@@ -146,7 +144,6 @@ export function LiveThinkingCard({ text, step }: { text: string; step: number })
       className="dtt__reasoning-live-card"
       data-following={following || undefined}
       data-overflow={overflow || undefined}
-      data-expanded={expanded || undefined}
     >
       <div className="dtt__reasoning-live-head">
         <span className="dtt__reasoning-live-title">思考</span>
@@ -166,31 +163,6 @@ export function LiveThinkingCard({ text, step }: { text: string; step: number })
       >
         {text}
       </div>
-      {(overflow || expanded) && (
-        <div className="dtt__reasoning-live-foot">
-          {motion
-            ? (
-              <button
-                type="button"
-                className="dtt__reasoning-live-action"
-                onClick={() => { setFollowing(!following) }}
-                aria-label={following ? '暂停自动跟随思考' : '继续跟随最新思考'}
-              >
-                {following ? '暂停跟随' : '跟随最新'}
-              </button>
-            )
-            : <span className="dtt__reasoning-live-caption">手动阅读</span>}
-          <button
-            type="button"
-            className="dtt__reasoning-live-action"
-            aria-expanded={expanded}
-            aria-label={expanded ? '收起实时思考' : '展开阅读实时思考'}
-            onClick={() => { setExpanded(value => !value) }}
-          >
-            {expanded ? '收起' : '展开阅读'}
-          </button>
-        </div>
-      )}
     </div>
   )
 }

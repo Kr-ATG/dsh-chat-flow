@@ -59,7 +59,7 @@ export type FollowEdges = 'none' | 'top' | 'bottom' | 'both'
  * 分步跟随到底：`text` 增长且跟随意图仍在、读者停在底部（≤24px）时，
  * 按两行一步、`REASON_STEP` 节拍向上游 ease 滚动到底；中途新文本只重定
  * 目标不加速（burst 不追赶 unread 行）。上翻/选中/显式暂停即停，滚回底部
- * 或点「跟随最新」恢复；同时报告视口溢出与边缘位置（供渐隐遮罩）。
+ * 恢复；同时报告视口溢出与边缘位置（供渐隐遮罩）。
  */
 export function useSteppedFollow(text: string, running: boolean, motion: boolean): {
   readonly ref: React.MutableRefObject<HTMLDivElement | null>
