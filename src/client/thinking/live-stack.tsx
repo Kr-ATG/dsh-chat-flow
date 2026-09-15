@@ -1,28 +1,31 @@
 /**
- * dsh-chat-flow — 实时思考预览堆叠（2 卡窗口）。
+ * dsh-chat-flow — 实时思考预览轨道（左侧竖条 + 逐行上顶）。
  *
- * 需求：
- * - 第 1 次思考完成后仍保留第 1 张预览；第 2 次思考出现第 2 张
- *   （最多同时 2 张，纵向堆叠）。
- * - 第 3 次思考把第 1 张「往上逐渐消散」收回，第 4/5 次以此类推
- *   （滑动窗口，只保留最近 2 段）。
- * - 新预览出现时淡入；对话结束开始总结时不一下全收，要有 staggered
- *   回收动画（一张一张往上收）。
+ * 需求（2026-09）：
+ * 1. 去掉实时预览的卡片：不再是带描边/圆角/底色的双卡堆叠，改为左侧
+ *    一条竖条 + 右侧纯文本流（无卡片铬）。
+ * 2. 第 3 个思考出来时不是第 1 个直接消失：新内容在底部逐行长出来，
+ *    旧内容被单视口的跟随滚动逐行顶出顶部裁掉，不再有整卡消散/整卡
+ *    卸载的割裂感。
  *
  * 实现：
- * - 调用方把本轮全部非空思考段按时间顺序传进来
- *   `items: [{ text, step, running }]`，本组件内部只取最后 2 个做窗口。
+ * - 调用方仍把本轮全部非空思考段按时间顺序传进来
+ *   `items: [{ text, step, running }]`，本组件全部渲染（不再只取最后
+ *   2 个做窗口），共用一个有界视口（max-height + overflow-y auto）。
  * - key 用全局序号（过滤后数组下标）保证稳定：流式追加文字时不重挂，
- *   不会重播淡入；只有新段挂载才播淡入。
- * - 被挤出窗口的旧卡保留在 DOM 里播 `leaving`（往上消散）420ms 再卸载。
- * - `closing=true`（回合 closed / 开始总结）时快照当前窗口，逐张加
- *   `animation-delay` 播 `reclaim` 再整体卸载；closing 期间忽略新 items。
+ *   新段挂载只播一次淡入。
+ * - 视口复用 `useSteppedFollow`（840ms 停顿、500ms 走两行）：新文字在
+ *   底部长出来时视口分步跟随到底，旧行从顶部被逐行顶出去——“出来一行
+ *   顶一行”就是这次跟随滚动本身。上翻/选中即停，滚回底部自动恢复。
+ * - `closing=true`（回合 closed / 开始总结）时冻结当前全部段，整条轨道
+ *   像收银条一样从顶部逐行滑出去（ticker：视口高度钉住、内层匀速上移，
+ *   每行依次经过视口再从顶部裁掉），滑完剩下的空盒再合拢高度卸载；
+ *   closing 期间忽略新 items。
  * - `prefers-reduced-motion` 时经 `useMotionAllowed` 直接落位、无延迟。
  */
 
-import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
-import { IconThinkOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useMotionAllowed, useSteppedFollow } from '../motion-utils.ts'
 
 export interface LiveThinkingItem {
@@ -31,30 +34,40 @@ export interface LiveThinkingItem {
   readonly running: boolean
 }
 
-/** 同时可见的最大预览数（用户定值：2）。 */
+/** 兼容保留：视口大致容纳的段数（现仅用于回收时长估算）。 */
 export const LIVE_STACK_MAX = 2
-/** 挤出消散时长（与 CSS dtt-live-dissolve 对齐，刻意放慢到可见）。 */
+/** 兼容保留：旧的整卡挤出消散已删除（单视口滚动上顶替代），仅防外部引用报错。 */
 export const LIVE_LEAVE_MS = 560
-/** 回收单卡时长（与 CSS dtt-live-reclaim 对齐，总结时要看清逐张收）。 */
-export const LIVE_RECLAIM_MS = 700
-/** 回收时相邻两卡的 stagger 间隔（2 张错峰，肉眼能数出两拍）。 */
+/**
+ * 收口滑出时长基线（与 CSS dtt-rail-scroll-out 对齐，实际时长按段数浮动，
+ * 见 reclaimTiming：段越多滑得越久，保证每行都有露脸时间）。
+ */
+export const LIVE_RECLAIM_MS = 1100
+/** 收口第二阶段：空盒高度合拢时长（与 CSS 槽位 collapse 对齐）。 */
+export const LIVE_RECLAIM_COLLAPSE_MS = 350
+/** 兼容保留：单轨一次回收，不再 stagger（调用方卸载等待仍复用该值）。 */
 export const LIVE_RECLAIM_STAGGER = 280
 /** 内联行被 control 接管 / 悬浮锚点清除后，保留挂载播完回收的总时长 + 余量。 */
 export const LIVE_RECLAIM_UNMOUNT_MS =
-  LIVE_RECLAIM_MS + LIVE_RECLAIM_STAGGER * (LIVE_STACK_MAX - 1) + 220
-const LEAVE_MS = LIVE_LEAVE_MS
-const RECLAIM_MS = LIVE_RECLAIM_MS
-const RECLAIM_STAGGER = LIVE_RECLAIM_STAGGER
+  LIVE_RECLAIM_MS + LIVE_RECLAIM_COLLAPSE_MS + 220
+const RECLAIM_COLLAPSE_MS = LIVE_RECLAIM_COLLAPSE_MS
+
+/**
+ * 收口滑出时长：700ms 起步、每段 +180ms，夹在 800～1800ms 之间。
+ * 段少时不拖沓，段多时每行都从视口里走一遍，不会一闪而过。
+ */
+function reclaimTiming(count: number, motion: boolean): { readonly scroll: number; readonly collapse: number } {
+  if (!motion) return { scroll: 0, collapse: 0 }
+  const scroll = Math.min(1800, Math.max(800, 700 + count * 180))
+  return { scroll, collapse: RECLAIM_COLLAPSE_MS }
+}
 
 export type LiveCardState = 'enter' | 'visible' | 'leaving' | 'reclaim'
 
 /**
- * 堆叠槽位：负责高度收放，内卡负责淡入淡出位移。
- * - enter：挂载先塌着，下一帧张开，下面的总结卡被平滑顶下去。
- * - collapse：挂载先撑着，下一帧塌掉（高度/opacity/margin 一起收），
- *   下面的总结卡一路平滑滑上来，而不是最后咯噔一下。
- * 高度走 grid 0fr/1fr 过渡（Chromium 系），stagger 由 transition-delay 给，
- * 与内卡 animation-delay 同拍。
+ * 轨道槽位：只用于整轨回收时的高度合拢（grid 0fr/1fr 过渡）。
+ * 新段进入不再包槽位——高度跳变一次到位，逐行上顶由视口跟随滚动完成，
+ * 比“新卡展开 + 旧卡合拢”两套高度动画对拍更稳，不会有总高度跳动。
  */
 const LiveSlot = memo(function LiveSlot({ anim, kind, delayMs, motion, children }: {
   readonly anim: 'enter' | 'collapse'
@@ -92,8 +105,8 @@ const LiveSlot = memo(function LiveSlot({ anim, kind, delayMs, motion, children 
 })
 
 /**
- * 单张实时思考预览卡（chip 行与工具行共用）：分步跟随（上游节拍）+ 边缘渐隐。
- * 无底部控制按钮：上翻/选中/点按即停，滚回底部自动恢复跟随。
+ * 兼容保留的单段导出（此前是单张实时卡）：现渲染为无滚动的轨道小段，
+ * 仅供外部按旧名引用不报错；堆叠本体不再使用它。
  */
 export const LiveThinkingCard = memo(function LiveThinkingCard({ text, step, running = true, state, style }: {
   readonly text: string
@@ -102,41 +115,21 @@ export const LiveThinkingCard = memo(function LiveThinkingCard({ text, step, run
   readonly state?: LiveCardState | undefined
   readonly style?: CSSProperties | undefined
 }) {
-  const motion = useMotionAllowed(true)
-  // 跟随最新：只有正在跑的那张才跟随；已完成 / 正在消散 / 回收中的卡一律静止
-  // （避免后台滚动把消散动画拽走）。
-  const followActive = running && (state === undefined || state === 'enter' || state === 'visible')
-  const { ref, onScroll, onWheel, edges, overflow, following, setFollowing } = useSteppedFollow(text, followActive, motion)
   const dataState = state === 'enter' || state === undefined ? undefined : state
   return (
     <div
-      className="dtt__reasoning-live-card"
-      data-following={following && followActive ? true : undefined}
-      data-overflow={overflow || undefined}
+      className="dtt__reasoning-live-rail"
+      data-single="true"
       data-running={running ? 'true' : 'false'}
       data-state={dataState}
       style={style}
     >
-      <div className="dtt__reasoning-live-head">
-        <span className="dtt__reasoning-live-title">
-          <IconThinkOutline14 size={13} aria-hidden />
-          {running ? '思考中' : '已思考'}
-        </span>
-        <span className="dtt__reasoning-live-step">步骤 {step}{running ? ' · 进行中' : ' · 已完成'}</span>
-      </div>
-      <div
-        className="dtt__reasoning-live"
-        data-edges={edges}
-        ref={ref}
-        onScroll={onScroll}
-        onWheel={onWheel}
-        role="region"
-        aria-label={`${running ? '正在思考' : '已完成的思考'}${overflow ? '，可滚动阅读' : ''}`}
-        tabIndex={overflow ? 0 : undefined}
-        onPointerDown={() => { if (following && followActive) setFollowing(false) }}
-        aria-live={running ? 'polite' : 'off'}
-      >
-        {text}
+      <span className="dtt__reasoning-live-rail-bar" aria-hidden />
+      <div className="dtt__reasoning-live-rail-static">
+        <section className="dtt__reasoning-live-seg" data-running={running ? 'true' : 'false'}>
+          <div className="dtt__reasoning-live-seg-meta"><span>思考</span><span className="dtt__reasoning-live-seg-tag">{step}</span><span>{running ? ' · 进行中' : ' · 已完成'}</span></div>
+          <div className="dtt__reasoning-live-seg-text">{text}</div>
+        </section>
       </div>
     </div>
   )
@@ -147,27 +140,51 @@ interface DisplayEntry {
   readonly item: LiveThinkingItem
 }
 
+/** 单段正文：meta 行 + 文本流（无卡片铬）。 */
+const RailSeg = memo(function RailSeg({ entry }: { readonly entry: DisplayEntry }) {
+  return (
+    <section
+      className="dtt__reasoning-live-seg"
+      data-running={entry.item.running ? 'true' : 'false'}
+      data-seg={entry.key}
+    >
+      <div className="dtt__reasoning-live-seg-meta"><span>思考</span><span className="dtt__reasoning-live-seg-tag">{entry.item.step}</span><span>{entry.item.running ? ' · 进行中' : ' · 已完成'}</span></div>
+      <div className="dtt__reasoning-live-seg-text">{entry.item.text}</div>
+    </section>
+  )
+})
+
 /**
- * 2 卡堆叠：`items` 为本轮全部非空思考段（时间序），`closing` 为回合已结束
+ * 单轨堆叠：`items` 为本轮全部非空思考段（时间序），`closing` 为回合已结束
  * （开始总结）。closing 由调用方按 `locationTurn.status === 'closed'` 传入；
- * 思考中途的 tool 间隙（running=false 但回合未关）不算 closing，旧卡保留。
+ * 思考中途的 tool 间隙（running=false 但回合未关）不算 closing，旧段保留。
  */
 export const LiveThinkingStack = memo(function LiveThinkingStack({ items, closing, compact }: {
   readonly items: readonly LiveThinkingItem[]
   readonly closing: boolean
-  /** 悬浮预览（fixed 容器）时收紧视口高度，2 张不至于撑满屏。 */
+  /** 悬浮预览（fixed 容器）时收紧视口高度，不至于撑满屏。 */
   readonly compact?: boolean | undefined
 }) {
   const motion = useMotionAllowed(true)
-  const leaveMs = motion ? LEAVE_MS : 0
-  const reclaimTotal = (count: number): number => (motion ? RECLAIM_MS + RECLAIM_STAGGER * Math.max(0, count - 1) : 0)
 
-  // 正在消散的被挤出卡（key → 快照，播完卸载）。
-  const [leaving, setLeaving] = useState<readonly DisplayEntry[]>([])
-  // 回收中快照：closing 置 true 的瞬间冻结当前窗口，stagger 播完再整体卸载。
+  // 全局序号 key：过滤后数组下标天然稳定（只有追加 + 末尾文字增长）。
+  const entries: readonly DisplayEntry[] = useMemo(
+    () => items.map((item, index) => ({ key: String(index), item })),
+    [items],
+  )
+
+  // 单视口跟随：合并文本做跟随探针（新段挂载 / 末段流式增长都会改变它）。
+  const probe = useMemo(
+    () => items.map(item => `${item.step}:${item.running ? '1' : '0'}:${item.text}`).join('\0'),
+    [items],
+  )
+  const anyRunning = useMemo(() => items.some(item => item.running), [items])
+  const followActive = anyRunning && !closing
+  const { ref, onScroll, onWheel, edges, overflow, following, setFollowing } =
+    useSteppedFollow(probe, followActive, motion)
+
+  // 回收中快照：closing 置 true 的瞬间冻结全部段，整轨一次回收再整体卸载。
   const [reclaim, setReclaim] = useState<readonly DisplayEntry[] | null>(null)
-  const prevVisibleRef = useRef<readonly string[]>([])
-  const prevItemsRef = useRef<ReadonlyMap<string, LiveThinkingItem>>(new Map())
   const timersRef = useRef<readonly ReturnType<typeof setTimeout>[]>([])
   useEffect(() => () => {
     for (const id of timersRef.current) clearTimeout(id)
@@ -182,63 +199,18 @@ export const LiveThinkingStack = memo(function LiveThinkingStack({ items, closin
     timersRef.current = [...timersRef.current, id]
   }
 
-  // 全局序号 key：过滤后数组下标天然稳定（只有追加 + 末尾文字增长）。
-  const entries: readonly DisplayEntry[] = items.map((item, index) => ({ key: String(index), item }))
-  const visible: readonly DisplayEntry[] = entries.slice(-LIVE_STACK_MAX)
-  const visibleKeys = visible.map(entry => entry.key).join('|')
-
-  // 挤出检测：上次窗口里、这次不在窗口里、且不在回收中的 key → 进入 leaving。
-  // 用 layout effect：同一帧内把被顶掉的旧卡转成消散态，避免先闪掉再出现。
-  useLayoutEffect(() => {
-    if (reclaim !== null) return
-    if (closing) return
-    const prevKeys = prevVisibleRef.current
-    const nextKeys = new Set(visible.map(entry => entry.key))
-    const evicted = prevKeys.filter(key => !nextKeys.has(key))
-    if (evicted.length > 0) {
-      const snapshots = evicted
-        .map(key => {
-          const item = prevItemsRef.current.get(key)
-          return item === undefined ? undefined : ({ key, item } as DisplayEntry)
-        })
-        .filter((entry): entry is DisplayEntry => entry !== undefined)
-      if (snapshots.length > 0) {
-        setLeaving(prev => {
-          const known = new Set(prev.map(entry => entry.key))
-          const fresh = snapshots.filter(entry => !known.has(entry.key) && !nextKeys.has(entry.key))
-          return fresh.length === 0 ? prev : [...prev, ...fresh]
-        })
-        for (const entry of snapshots) {
-          later(leaveMs, () => {
-            setLeaving(prev => prev.filter(other => other.key !== entry.key))
-          })
-        }
-      }
-    }
-    prevVisibleRef.current = visible.map(entry => entry.key)
-    prevItemsRef.current = new Map(entries.map(entry => [entry.key, entry.item]))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleKeys, closing, reclaim, leaveMs])
-
-  // 回收：closing 由 false → true 的瞬间冻结「窗口 + 正在消散」一起 stagger 收。
-  // 用 layout effect：closing 那一帧直接冻结快照，不先闪空一帧。
   const closingRef = useRef(closing)
   useLayoutEffect(() => {
     const was = closingRef.current
     closingRef.current = closing
     if (!closing || was) return
     if (reclaim !== null) return
-    const frozen: readonly DisplayEntry[] = [
-      ...leaving,
-      ...visible,
-    ].slice(-LIVE_STACK_MAX)
-    if (frozen.length === 0) return
-    prevVisibleRef.current = []
-    setLeaving([])
-    setReclaim(frozen)
-    later(reclaimTotal(frozen.length) + 30, () => { setReclaim(null) })
+    if (entries.length === 0) return
+    setReclaim(entries)
+    const timing = reclaimTiming(entries.length, motion)
+    later(timing.scroll + timing.collapse + 30, () => { setReclaim(null) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [closing, visibleKeys])
+  }, [closing, entries, motion])
 
   // 新回合（items 清空且 closing 回落）时清回收态，下一轮淡入不受污染。
   useEffect(() => {
@@ -248,52 +220,64 @@ export const LiveThinkingStack = memo(function LiveThinkingStack({ items, closin
 
   if (reclaim !== null) {
     if (reclaim.length === 0) return null
+    // 两阶段收口：先 ticker 滑出（视口钉住、内层上移逐行经过），再合拢空盒。
+    // 时长按段数浮动，行内 style 与 JS 卸载计时用同一份 timing，对得上拍。
+    const timing = reclaimTiming(reclaim.length, motion)
+    const innerStyle = motion && timing.scroll > 0
+      ? { animationDuration: `${timing.scroll}ms` } as CSSProperties
+      : undefined
     return (
-      <div className="dtt__reasoning-live-stack" data-compact={compact || undefined} data-closing="true" aria-live="off">
-        {reclaim.map((entry, index) => (
-          <LiveSlot
-            key={entry.key}
-            anim="collapse"
-            kind="reclaim"
-            delayMs={motion ? index * RECLAIM_STAGGER : 0}
-            motion={motion}
+      <div className="dtt__reasoning-live-stack" data-closing="true" aria-live="off">
+        <LiveSlot anim="collapse" kind="reclaim" delayMs={timing.scroll} motion={motion}>
+          <div
+            className="dtt__reasoning-live-rail"
+            data-closing="true"
+            data-compact={compact || undefined}
           >
-            <LiveThinkingCard
-              text={entry.item.text}
-              step={entry.item.step}
-              running={false}
-              state="reclaim"
-              style={motion ? { animationDelay: `${index * RECLAIM_STAGGER}ms` } : undefined}
-            />
-          </LiveSlot>
-        ))}
+            <span className="dtt__reasoning-live-rail-bar" aria-hidden />
+            <div className="dtt__reasoning-live-rail-view" data-reclaim="true">
+              <div
+                className="dtt__reasoning-live-rail-inner"
+                data-reclaim="true"
+                style={innerStyle}
+              >
+                {reclaim.map(entry => <RailSeg key={entry.key} entry={entry} />)}
+              </div>
+            </div>
+          </div>
+        </LiveSlot>
       </div>
     )
   }
   if (closing) return null
-  if (visible.length === 0 && leaving.length === 0) return null
+  if (entries.length === 0) return null
   return (
     <div className="dtt__reasoning-live-stack" data-compact={compact || undefined}>
-      {leaving.map(entry => (
-        <LiveSlot key={`leaving:${entry.key}`} anim="collapse" kind="leave" motion={motion}>
-          <LiveThinkingCard
-            text={entry.item.text}
-            step={entry.item.step}
-            running={false}
-            state="leaving"
-          />
-        </LiveSlot>
-      ))}
-      {visible.map(entry => (
-        <LiveSlot key={entry.key} anim="enter" motion={motion}>
-          <LiveThinkingCard
-            text={entry.item.text}
-            step={entry.item.step}
-            running={entry.item.running}
-            state="enter"
-          />
-        </LiveSlot>
-      ))}
+      <div
+        className="dtt__reasoning-live-rail"
+        data-running={anyRunning ? 'true' : 'false'}
+        data-compact={compact || undefined}
+        data-following={following && followActive ? true : undefined}
+        data-overflow={overflow || undefined}
+      >
+        <span className="dtt__reasoning-live-rail-bar" aria-hidden />
+        <div
+          className="dtt__reasoning-live-rail-view"
+          data-edges={edges}
+          ref={ref}
+          onScroll={onScroll}
+          onWheel={onWheel}
+          role="region"
+          aria-label={anyRunning ? '正在思考，可滚动阅读' : '已完成的思考，可滚动阅读'}
+          tabIndex={overflow ? 0 : undefined}
+          onPointerDown={() => { if (following && followActive) setFollowing(false) }}
+          aria-live={anyRunning ? 'polite' : 'off'}
+        >
+          <div className="dtt__reasoning-live-rail-inner">
+            {entries.map(entry => <RailSeg key={entry.key} entry={entry} />)}
+          </div>
+        </div>
+      </div>
     </div>
   )
 })

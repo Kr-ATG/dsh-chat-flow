@@ -76,7 +76,7 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess, cl
   thinkingStart?: number | undefined
   t: ChatViewSlotProps['t']
   turnProcess?: { readonly foldable: boolean } | undefined
-  /** 回合已结束（开始总结）：堆叠逐张回收，而不是一下全收。 */
+  /** 回合已结束（开始总结）：轨道逐行滑出再合拢，而不是一下全收。 */
   closed: boolean
 }) {
   const store = activityStore()
@@ -94,7 +94,7 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess, cl
     ? elapsed !== undefined ? `思考中 · ${formatDuration(elapsed)}` : '思考中…'
     : t('message.turnProcess.thoughtForAWhile')
   // 堆叠输入：本轮全部非空思考段（时间序）。running=false 的中途 tool 间隙
-  // 不算结束，旧卡保留等第 2 张；只有回合 closed 才逐张回收。
+  // 不算结束，旧段保留等第 2 段；只有回合 closed 才逐行滑出回收。
   const stackItems = useMemo<readonly LiveThinkingItem[]>(() => (
     items
       .filter(item => item.text !== '')
@@ -114,7 +114,7 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess, cl
   }, [controlActive, stackItems.length, motion])
   if (deferredControl) return null
   // 接管过渡期（controlActive 但尚未让位）：按钮已是 control 影子行的，不再渲染，
-  // 堆叠按 closing 逐张回收，保证总结动画看得见。
+  // 轨道按 closing 逐行滑出回收，保证总结动画看得见。
   if (controlActive) {
     return (
       <div className="dtt__reasoning" data-reclaim="true">

@@ -441,7 +441,7 @@ const ToolEntry = memo(function ToolEntry({
   readonly t: ChatViewSlotProps['t']
   readonly turnProcess?: { readonly foldable: boolean } | undefined
   readonly useChat: ChatNodeViewProps<'tool-call'>['useChat']
-  /** 回合已结束（开始总结）：堆叠逐张回收，而不是一下全收。 */
+  /** 回合已结束（开始总结）：轨道逐行滑出再合拢，而不是一下全收。 */
   readonly closed: boolean
 }) {
   const store: ActivityStore = activityStore()
@@ -471,8 +471,8 @@ const ToolEntry = memo(function ToolEntry({
   }, [nodes])
   const elapsed = toolStart !== undefined ? Math.max(0, now - toolStart) : undefined
   // 本轮全部非空思考段（时间序，有工具调用时思考 chip 让位，实时预览改挂
-  // 在工具行下方）。第 1 段完成后保留，第 2 段叠下面，最多 2 张；
-  // 中途 tool 间隙旧卡保留，只有回合 closed 才逐张回收。
+  // 在工具行下方）。全部进单轨视口，新段在底部长出来、旧行从顶部逐行顶出，
+  // 只有回合 closed 才整轨回收。
   const liveStackItems = useChat(snapshot => {
     if (turn === undefined) return [] as readonly LiveThinkingItem[]
     const out: LiveThinkingItem[] = []

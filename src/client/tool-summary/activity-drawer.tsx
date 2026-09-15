@@ -32,7 +32,7 @@ const DRAWER_ANIM_MS = 420
 export interface ActivityReasoningItem {
   readonly text: string
   readonly running: boolean
-  /** 所属 assistant step（悬浮堆叠的「步骤 N」与稳定 key 用，无则按序号）。 */
+  /** 所属 assistant step（悬浮轨道的思考数字标签与稳定 key 用，无则按序号）。 */
   readonly step?: number | undefined
 }
 
@@ -430,9 +430,9 @@ function DrawerApp() {
     window.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('keydown', onKey) }
   }, [openTurn])
-  // 悬浮思考预览堆叠：贴着干活中回合的 control 行下方，最多 2 张纵向堆叠。
+  // 悬浮思考预览轨道：贴着干活中回合的 control 行下方，单竖条 + 单视口。
   // 预览由 control 行把行元素登记进来（setPreviewAnchor，思考流 + tool 间隙
-  // 常驻，整轮收口才清）；新段淡入、第 3 段把第 1 张往上消散、收口逐张回收。
+  // 常驻，整轮收口才清）；新段在底部长出来、旧行逐行顶出，收口逐行滑出回收。
   const [preview, setPreview] = useState<{ readonly top: number; readonly left: number; readonly turn: number; readonly items: readonly LiveThinkingItem[] } | null>(null)
   const [reclaimPreview, setReclaimPreview] = useState<{ readonly top: number; readonly left: number; readonly turn: number; readonly items: readonly LiveThinkingItem[] } | null>(null)
   const reclaimTimerRef = useRef<number | undefined>(undefined)
@@ -466,7 +466,7 @@ function DrawerApp() {
       }
       const usable = el !== undefined && el.isConnected && turn !== null && items.length > 0
       if (!usable) {
-        // 锚点没了（整轮收口）：把当前堆叠冻结成回收态逐张收，不一下全收；
+        // 锚点没了（整轮收口）：把当前轨道冻结成回收态逐行滑出，不一下全收；
         // tool 间隙锚点常驻，走不到这里。
         if (reclaimTimerRef.current !== undefined) return
         const prev = previewRef.current

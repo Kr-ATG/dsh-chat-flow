@@ -283,9 +283,9 @@ const CSS = `
 .dtt__process[data-open] .dtt__process-chevron {
   transform: rotate(0);
 }
-/* 实时预览堆叠：最多 2 张纵向排列（第 3 段把第 1 张顶掉，第 4/5 张以此类推）。
-   间距由槽位 margin 承担（不用 flex gap），收起时 margin 一起收到 0，
-   下面的总结卡才是一路平滑滑上去，而不是最后 8px 咯噔一下。 */
+/* 实时预览轨道：左侧一条竖条 + 右侧单视口文本流（无卡片铬）。
+ * 全部思考段共用一个有界视口，新内容在底部长出来、视口分步跟随滚动，
+ * 旧行从顶部逐行顶出裁掉——“出来一行顶一行”，不再有整卡消散/卸载。 */
 .dtt__reasoning-live-stack {
   display: flex;
   flex-direction: column;
@@ -295,8 +295,7 @@ const CSS = `
   align-self: stretch;
 }
 
-/* 堆叠槽位：负责高度收放（grid 0fr/1fr 过渡），内卡负责淡入淡出位移。
-   高度一帧帧塌下去，上面的消散和下面的总结卡上滑是同一拍。 */
+/* 回收槽位：整轨高度合拢（grid 0fr/1fr 过渡），内轨负责淡出上收。 */
 .dtt__live-slot {
   display: grid;
   grid-template-rows: 1fr;
@@ -309,11 +308,11 @@ const CSS = `
   margin-bottom: 0;
 }
 
-.dtt__live-slot > .dtt__reasoning-live-card {
+.dtt__live-slot > .dtt__reasoning-live-rail {
   min-height: 0;
 }
 
-/* 新卡展开：挂载先塌着，下一帧张开（JS 切 data-open），高度 .45s。 */
+/* 新轨展开：挂载先塌着，下一帧张开（JS 切 data-open），高度 .45s。 */
 .dtt__live-slot[data-anim="enter"][data-open="false"] {
   grid-template-rows: 0fr;
   opacity: 0;
@@ -326,7 +325,7 @@ const CSS = `
   transition: grid-template-rows .45s cubic-bezier(.22, 1, .36, 1), opacity .38s ease, margin-bottom .45s ease;
 }
 
-/* 挤出 / 回收合拢：挂载先撑着，下一帧塌掉；margin 也收到 0。 */
+/* 整轨回收合拢：挂载先撑着，下一帧塌掉；margin 也收到 0。 */
 .dtt__live-slot[data-anim="collapse"][data-open="true"] {
   grid-template-rows: 1fr;
   opacity: 1;
@@ -336,70 +335,81 @@ const CSS = `
   grid-template-rows: 0fr;
   opacity: 0;
   margin-bottom: 0;
-  transition: grid-template-rows .56s cubic-bezier(.22, 1, .36, 1), opacity .42s ease, margin-bottom .56s ease;
+  transition: grid-template-rows .35s cubic-bezier(.22, 1, .36, 1), opacity .3s ease, margin-bottom .35s ease;
 }
 
-/* 回收更慢一拍（与内卡 .7s 对齐，stagger 由行内 transition-delay 给）。 */
-.dtt__live-slot[data-anim="collapse"][data-kind="reclaim"][data-open="false"] {
-  transition-duration: .7s, .5s, .7s;
-}
-
-/* 实时预览卡片（上游 better-display ReasoningCard 同款：标题 + 有界视口 +
-   边缘渐隐；无底部控制按钮，上翻即停、滚回底部自动恢复跟随）。 */
-.dtt__reasoning-live-card {
-  align-self: stretch;
+/* 实时预览轨道本体：左竖条 + 右文本流，无描边卡片底色。 */
+.dtt__reasoning-live-rail {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
   min-width: 0;
+  align-self: stretch;
+}
+
+.dtt__reasoning-live-rail-bar {
+  flex: none;
+  width: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 55%, var(--dsw-alias-border-l2, rgba(127,127,127,.22)));
+  opacity: .85;
+}
+
+/* 运行中竖条呼吸（只动透明度，不占布局）。 */
+.dtt__reasoning-live-rail[data-running="true"] .dtt__reasoning-live-rail-bar {
+  animation: dtt-rail-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes dtt-rail-pulse {
+  0%, 100% { opacity: .55; }
+  50% { opacity: 1; }
+}
+
+/* 新段淡入：挂载即播（同 key 的流式追加不重挂、不重播）。 */
+.dtt__reasoning-live-seg {
+  animation: dtt-seg-in .3s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+@keyframes dtt-seg-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 对话结束开始总结：ticker 式逐行滑出——视口高度钉住不动，内层匀速上移，
+   每行依次经过视口再从顶部裁掉（时长行内按段数给，保证每行露脸）；
+   滑完后槽位再合拢空盒（transition-delay 与滑出同拍，见 live-stack.tsx）。 */
+.dtt__reasoning-live-rail[data-closing="true"] {
+  pointer-events: none;
+}
+
+.dtt__reasoning-live-rail-view[data-reclaim="true"] {
   overflow: hidden;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22));
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-module-platform, transparent);
+  -webkit-mask-image: linear-gradient(transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
 }
 
-/* 新卡淡入：挂载即播（同 key 的流式追加不重挂、不重播）。卡包在槽位里，
-   不再是堆叠的直接子节点。 */
-.dtt__live-slot > .dtt__reasoning-live-card:not([data-state]) {
-  animation: dtt-live-in .38s cubic-bezier(.22, 1, .36, 1) both;
+.dtt__reasoning-live-rail-inner[data-reclaim="true"] {
+  animation-name: dtt-rail-scroll-out;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
 }
 
-@keyframes dtt-live-in {
-  from { opacity: 0; transform: translateY(10px) scale(.985); filter: blur(2px); }
-  to { opacity: 1; transform: none; filter: none; }
+@keyframes dtt-rail-scroll-out {
+  from { opacity: 1; transform: translateY(0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-100%); }
 }
 
-/* 被第 3 张顶掉的第 1 张：往上逐渐消散（保持占位播完再卸载，避免下卡跳位）。 */
-.dtt__reasoning-live-card[data-state="leaving"] {
-  animation: dtt-live-dissolve .56s cubic-bezier(.4, 0, .6, 1) both;
-  pointer-events: none;
-}
-
-@keyframes dtt-live-dissolve {
-  0% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
-  100% { opacity: 0; transform: translateY(-22px) scale(.96); filter: blur(7px); }
-}
-
-/* 对话结束开始总结：不一下全收，逐张往上回收（stagger 由行内 animation-delay 给，
-   单卡 .7s + 间隔 .28s，2 张约 1s，肉眼能数出两拍）。 */
-.dtt__reasoning-live-card[data-state="reclaim"] {
-  animation: dtt-live-reclaim .7s cubic-bezier(.22, 1, .36, 1) both;
-  pointer-events: none;
-}
-
-@keyframes dtt-live-reclaim {
-  0% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
-  40% { opacity: .85; transform: translateY(-30px) scale(.97); filter: blur(1px); }
-  100% { opacity: 0; transform: translateY(-84px) scale(.9); filter: blur(6px); }
-}
-
-/* 回收落点：飞入的卡是冲着 chip 行去的，行在卡落地时轻跳一下“接住”
-  （transform 不占布局，只动视觉；时长 1s 对齐两张卡 stagger 落点）。 */
+/* 回收落点：轨道滑完冲着 chip 行去，行在落地时轻跳一下“接住”
+  （transform 不占布局，只动视觉；时长 1.2s，dip 落在滑出尾段附近）。 */
 .dtt__reasoning[data-reclaim="true"] .dtt__process,
 .dts__entry-wrap[data-reclaim="true"] .dts__process {
-  animation: dtt-chip-catch 1s cubic-bezier(.22, 1, .36, 1);
+  animation: dtt-chip-catch 1.2s cubic-bezier(.22, 1, .36, 1);
 }
 
 @keyframes dtt-chip-catch {
-  0%, 55% { transform: translateY(0); }
-  72% { transform: translateY(-4px); }
+  0%, 78% { transform: translateY(0); }
+  88% { transform: translateY(-4px); }
   100% { transform: translateY(0); }
 }
 
@@ -486,99 +496,131 @@ const CSS = `
   color: var(--dsw-alias-label-secondary);
 }
 
-/* 已完成的旧卡略收淡，正在跑的卡描边提亮。标题用官方思考图标 + 官方名称。 */
-.dtt__reasoning-live-card[data-running="false"] {
-  opacity: .9;
+/* 已完成的旧段略收淡。段头是 11px 静默小字（思考 + 数字标签 · 进行中/已完成）。 */
+.dtt__reasoning-live-seg[data-running="false"] .dtt__reasoning-live-seg-text {
+  opacity: .88;
 }
 
-.dtt__reasoning-live-card[data-running="true"] {
-  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 38%, var(--dsw-alias-border-l2, rgba(127,127,127,.22)));
-}
-
-.dtt__reasoning-live-title {
-  display: inline-flex;
+.dtt__reasoning-live-seg-meta {
+  display: flex;
   align-items: center;
   gap: 6px;
-  font-weight: 500;
-  line-height: 20px;
+  margin-bottom: 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
-.dtt__reasoning-live-title > svg {
-  display: block;
+.dtt__reasoning-live-seg-meta > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 段序号标签：小 pill，跑着的那段用主题色提亮。 */
+.dtt__reasoning-live-seg-tag {
   flex: none;
-  width: 13px;
-  height: 13px;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--dsw-alias-label-tertiary, #888) 16%, transparent);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.dtt__reasoning-live-seg[data-running="true"] .dtt__reasoning-live-seg-tag {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 16%, transparent);
   color: var(--dsw-alias-state-business-primary, #4176e6);
 }
 
-/* 悬浮堆叠（紧凑模式 fixed 容器）收紧单卡视口，2 张不至于撑满屏。 */
-.dtt__reasoning-live-stack[data-compact] .dtt__reasoning-live {
-  max-height: 140px;
+/* 段间分隔：无卡片，用发丝虚线区分第 N 次思考。 */
+.dtt__reasoning-live-seg + .dtt__reasoning-live-seg {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--dsw-alias-border-l2, rgba(127,127,127,.22));
 }
 
-.dtt__reasoning-live-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px 0;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 20px;
-  font-variant-numeric: tabular-nums;
+/* 悬浮轨道（紧凑模式 fixed 容器）收紧视口，不至于撑满屏。 */
+.dtt__reasoning-live-stack[data-compact] .dtt__reasoning-live-rail-view {
+  max-height: 220px;
 }
 
-.dtt__reasoning-live-step { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* 有界视口：平时 224px 预览；上下缘按滚动位置渐隐。 */
-.dtt__reasoning-live {
-  align-self: stretch;
+/* 单视口：平时 352px（约两段思考），超高后内部滚动上顶；
+   上下缘按滚动位置渐隐。 */
+.dtt__reasoning-live-rail-view {
+  flex: 1;
+  min-width: 0;
   position: relative;
-  max-height: 224px;
+  max-height: 352px;
   overflow-y: auto;
   overscroll-behavior-y: contain;
   scroll-behavior: auto;
   overflow-anchor: none;
   border: 0;
   border-radius: 0;
-  padding: 8px 16px 16px;
+  padding: 2px 4px 6px 0;
   background: transparent;
+  scrollbar-width: thin;
+  scrollbar-color: var(--dsw-alias-scrollbar-bg-l2, rgba(127,127,127,.4)) transparent;
+}
+
+.dtt__reasoning-live-rail-inner {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dtt__reasoning-live-seg-text {
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 20px;
   white-space: pre-wrap;
   word-break: break-word;
-  scrollbar-width: thin;
-  scrollbar-color: var(--dsw-alias-scrollbar-bg-l2, rgba(127,127,127,.4)) transparent;
 }
 
-.dtt__reasoning-live[data-edges="both"],
-.dtt__reasoning-live-card[data-following][data-overflow] .dtt__reasoning-live {
+.dtt__reasoning-live-rail-view[data-edges="both"],
+.dtt__reasoning-live-rail[data-following][data-overflow] .dtt__reasoning-live-rail-view {
   -webkit-mask-image: linear-gradient(transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
   mask-image: linear-gradient(transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
 }
 
-.dtt__reasoning-live[data-edges="top"] {
+.dtt__reasoning-live-rail-view[data-edges="top"] {
   -webkit-mask-image: linear-gradient(transparent 0, black 28px, black 100%);
   mask-image: linear-gradient(transparent 0, black 28px, black 100%);
 }
 
-.dtt__reasoning-live[data-edges="bottom"] {
+.dtt__reasoning-live-rail-view[data-edges="bottom"] {
   -webkit-mask-image: linear-gradient(black 0, black calc(100% - 28px), transparent 100%);
   mask-image: linear-gradient(black 0, black calc(100% - 28px), transparent 100%);
 }
 
-.dtt__reasoning-live:focus-visible {
+.dtt__reasoning-live-rail-view:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary, #4176e6);
   outline-offset: -2px;
 }
 
 @media (forced-colors: active) {
-  .dtt__reasoning-live { -webkit-mask-image: none !important; mask-image: none !important; }
+  .dtt__reasoning-live-rail-view { -webkit-mask-image: none !important; mask-image: none !important; }
 }
 
-/* 抽屉的流式悬浮预览（紧凑模式 control 行下方浮层）：独立描边，与卡片视口解耦。 */
-.dtt__reasoning-live.dts__preview {
+/* 兼容别名：旧单卡类名已不再渲染，残留 DOM（HMR 间隙）按无铬文本兜底。 */
+.dtt__reasoning-live,
+.dtt__reasoning-live-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* 抽屉的流式悬浮预览（紧凑模式 control 行下方浮层）：轨道本身无底，
+   浮层底由外层容器给，与视口解耦。 */
+.dtt__reasoning-live-rail.dts__preview {
   border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22));
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1, #fff);
@@ -600,26 +642,28 @@ const CSS = `
   min-width: min(320px, calc(100vw - 32px));
   pointer-events: none;
 }
-.dts__preview-stack .dtt__reasoning-live-card {
+.dts__preview-stack .dtt__reasoning-live-rail {
   background: var(--dsw-alias-bg-layer-1, #fff);
   box-shadow: 0 8px 24px rgba(15, 17, 21, .18);
+  border-radius: 12px;
+  padding: 10px 14px 10px 12px;
 }
 
-.dtt__reasoning-live::-webkit-scrollbar {
+.dtt__reasoning-live-rail-view::-webkit-scrollbar {
   width: 4px;
   height: 4px;
 }
 
-.dtt__reasoning-live::-webkit-scrollbar-track {
+.dtt__reasoning-live-rail-view::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.dtt__reasoning-live::-webkit-scrollbar-thumb {
+.dtt__reasoning-live-rail-view::-webkit-scrollbar-thumb {
   background: var(--dsw-alias-scrollbar-bg-l2, rgba(127,127,127,.4));
   border-radius: 2px;
 }
 
-.dtt__reasoning-live::-webkit-scrollbar-thumb:hover {
+.dtt__reasoning-live-rail-view::-webkit-scrollbar-thumb:hover {
   background: var(--dsw-alias-scrollbar-hover-l2, rgba(127,127,127,.6));
 }
 
@@ -678,9 +722,9 @@ const CSS = `
   .dtt__card-chip { transition: none; }
   .dtt__card-chip:hover { transform: none; }
   .dtt__fresh[data-fresh] { animation: none; }
-  .dtt__live-slot > .dtt__reasoning-live-card:not([data-state]),
-  .dtt__reasoning-live-card[data-state="leaving"],
-  .dtt__reasoning-live-card[data-state="reclaim"] { animation: none; }
+  .dtt__reasoning-live-seg,
+  .dtt__reasoning-live-rail-inner[data-reclaim="true"],
+  .dtt__reasoning-live-rail[data-running="true"] .dtt__reasoning-live-rail-bar { animation: none; }
   .dtt__reasoning[data-reclaim="true"] .dtt__process,
   .dts__entry-wrap[data-reclaim="true"] .dts__process { animation: none; }
   .dtt__retry-row[data-active] .dtt__retry-text {
