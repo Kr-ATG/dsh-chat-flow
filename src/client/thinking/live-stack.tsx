@@ -22,6 +22,7 @@
 
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
+import { IconThinkOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useMotionAllowed, useSteppedFollow } from '../motion-utils.ts'
 
 export interface LiveThinkingItem {
@@ -118,8 +119,8 @@ export const LiveThinkingCard = memo(function LiveThinkingCard({ text, step, run
     >
       <div className="dtt__reasoning-live-head">
         <span className="dtt__reasoning-live-title">
-          {running && <span className="dtt__live-dot" aria-hidden />}
-          {running ? '思考中' : '思考'}
+          <IconThinkOutline14 size={13} aria-hidden />
+          {running ? '思考中' : '已思考'}
         </span>
         <span className="dtt__reasoning-live-step">步骤 {step}{running ? ' · 进行中' : ' · 已完成'}</span>
       </div>

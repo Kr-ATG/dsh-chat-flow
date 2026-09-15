@@ -17,8 +17,16 @@ import { useNow } from './use-now.ts'
 import { groupReasoning } from './reasoning-classify.ts'
 import { ToolCallTreeList } from './ToolGroupNodeView.tsx'
 import { ErrorBoundary } from '../error-boundary.tsx'
-import { MODAL_ANIM_MS, modalAnimClass, modalMaskAnimClass, modalStaggerClass } from '../modal-animation.ts'
+import { modalAnimClass, modalMaskAnimClass, modalStaggerClass } from '../modal-animation.ts'
 import { LiveThinkingStack, LIVE_RECLAIM_UNMOUNT_MS, type LiveThinkingItem } from '../thinking/live-stack.tsx'
+
+/**
+ * 活动抽屉进出场时长（ms）：必须与 tool-summary/styles.ts 里
+ * `.dts__dialog(-mask).dsh-modal-*-in/out` 的 420ms 覆盖一致。
+ * 共享的 MODAL_ANIM_MS 只有 240ms（截图面板等共用方在用），本弹窗放慢了一档，
+ * 关闭计时用错就会提前卸载、退出动画播一半被掐。
+ */
+const DRAWER_ANIM_MS = 420
 
 /** One reasoning block stranded in the drawer. */
 export interface ActivityReasoningItem {
@@ -389,7 +397,10 @@ function DrawerApp() {
   const [lastTurn, setLastTurn] = useState<number | null>(null)
   const [openMode, setOpenMode] = useState<ViewMode | null>(null)
   const [data, setData] = useState<ActivityTurnData | undefined>(undefined)
-  // 出场过渡：store 关闭后多留一帧播出场动画再卸载（时长与 modal-animation 对齐）。
+  // 出场过渡：store 关闭后多留一帧播出场动画再卸载。
+  // 时长必须与 tool-summary/styles.ts 里本弹窗的 420ms 覆盖对齐
+  //（共享 MODAL_ANIM_MS 只有 240ms，用它会提前卸载、退出播一半被掐掉，
+  // 看起来就像没有关闭动画）。
   const [closing, setClosing] = useState(false)
   useEffect(() => {
     const store = activityStore()
@@ -407,7 +418,7 @@ function DrawerApp() {
   useEffect(() => {
     if (openTurn !== null || lastTurn === null) { setClosing(false); return undefined }
     setClosing(true)
-    const id = window.setTimeout(() => { setClosing(false) }, MODAL_ANIM_MS)
+    const id = window.setTimeout(() => { setClosing(false) }, DRAWER_ANIM_MS)
     return () => window.clearTimeout(id)
   }, [openTurn, lastTurn])
   // Esc 关弹窗。

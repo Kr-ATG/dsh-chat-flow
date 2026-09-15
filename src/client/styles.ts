@@ -486,7 +486,7 @@ const CSS = `
   color: var(--dsw-alias-label-secondary);
 }
 
-/* 已完成的旧卡略收淡，正在跑的卡描边提亮 + 标题呼吸点。 */
+/* 已完成的旧卡略收淡，正在跑的卡描边提亮。标题用官方思考图标 + 官方名称。 */
 .dtt__reasoning-live-card[data-running="false"] {
   opacity: .9;
 }
@@ -495,20 +495,20 @@ const CSS = `
   border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 38%, var(--dsw-alias-border-l2, rgba(127,127,127,.22)));
 }
 
-.dtt__live-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: var(--dsw-alias-state-business-primary, #4176e6);
-  vertical-align: 1px;
-  animation: dtt-live-dot-pulse 1.6s ease-in-out infinite;
+.dtt__reasoning-live-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  line-height: 20px;
 }
 
-@keyframes dtt-live-dot-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: .45; transform: scale(.8); }
+.dtt__reasoning-live-title > svg {
+  display: block;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--dsw-alias-state-business-primary, #4176e6);
 }
 
 /* 悬浮堆叠（紧凑模式 fixed 容器）收紧单卡视口，2 张不至于撑满屏。 */
@@ -527,8 +527,6 @@ const CSS = `
   line-height: 20px;
   font-variant-numeric: tabular-nums;
 }
-
-.dtt__reasoning-live-title { font-weight: 500; }
 
 .dtt__reasoning-live-step { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -682,8 +680,7 @@ const CSS = `
   .dtt__fresh[data-fresh] { animation: none; }
   .dtt__live-slot > .dtt__reasoning-live-card:not([data-state]),
   .dtt__reasoning-live-card[data-state="leaving"],
-  .dtt__reasoning-live-card[data-state="reclaim"],
-  .dtt__live-dot { animation: none; }
+  .dtt__reasoning-live-card[data-state="reclaim"] { animation: none; }
   .dtt__reasoning[data-reclaim="true"] .dtt__process,
   .dts__entry-wrap[data-reclaim="true"] .dts__process { animation: none; }
   .dtt__retry-row[data-active] .dtt__retry-text {
@@ -781,12 +778,12 @@ const CSS = `
   bottom: 6px;
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(10, 12, 16, .72);
+  /* 不用 backdrop-filter：全插件去高斯模糊，底色加深保证可读。 */
+  background: rgba(10, 12, 16, .85);
   color: rgba(255, 255, 255, .92);
   font-size: 11px;
   line-height: 16px;
   font-variant-numeric: tabular-nums;
-  backdrop-filter: blur(4px);
 }
 
 .dgi__backdrop {
@@ -830,12 +827,12 @@ const CSS = `
   padding: 6px 12px;
   border: 1px solid rgba(255, 255, 255, .18);
   border-radius: 999px;
-  background: rgba(20, 24, 32, .78);
+  /* 不用 backdrop-filter：全插件去高斯模糊，底色加深保证可读。 */
+  background: rgba(20, 24, 32, .92);
   color: rgba(255, 255, 255, .92);
   font-size: 12px;
   line-height: 18px;
   cursor: pointer;
-  backdrop-filter: blur(6px);
   transition: background .15s ease, border-color .15s ease;
 }
 
@@ -922,10 +919,18 @@ body[data-ds-dark-theme] .dtt__card--reply { box-shadow: 0 12px 32px rgba(0,0,0,
    钉到右上角，与标题垂直同行；header 收回 45px，省下的 31px 全还给正文。
    选择器只用稳定钩子：header 标签、role=tablist、CSS Module 的 _titleRow /
    _tab 后缀（前缀 wSkVaW_ 是构建 hash，会变，一律不写死）。
-   :has 只在真的渲染出 tablist（视图数 1 时官方不渲染）时生效，单视图零影响。 */
-header:has(> [role='tablist']) {
+   单行统一高度 44px + 垂直居中，与桌面壳窗口控制按钮中心线（y=22px）精准平齐。 */
+header:has(> [class*='_titleRow']) {
   display: flex;
   align-items: center;
+  min-height: 44px;
+  height: 44px;
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
+}
+
+header:has(> [role='tablist']) {
   gap: 18px;
 }
 
@@ -978,13 +983,24 @@ header > [role='tablist'] > [class*='_tab'][class*='_tabActive']::after {
 
 /* ══ 壳窗口控制留位（仅壳内生效）═══════════════════════════════════════
    桌面壳（Electron 无边框窗口）右上角自绘 最小化/最大化/关闭 三枚按钮
-   （合计约 96px 宽）。官方 header 右 padding 本为 28px，这里 +100px →
-   128px：标题行里的 utilities / corner（工作区按钮、更多、侧栏展开）与
-   「对话 / 轨迹」标签簇整体左移 100px，右上角让给壳按钮。
-   :has(> [class*='_titleRow']) 只锁会话 header；dsh-in-shell 类由
-   shell-chrome.ts 在确认页面被 iframe 承载后挂上，浏览器直开零影响。 */
+   （合计约 102px 宽）。
+   1. 会话 header：右 padding 本为 28px，这里 +100px → 128px：
+      标题行里的 utilities / corner（工作区按钮、更多、侧栏展开）与
+      「对话 / 轨迹」标签簇整体左移 100px，右上角让给壳按钮。
+   2. 侧栏 dockkit 条带（文件/扩展面）：当右侧栏展开时，顶栏停靠面同样直抵
+      视口右上角；为含 stripChrome 的顶右 strip 留出 padding-right 112px，
+      让出右上角 3 枚窗口控制按钮，避免遮挡 split/fullscreen/collapse 图标；
+      同时通过 padding-top: 8px 使 28px 图标钮与壳按钮（44px 高，中心 y=22px）
+      完全平齐对齐。
+   dsh-in-shell 类由 shell-chrome.ts 在与壳完成 dsh:shell-chrome 能力握手后
+   挂上（旧壳不应答、浏览器直开均零影响，不留空档）。 */
 .dsh-in-shell header:has(> [class*='_titleRow']) {
   padding-right: 128px;
+}
+
+.dsh-in-shell [data-dockkit-strip]:has([data-dockkit-strip-chrome]) {
+  padding-top: 8px;
+  padding-right: 112px;
 }
 `
 
