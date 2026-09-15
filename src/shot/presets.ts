@@ -84,6 +84,36 @@ export const SHOT_PRESETS: Record<ShotDevice, Record<ShotQuality, ShotPreset>> =
   },
 }
 
+/**
+ * 宽度档位预设（5 档）：
+ *  - 540：手机竖屏（紧凑窄幅，适合聊天转发不横向缩放）；
+ *  - 720：小窗/紧凑文档；
+ *  - 960：标准默认（均衡阅读节奏，适合发群/贴文档）；
+ *  - 1200：宽屏（适合横向代码/表格/对比场景）；
+ *  - 1440：超宽屏（大幅展示场景）。
+ */
+export const WIDTH_PRESETS = [540, 720, 960, 1200, 1440] as const
+export type WidthPreset = (typeof WIDTH_PRESETS)[number]
+export const DEFAULT_WIDTH = 960
+
+/** 宽度档位中文标签。 */
+export const WIDTH_LABELS: Record<WidthPreset, string> = {
+  540: '540 手机',
+  720: '720 紧凑',
+  960: '960 标准',
+  1200: '1200 宽屏',
+  1440: '1440 超宽',
+}
+
+/** 根据画质档与排版宽度计算 deviceScaleFactor 缩放倍率。 */
+export function qualityScale(quality: ShotQuality, width: number): number {
+  const isNarrow = width <= 640
+  if (quality === '1080p') return 2
+  if (quality === '4k') return isNarrow ? 4 : 3
+  // 2k 默认
+  return isNarrow ? 3 : 2
+}
+
 /** 设备档中文名。 */
 export const DEVICE_LABEL: Record<ShotDevice, string> = {
   desktop: '电脑版',
@@ -97,14 +127,37 @@ export const QUALITY_LABEL: Record<ShotQuality, string> = {
   '4k': '4K',
 }
 
+/** 解析宽度与画质参数。 */
+export function resolveShotPreset(widthInput: unknown, qualityInput: unknown): ShotPreset & { width: number; quality: ShotQuality } {
+  let width = typeof widthInput === 'number' && !Number.isNaN(widthInput)
+    ? Math.round(widthInput)
+    : (typeof widthInput === 'string' && /^\d+$/.test(widthInput)
+      ? parseInt(widthInput, 10)
+      : (widthInput === 'phone' ? 540 : DEFAULT_WIDTH))
+  width = Math.max(360, Math.min(2560, width))
+  const q: ShotQuality = qualityInput === '1080p' || qualityInput === '4k' ? qualityInput : '2k'
+  const scale = qualityScale(q, width)
+  return {
+    cssWidth: width,
+    scale,
+    minHeight: width <= 640 ? 800 : 540,
+    width,
+    quality: q,
+  }
+}
+
 /**
- * 取一档预设（未知值回退电脑版 2K）。
- * @param device - 设备版式。
+ * 取一档预设（兼容旧版按 device 查，也支持传入具体 width 数值）。
+ * @param deviceOrWidth - 设备版式或数值宽度。
  * @param quality - 画质档。
  * @returns 该档的渲染参数。
  */
-export function shotPreset(device: unknown, quality: unknown): ShotPreset & { device: ShotDevice; quality: ShotQuality } {
-  const d: ShotDevice = device === 'phone' ? 'phone' : 'desktop'
+export function shotPreset(deviceOrWidth: unknown, quality: unknown): ShotPreset & { device: ShotDevice; quality: ShotQuality } {
+  const d: ShotDevice = deviceOrWidth === 'phone' || (typeof deviceOrWidth === 'number' && deviceOrWidth <= 640) ? 'phone' : 'desktop'
   const q: ShotQuality = quality === '1080p' || quality === '4k' ? quality : '2k'
+  if (typeof deviceOrWidth === 'number' && !Number.isNaN(deviceOrWidth)) {
+    const resolved = resolveShotPreset(deviceOrWidth, q)
+    return { cssWidth: resolved.cssWidth, scale: resolved.scale, minHeight: resolved.minHeight, device: d, quality: q }
+  }
   return { ...SHOT_PRESETS[d][q], device: d, quality: q }
 }

@@ -16,6 +16,7 @@
  * `turn-tail.data.closing.blocks`（AssistantBlock[]）取。
  */
 import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
+import { deriveTitle } from '../../shared/title.ts'
 
 /** 截图范围。 */
 export type ShotRange = 'reply' | 'turn' | 'all'
@@ -121,3 +122,35 @@ export function collectMessages(
   }
   return out
 }
+
+/**
+ * 提取当前这轮对话的标题（本次对话）：
+ * 优先取这轮问答里用户（user / steering）的提问文本；
+ * 若该轮没有用户消息（如初始开场白），则取当前 assistant 回复的第一行有效文本。
+ */
+export function deriveCurrentDialogueTitle(snapshot: ChatSnapshot, messageId: unknown): string {
+  const located = locateTail(snapshot, messageId)
+  if (located !== null && located.turn >= 0) {
+    for (const key of snapshot.locations.getTurn(located.turn)) {
+      const node = snapshot.nodes.get(key)
+      if (node !== undefined && (node.kind === 'user' || node.kind === 'steering')) {
+        const text = userText(node.data as UserData)
+        if (text.trim() !== '') {
+          return deriveTitle(text, 'user')
+        }
+      }
+    }
+  }
+  // 兜底：若该轮找不到 user 提问，则从当前这篇 assistant 回复提取第一行
+  if (located !== null) {
+    const node = snapshot.nodes.get(located.key)
+    if (node !== undefined) {
+      const text = assistantText(node.data as TailData)
+      if (text.trim() !== '') {
+        return deriveTitle(text, 'assistant')
+      }
+    }
+  }
+  return ''
+}
+

@@ -148,11 +148,11 @@ const PALETTE: Record<'light' | 'dark' | 'reader', Record<string, string>> = {
   },
 }
 
-/** 玻璃壁纸（浅色）：高饱和渐变 + feTurbulence 细噪点，与主界面玻璃质感一致。 */
-const WALLPAPER_LIGHT = `background-color:#eef1f6;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.55 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"),radial-gradient(60rem 44rem at 46% 42%, rgba(120,165,250,.55), transparent 66%),radial-gradient(42rem 28rem at 12% 6%, rgba(96,150,255,.95), transparent 58%),radial-gradient(38rem 24rem at 90% 4%, rgba(168,118,255,.85), transparent 60%),radial-gradient(48rem 32rem at 82% 94%, rgba(30,200,185,.75), transparent 58%),radial-gradient(40rem 28rem at 14% 98%, rgba(255,150,120,.55), transparent 62%)`
+/** 玻璃壁纸（浅色）：高饱和多重径向渐变，与主界面玻璃质感一致。 */
+const WALLPAPER_LIGHT = `background-color:#eef1f6;background-image:radial-gradient(60rem 44rem at 46% 42%, rgba(120,165,250,.55), transparent 66%),radial-gradient(42rem 28rem at 12% 6%, rgba(96,150,255,.95), transparent 58%),radial-gradient(38rem 24rem at 90% 4%, rgba(168,118,255,.85), transparent 60%),radial-gradient(48rem 32rem at 82% 94%, rgba(30,200,185,.75), transparent 58%),radial-gradient(40rem 28rem at 14% 98%, rgba(255,150,120,.55), transparent 62%)`
 
 /** 玻璃壁纸（深色）。 */
-const WALLPAPER_DARK = `background-color:#0a0b10;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.6 0 0 0 0 0.65 0 0 0 0 0.78 0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"),radial-gradient(62rem 46rem at 46% 42%, rgba(70,110,235,.50), transparent 68%),radial-gradient(42rem 28rem at 12% 6%, rgba(86,132,255,.90), transparent 58%),radial-gradient(38rem 24rem at 90% 4%, rgba(148,96,250,.80), transparent 60%),radial-gradient(48rem 32rem at 82% 94%, rgba(16,175,162,.70), transparent 58%),radial-gradient(40rem 28rem at 14% 98%, rgba(225,90,120,.45), transparent 62%)`
+const WALLPAPER_DARK = `background-color:#0a0b10;background-image:radial-gradient(62rem 46rem at 46% 42%, rgba(70,110,235,.50), transparent 68%),radial-gradient(42rem 28rem at 12% 6%, rgba(86,132,255,.90), transparent 58%),radial-gradient(38rem 24rem at 90% 4%, rgba(148,96,250,.80), transparent 60%),radial-gradient(48rem 32rem at 82% 94%, rgba(16,175,162,.70), transparent 58%),radial-gradient(40rem 28rem at 14% 98%, rgba(225,90,120,.45), transparent 62%)`
 
 /** 玻璃主题覆盖层：半透明卡片 + backdrop-filter + 高光内边框。 */
 function glassLayer(dark: boolean): string {
@@ -248,8 +248,9 @@ export function buildCardCss(theme: ShotTheme, width: number, minHeight: number)
 ` : ''
   return `:root{${vars};--w:${width}px;--pad:${m.pad}px;--radius:${m.radius}px}
 *{margin:0;padding:0;box-sizing:border-box}
-html{font-size:16px;-webkit-text-size-adjust:100%}
-body{${canvas};min-height:100vh;box-sizing:border-box;padding:${m.outer}px ${m.outer}px ${Math.round(m.outer * 1.2)}px;display:flex;flex-direction:column;align-items:center;color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+html{font-size:16px;-webkit-text-size-adjust:100%;scrollbar-width:none;-ms-overflow-style:none}
+html::-webkit-scrollbar,body::-webkit-scrollbar,::-webkit-scrollbar{display:none !important;width:0 !important;height:0 !important}
+body{${canvas};min-height:100vh;box-sizing:border-box;padding:${m.outer}px ${m.outer}px ${Math.round(m.outer * 1.2)}px;display:flex;flex-direction:column;align-items:center;color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;scrollbar-width:none;-ms-overflow-style:none}
 .card{width:var(--w);min-height:${minHeight}px;margin:auto;display:flex;flex-direction:column;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
 /* 顶部强调色导轨 */
 .rail{flex:none;height:3px;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 25%,transparent) 62%,transparent)}

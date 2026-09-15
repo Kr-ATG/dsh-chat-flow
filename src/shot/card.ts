@@ -11,6 +11,8 @@
  */
 import { escapeHtml, hasDiagramFence, renderMarkdown } from './markdown.ts'
 import { buildCardCss, mermaidConfigJson, type ShotTheme } from './theme.ts'
+import { deriveTitle } from '../shared/title.ts'
+export { deriveTitle } from '../shared/title.ts'
 
 /** 单条待渲染消息。 */
 export interface ShotMessage {
@@ -61,38 +63,7 @@ function whale(width: number, height: number): string {
   return `<svg width="${width}" height="${height}" viewBox="0 0 23.16 17.04" fill="none" aria-hidden="true"><path d="${FISH_LOGO_PATH}" fill="currentColor"/></svg>`
 }
 
-/** 从消息文本提取标题：首个有意义内容行，剥离 Markdown 标记，截断到 64 字符。 */
-export function deriveTitle(text: string, role: 'user' | 'assistant'): string {
-  const lines = text.replace(/\r\n/g, '\n').split('\n')
-  let inFence = false
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (inFence) {
-      if (trimmed.startsWith('```')) inFence = false
-      continue
-    }
-    if (trimmed.startsWith('```')) { inFence = true; continue }
-    if (trimmed === '') continue
-    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) continue
-    if (trimmed.startsWith('|')) continue
-    const cleaned = trimmed
-      .replace(/^#{1,6}\s+/, '')
-      .replace(/^>\s*/, '')
-      .replace(/^[-*+]\s+/, '')
-      .replace(/^\d+[.)]\s+/, '')
-      .replace(/^\[[ xX]\]\s+/, '')
-      .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-      .replace(/[*_~`]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim()
-    if (cleaned !== '') {
-      const limit = 64
-      return cleaned.length > limit ? `${cleaned.slice(0, limit)}…` : cleaned
-    }
-  }
-  return role === 'user' ? '我的提问' : 'AI 回复'
-}
+
 
 /** 时间戳（本地时区，分钟精度）。 */
 function stampNow(): string {

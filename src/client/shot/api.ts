@@ -29,8 +29,10 @@ export interface RenderResult {
 export interface RenderRequest {
   messages: readonly ShotMessage[]
   theme: ShotTheme
-  /** 设备版式（电脑横幅 / 手机窄幅）。 */
-  device: ShotDevice
+  /** 输出宽度（CSS px，支持 540/720/960/1200/1440 等预设或自定义数值 360~2560）。 */
+  width?: number
+  /** 设备版式（兼容旧字段，推荐传 width）。 */
+  device?: ShotDevice
   /** 输出画质档（决定输出像素宽度）。 */
   quality: ShotQuality
   /** 画幅比例；缺省自适应内容长度。 */

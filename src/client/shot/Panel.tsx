@@ -14,10 +14,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { render, reveal, save, type RenderResult, type ShotTheme } from './api.ts'
 import type { ShotMessage, ShotRange } from './collect.ts'
-// 设备/画质/画幅档位表与 host 端 presets.ts 共用（纯数据，client 打包时内联）。
+// 宽度预设/画质档位表与 host 端 presets.ts 共用（纯数据，client 打包时内联）。
 import {
-  ASPECT_LABEL, DEVICE_LABEL, QUALITY_LABEL, SHOT_ASPECTS, SHOT_PRESETS,
-  type ShotAspect, type ShotDevice, type ShotQuality,
+  DEFAULT_WIDTH, QUALITY_LABEL, WIDTH_LABELS, WIDTH_PRESETS, qualityScale,
+  type ShotQuality, type WidthPreset,
 } from '../../shot/presets.ts'
 import { canvasPad } from '../../shot/theme.ts'
 import { cls } from './styles.ts'
@@ -58,8 +58,12 @@ export interface ShotPanelProps {
   onClose: () => void
   /** 按范围抽取消息（面板改范围时重新调用）。 */
   collect: (range: ShotRange) => ShotMessage[]
-  /** 会话标题：作为标题输入框的初始值，留空则由 host 从正文推导。 */
+  /** 初始标题（优先为本次对话标题，留空则由 host 从正文推导）。 */
   title: string
+  /** 本次对话标题（单条回复 / 本轮问答）。 */
+  dialogueTitle?: string
+  /** 会话标题（整段会话截取时的备选）。 */
+  sessionTitle?: string
   /** 会话工作目录（host 解析正文里的相对 HTML 路径）。 */
   cwd: string
 }
@@ -97,13 +101,15 @@ function EditableText(props: {
 }
 
 /** 面板主体：选项条 + 预览台 + 底栏操作。 */
-export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelProps): JSX.Element {
+export function ShotPanel({ closing, onClose, collect, title, dialogueTitle, sessionTitle, cwd }: ShotPanelProps): JSX.Element {
   const [range, setRange] = useState<ShotRange>('reply')
   const [theme, setTheme] = useState<ShotTheme>(() => currentTheme())
-  const [device, setDevice] = useState<ShotDevice>('desktop')
+  const [cardWidth, setCardWidth] = useState<number>(DEFAULT_WIDTH)
+  const [widthDraft, setWidthDraft] = useState<string>(String(DEFAULT_WIDTH))
   const [quality, setQuality] = useState<ShotQuality>('2k')
-  const [aspect, setAspect] = useState<ShotAspect>('auto')
   const [titleText, setTitleText] = useState(title)
+  // 用户是否手动编辑过标题：未改动时允许切换范围时在「本次对话」与「会话标题」间自动跟随
+  const userEditedTitleRef = useRef(false)
   // 徽章固定默认「Kr」（用户要求）；仍可在输入框里随手改。
   const [labelText, setLabelText] = useState('Kr')
   const [busy, setBusy] = useState(false)
@@ -126,9 +132,9 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
   const tokenRef = useRef(0)
   const editorRef = useRef<HTMLIFrameElement | null>(null)
 
-  const preset = SHOT_PRESETS[device][quality]
-  const viewportWidth = preset.cssWidth + canvasPad(preset.cssWidth) * 2
-  const displayWidth = result ? Math.round(result.width / preset.scale) : viewportWidth
+  const scale = qualityScale(quality, cardWidth)
+  const viewportWidth = cardWidth + canvasPad(cardWidth) * 2
+  const displayWidth = result ? Math.round(result.width / scale) : viewportWidth
 
   const messages = useMemo(() => collect(range), [collect, range])
 
@@ -144,7 +150,7 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
     setError(null)
     setSavedPath(null)
     setToast(null)
-    render({ messages, theme, device, quality, aspect, title: titleText, label: labelText, cwd })
+    render({ messages, theme, width: cardWidth, quality, title: titleText, label: labelText, cwd })
       .then((next) => {
         if (tokenRef.current !== token) return
         setResult(next)
@@ -158,7 +164,7 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
         if (tokenRef.current !== token) return
         setBusy(false)
       })
-  }, [messages, theme, device, quality, aspect, titleText, labelText])
+  }, [messages, theme, cardWidth, quality, titleText, labelText, cwd])
 
   // 打开时渲染一次，之后任一选项变化都重渲染。
   useEffect(() => { run() }, [run])
@@ -185,12 +191,12 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
     setBaseHtml(html)
     setEditHtml(html)
     if (result !== null) {
-      setFrameHeight(Math.round(result.height / preset.scale))
+      setFrameHeight(Math.round(result.height / scale))
     }
     setMarked(0)
     setEditing(true)
     setError(null)
-  }, [result, preset.scale])
+  }, [result, scale])
 
   /** 重置编辑：回到进入编辑时的原始 HTML（撤销全部标记与删除）。 */
   const resetEdit = useCallback((): void => {
@@ -205,17 +211,17 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
       render({
         messages,
         theme,
-        device,
+        width: cardWidth,
         quality,
-        aspect,
         title: titleText,
         label: labelText,
         html: baseHtml,
+        cwd,
       })
         .then((nextResult) => {
           if (tokenRef.current !== token) return
           setResult(nextResult)
-          setFrameHeight(Math.round(nextResult.height / preset.scale))
+          setFrameHeight(Math.round(nextResult.height / scale))
         })
         .catch((cause: unknown) => {
           if (tokenRef.current !== token) return
@@ -226,7 +232,7 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
           setBusy(false)
         })
     }
-  }, [baseHtml, result, messages, theme, device, quality, aspect, titleText, labelText, preset.scale])
+  }, [baseHtml, result, messages, theme, cardWidth, quality, titleText, labelText, scale, cwd])
 
   /** 退出编辑：切回 PNG 预览（未应用删除时预览仍是最初渲染图）。 */
   const stopEdit = useCallback((): void => {
@@ -350,12 +356,12 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
     render({
       messages,
       theme,
-      device,
+      width: cardWidth,
       quality,
-      aspect,
       title: titleText,
       label: labelText,
       html: next,
+      cwd,
     })
       .then((nextResult) => {
         if (tokenRef.current !== token) return
@@ -363,7 +369,7 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
         // 编辑后的 HTML 回传（宿主原样返回）；iframe 换成删完的版本继续编辑。
         if (typeof nextResult.html === 'string') {
           setEditHtml(nextResult.html)
-          setFrameHeight(Math.round(nextResult.height / preset.scale))
+          setFrameHeight(Math.round(nextResult.height / scale))
           setMarked(0)
         }
       })
@@ -375,12 +381,23 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
         if (tokenRef.current !== token) return
         setBusy(false)
       })
-  }, [messages, theme, device, quality, aspect, titleText, labelText, preset.scale])
+  }, [messages, theme, cardWidth, quality, titleText, labelText, scale, cwd])
 
   const switchRange = useCallback((next: ShotRange): void => {
-    // 只切抽取范围；徽章是独立文案（默认 Kr），不跟范围联动。
     setRange(next)
-  }, [])
+    // 用户未手动编辑过标题时，切换范围在「本次对话标题」与「会话标题」间自动跟随
+    if (!userEditedTitleRef.current) {
+      if (next === 'all') {
+        if (sessionTitle && sessionTitle.trim() !== '') {
+          setTitleText(sessionTitle)
+        }
+      } else {
+        if (dialogueTitle && dialogueTitle.trim() !== '') {
+          setTitleText(dialogueTitle)
+        }
+      }
+    }
+  }, [dialogueTitle, sessionTitle])
 
   const onSave = useCallback((): void => {
     if (result === null) return
@@ -408,12 +425,10 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
   }, [savedPath])
 
   const anim = closing ? 'out' : 'in'
-  // 固定画幅但内容比目标比例更高时，渲染端会保留完整长图（不截断）——明确告知。
-  const aspectNote = aspect !== 'auto' && result?.aspectLocked === false ? ' · 内容超出画幅已保留全长' : ''
   const meta = savedPath !== null
     ? savedPath
     : result !== null
-      ? `${result.width} × ${result.height} px · ${humanBytes(result.bytes)} · ${messages.length} 条消息${aspectNote}`
+      ? `${result.width} × ${result.height} px · ${humanBytes(result.bytes)} · ${messages.length} 条消息`
       : ''
 
   return createPortal(
@@ -447,19 +462,53 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
             </div>
           </div>
           <div className={cls.group}>
-            <span className={cls.label}>版式</span>
-            <div className={cls.seg} role="group" aria-label="设备版式">
-              {(Object.keys(DEVICE_LABEL) as ShotDevice[]).map(item => (
+            <span className={cls.label}>宽度</span>
+            <div className={cls.seg} role="group" aria-label="卡片宽度">
+              {WIDTH_PRESETS.map(w => (
                 <button
-                  key={item}
+                  key={w}
                   type="button"
-                  className={item === device ? `${cls.segItem} ${cls.segItemOn}` : cls.segItem}
-                  aria-pressed={item === device}
-                  onClick={() => { setDevice(item) }}
+                  className={cardWidth === w ? `${cls.segItem} ${cls.segItemOn}` : cls.segItem}
+                  aria-pressed={cardWidth === w}
+                  onClick={() => {
+                    setCardWidth(w)
+                    setWidthDraft(String(w))
+                  }}
                 >
-                  {DEVICE_LABEL[item]}
+                  {WIDTH_LABELS[w]}
                 </button>
               ))}
+            </div>
+            <div className={cls.widthBox} title="自定义宽度 (360~2560 px)">
+              <input
+                type="number"
+                className={cls.widthInput}
+                value={widthDraft}
+                min={360}
+                max={2560}
+                step={10}
+                aria-label="自定义卡片宽度"
+                onChange={(event) => { setWidthDraft(event.target.value) }}
+                onBlur={() => {
+                  const parsed = parseInt(widthDraft, 10)
+                  if (!Number.isNaN(parsed)) {
+                    const clamped = Math.max(360, Math.min(2560, parsed))
+                    setCardWidth(clamped)
+                    setWidthDraft(String(clamped))
+                  } else {
+                    setWidthDraft(String(cardWidth))
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.currentTarget.blur()
+                  } else if (event.key === 'Escape') {
+                    setWidthDraft(String(cardWidth))
+                    event.currentTarget.blur()
+                  }
+                }}
+              />
+              <span className={cls.unit}>px</span>
             </div>
           </div>
           <div className={cls.group}>
@@ -474,22 +523,6 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
                   onClick={() => { setQuality(item) }}
                 >
                   {QUALITY_LABEL[item]}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className={cls.group}>
-            <span className={cls.label}>画幅</span>
-            <div className={cls.seg} role="group" aria-label="画幅比例">
-              {SHOT_ASPECTS.map(item => (
-                <button
-                  key={item}
-                  type="button"
-                  className={item === aspect ? `${cls.segItem} ${cls.segItemOn}` : cls.segItem}
-                  aria-pressed={item === aspect}
-                  onClick={() => { setAspect(item) }}
-                >
-                  {ASPECT_LABEL[item]}
                 </button>
               ))}
             </div>
@@ -515,7 +548,10 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
             label="标题"
             value={titleText}
             placeholder="留空则从消息正文自动推导"
-            onCommit={setTitleText}
+            onCommit={(val) => {
+              userEditedTitleRef.current = true
+              setTitleText(val)
+            }}
           />
           <EditableText
             label="徽章"
@@ -523,7 +559,7 @@ export function ShotPanel({ closing, onClose, collect, title, cwd }: ShotPanelPr
             placeholder="如：Kr"
             onCommit={setLabelText}
           />
-          <span className={cls.meta}>输出宽约 {preset.cssWidth * preset.scale} px</span>
+          <span className={cls.meta}>输出宽约 {cardWidth * scale} px</span>
         </div>
 
         {editing && editHtml !== null && (

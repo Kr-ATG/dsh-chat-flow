@@ -24,7 +24,7 @@ import { URL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { findLocalHtmlPaths } from '../shared/html-paths.ts'
 import { buildCardHtml, deriveTitle, type ShotEmbed, type ShotMessage } from './card.ts'
-import { shotAspectRatio, shotPreset } from './presets.ts'
+import { resolveShotPreset, shotAspectRatio, shotPreset } from './presets.ts'
 import { configureRenderer, probePageHeight, renderPng, shutdownRenderer, diagnoseEngine } from './renderer.ts'
 import { canvasPad, canvasPadY, cardContentWidth, type ShotTheme } from './theme.ts'
 
@@ -237,9 +237,9 @@ async function handleRender(req: IncomingMessage, res: ServerResponse): Promise<
     return
   }
   const theme = parseTheme(body.theme)
-  // 「设备 × 画质」决定 CSS 宽度、输出缩放与最小高度；视口宽度还要加上
-  // 卡片两侧的画布留白（与主题 CSS 的 outer padding 保持一致）。
-  const preset = shotPreset(body.device, body.quality)
+  // 支持直接指定数值宽度（360 ~ 2560），未指定时按旧版 device 回退
+  const widthInput = typeof body.width === 'number' ? body.width : body.device
+  const preset = resolveShotPreset(widthInput, body.quality)
   const viewportWidth = preset.cssWidth + canvasPad(preset.cssWidth) * 2
   // 相对路径的基准（会话工作目录）；客户端没带就退回进程 cwd。
   const cwd = typeof body.cwd === 'string' && body.cwd !== '' ? body.cwd : undefined

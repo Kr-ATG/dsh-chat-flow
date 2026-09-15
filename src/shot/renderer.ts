@@ -56,10 +56,11 @@ const MAX_DEVICE_HEIGHT = 28000
  */
 const MAX_SEGMENT_DEVICE_HEIGHT = 8192
 /**
- * 单次/单段截图输出设备像素安全上限（约 1800 万像素，留出充足安全裕量）。
- * 保证软件光栅化单次内存申请 <= 72MB，杜绝 Skia 缓冲区溢出与 CDP 断连崩溃。
+ * 单次/单段截图输出设备像素安全上限（约 800 万像素，留出充足安全裕量）。
+ * 保证单次输出 PNG 体积在 1.5MB 以内（Base64 <= 2MB），杜绝 DevTools WebSocket
+ * 报文溢出（~4MB 限制）与 CDP 异常断连崩溃。
  */
-const MAX_SAFE_SURFACE_PIXELS = 18_000_000
+const MAX_SAFE_SURFACE_PIXELS = 8_000_000
 /** 固定画幅模式下允许的最大输出设备宽度（4096px，对应 4K 宽屏），超出时平滑转为全长长图。 */
 const MAX_DEVICE_WIDTH = 4096
 
@@ -161,6 +162,7 @@ async function launch(): Promise<Engine> {
   const flags = [
     '--headless=new',
     '--disable-gpu',
+    '--hide-scrollbars',
     '--allow-file-access-from-files',
     '--disable-web-security',
     '--disable-background-timer-throttling',
@@ -397,8 +399,16 @@ async function renderOnce(target: Engine, input: RenderInput): Promise<string> {
       cssHeight = Math.min(contentHeight, maxCssHeight)
     }
 
-    await setViewport(target.session, cssWidth, cssHeight, scale)
-    await evaluateJson(target.session, 'new Promise(r => requestAnimationFrame(r))', true).catch(() => null)
+    const deviceWidth = Math.round(cssWidth * scale)
+    const deviceHeight = Math.round(cssHeight * scale)
+    const totalPixels = deviceWidth * deviceHeight
+    const needsTiling = deviceHeight > MAX_SEGMENT_DEVICE_HEIGHT || totalPixels > MAX_SAFE_SURFACE_PIXELS
+
+    // 仅在单张直出模式下设置全高视口；需要分段截取时跳过，避免一次性分配超大合成表面导致 Chromium 崩溃
+    if (!needsTiling) {
+      await setViewport(target.session, cssWidth, cssHeight, scale)
+      await evaluateJson(target.session, 'new Promise(r => requestAnimationFrame(r))', true).catch(() => null)
+    }
 
     return await captureTiled(target.session, cssWidth, cssHeight, scale)
   } finally {

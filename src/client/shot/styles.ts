@@ -24,6 +24,9 @@ export const cls = {
   seg: 'tsh-seg',
   segItem: 'tsh-seg-item',
   segItemOn: 'tsh-seg-item-on',
+  widthBox: 'tsh-width-box',
+  widthInput: 'tsh-width-input',
+  unit: 'tsh-unit',
   select: 'tsh-select',
   input: 'tsh-input',
   stage: 'tsh-stage',
@@ -77,6 +80,12 @@ const SHEET = `
 .tsh-seg-item:hover{color:var(--dsw-alias-label-primary,#eee)}
 .tsh-seg-item-on{background:var(--dsw-alias-state-business-primary,#4176e6);color:#fff}
 .tsh-seg-item-on:hover{color:#fff}
+/* 自定义宽度输入框：高度 32px，内嵌 px 单位 */
+.tsh-width-box{display:inline-flex;align-items:center;height:32px;padding:0 8px 0 10px;gap:4px;border:1px solid var(--dsw-alias-border-l2,#333);border-radius:8px;background:var(--dsw-alias-bg-layer-1,transparent);transition:border-color .12s}
+.tsh-width-box:focus-within{border-color:var(--dsw-alias-state-business-primary,#4176e6)}
+.tsh-width-input{width:46px;height:24px;border:none;background:transparent;color:var(--dsw-alias-label-primary,#eee);font-size:13px;font-weight:500;text-align:right;padding:0;outline:none;-moz-appearance:textfield}
+.tsh-width-input::-webkit-outer-spin-button,.tsh-width-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.tsh-unit{font-size:12px;color:var(--dsw-alias-label-tertiary,#888);user-select:none}
 /* 文本输入（标题/徽章可编辑）：官方输入框规格 32px / 圆角 8 */
 .tsh-input{height:32px;padding:0 10px;font-size:14px;line-height:22px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,#333);background-color:var(--dsw-alias-bg-layer-1,transparent);color:var(--dsw-alias-label-primary,#eee);min-width:0}
 .tsh-input:focus{outline:none;border-color:var(--dsw-alias-state-business-primary,#4176e6)}

@@ -27,7 +27,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { Context as ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { useModalClose, ensureModalAnimStyles } from '../modal-animation.ts'
-import { collectMessages, type ShotMessage, type ShotRange } from './collect.ts'
+import { collectMessages, deriveCurrentDialogueTitle, type ShotMessage, type ShotRange } from './collect.ts'
 import { ShotPanel } from './Panel.tsx'
 import { cls, ensureStyles } from './styles.ts'
 
@@ -70,8 +70,8 @@ export function AssistantScreenshotAction(
     return snapshot === null ? [] : collectMessages(snapshot, messageId, range)
   }, [messageId])
 
-  // 卡片大标题用会话标题（返回字符串：仅标题变化时重渲染）。
-  const title = useSessions(list => {
+  // 会话标题（整段会话截取时的备选标题）。
+  const sessionTitle = useSessions(list => {
     const byId = (list as { byId?: Record<string, { displayTitle?: string } | undefined> }).byId ?? {}
     return byId[String(sessionId)]?.displayTitle ?? ''
   })
@@ -80,6 +80,10 @@ export function AssistantScreenshotAction(
     const byId = (list as { byId?: Record<string, { cwd?: string } | undefined> }).byId ?? {}
     return byId[String(sessionId)]?.cwd ?? ''
   })
+
+  // 本次对话标题：从本轮问答提取（用户要求卡片标题是本次对话而不是整段会话）。
+  const dialogueTitle = snapRef.current ? deriveCurrentDialogueTitle(snapRef.current, messageId) : ''
+  const defaultTitle = dialogueTitle || sessionTitle
 
   return (
     <>
@@ -92,7 +96,15 @@ export function AssistantScreenshotAction(
         <CameraIcon />
       </button>
       {open && (
-        <ShotPanel closing={closing} onClose={requestClose} collect={collect} title={title} cwd={cwd} />
+        <ShotPanel
+          closing={closing}
+          onClose={requestClose}
+          collect={collect}
+          title={defaultTitle}
+          dialogueTitle={dialogueTitle}
+          sessionTitle={sessionTitle}
+          cwd={cwd}
+        />
       )}
     </>
   )
