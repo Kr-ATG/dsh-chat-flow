@@ -58,7 +58,7 @@ variant 可选 pill / expand / glow，缺省 pill（方案A）。未闭合围栏
 ## 一句话安装（DSH）
 
 ```bash
-dsh plugin --profile web add github:statem-li/dsh-chat-flow
+dsh plugin --profile web add github:Kr-ATG/dsh-chat-flow
 ```
 
 重启 DeepSeek Harness 即可。本包在 package.json 声明了 `dsh.bundle.patch`，
