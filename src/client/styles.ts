@@ -576,7 +576,10 @@ const CSS = `
   z-index: 9991;
 }
 
-/* 悬浮堆叠容器（fixed 定位由行内 style 给 top/left，这里只管纵向堆 + 层级 + 宽度）。 */
+/* 悬浮堆叠容器（fixed 定位由行内 style 给 top/left，这里只管纵向堆 + 层级 + 宽度）。
+   pointer-events:none：悬浮层盖在正文行之上，必须点透，否则会吃掉下面
+   「思考 / 工具调用」行的点击（点了没弹窗）。代价是悬浮卡不可滚动，
+   要看全文点行进抽屉——悬浮只是 transient 预览，可接受。 */
 .dts__preview-stack {
   display: flex;
   flex-direction: column;
@@ -584,6 +587,7 @@ const CSS = `
   z-index: 9991;
   max-width: min(520px, calc(100vw - 32px));
   min-width: min(320px, calc(100vw - 32px));
+  pointer-events: none;
 }
 .dts__preview-stack .dtt__reasoning-live-card {
   background: var(--dsw-alias-bg-layer-1, #fff);

@@ -100,6 +100,16 @@ export function activityStore(): ActivityStore {
         console.warn('[dsh-chat-flow] 弹窗 open 前自愈挂载失败：', healError)
       }
       openTurn = turn; activeMode = mode; notify()
+      // 二次兜底：自愈靠 childNodes 判断，根已死但 DOM 残留时会 early-return，
+      // 此时订阅者数为 0（没人能渲染），必须强制重挂。新挂载的 DrawerApp 会在
+      // 首个 effect 里读到 openTurn 并弹出来，不需要二次 notify。
+      if (listeners.size === 0) {
+        try {
+          mountActivityDrawer(true)
+        } catch (healError) {
+          console.warn('[dsh-chat-flow] 弹窗无订阅者强制重挂失败：', healError)
+        }
+      }
       try {
         console.log('[dsh-chat-flow] 弹窗 open：第 ' + turn + ' 轮 / ' + mode)
       } catch { /* 日志永不挡路 */ }
@@ -567,11 +577,13 @@ export function ensureDrawerMounted(): void {
  * 保留 first-writer-wins：若宿主已存在且有内容（另一个兼容版本的抽屉正在工作），
  * 直接复用不覆盖；只有宿主为空壳（旧根被异常卸载剩下空 div）时才重新 render 自愈。
  * 根外再包一层错误边界，DrawerApp 本体抛错也不会卸载整个根。
+ * force=true（仅 store.open 无订阅者时用）：宿主有残留 DOM 也视为已死，
+ * 先 unmount 再重建——此时没有任何存活树可被误伤。
  */
-export function mountActivityDrawer(): void {
+export function mountActivityDrawer(force?: boolean): void {
   if (typeof document === 'undefined') return
   let host = document.getElementById('dsh-activity-drawer-root')
-  if (host !== null && host.childNodes.length > 0) {
+  if (!force && host !== null && host.childNodes.length > 0) {
     // 有内容：别人（或之前的自己）正在用，幂等返回。
     mounted = true
     return
