@@ -34,6 +34,7 @@ import { TurnProcessShadowView } from './tool-summary/TurnProcessShadowView.tsx'
 import { ThinkingStepNodeView } from './thinking/ThinkingStepNodeView.tsx'
 import { RetryShadowView } from './retry/RetryShadowView.tsx'
 import { applyMessageScreenshot } from './shot/index.tsx'
+import { mountShellChrome } from './shell-chrome.ts'
 
 /** 顶层服务依赖（client boot graph 用）。 */
 export const inject = ['slots']
@@ -57,6 +58,10 @@ export function apply(ctx: ClientContext): void {
   guarded(ctx, 'download card styles', injectDownloadStyles)
   // 共享活动抽屉：思考与工具调用的详情面板（body 级宿主，只挂一次）。
   guarded(ctx, 'activity drawer', mountActivityDrawer)
+
+  // 壳窗口控制联动：壳内（iframe）检测 + header 右簇左移留位 + 主题上报。
+  // 浏览器直开时整模块 no-op。
+  guarded(ctx, 'shell chrome', mountShellChrome)
 
   // 对话截图：assistant 消息操作栏相机按钮 → 截图面板（独立 id，无副作用）。
   guarded(ctx, 'screenshot seat', () => { applyMessageScreenshot(ctx) })

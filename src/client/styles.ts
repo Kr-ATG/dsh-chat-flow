@@ -386,8 +386,21 @@ const CSS = `
 
 @keyframes dtt-live-reclaim {
   0% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
-  60% { opacity: .55; transform: translateY(-12px) scale(.975); filter: blur(2px); }
-  100% { opacity: 0; transform: translateY(-20px) scale(.94); filter: blur(5px); }
+  40% { opacity: .85; transform: translateY(-30px) scale(.97); filter: blur(1px); }
+  100% { opacity: 0; transform: translateY(-84px) scale(.9); filter: blur(6px); }
+}
+
+/* 回收落点：飞入的卡是冲着 chip 行去的，行在卡落地时轻跳一下“接住”
+  （transform 不占布局，只动视觉；时长 1s 对齐两张卡 stagger 落点）。 */
+.dtt__reasoning[data-reclaim="true"] .dtt__process,
+.dts__entry-wrap[data-reclaim="true"] .dts__process {
+  animation: dtt-chip-catch 1s cubic-bezier(.22, 1, .36, 1);
+}
+
+@keyframes dtt-chip-catch {
+  0%, 55% { transform: translateY(0); }
+  72% { transform: translateY(-4px); }
+  100% { transform: translateY(0); }
 }
 
 /* ── 重试行影子（官方 model-retry 行同款，类名换前缀）────────────────────
@@ -671,6 +684,8 @@ const CSS = `
   .dtt__reasoning-live-card[data-state="leaving"],
   .dtt__reasoning-live-card[data-state="reclaim"],
   .dtt__live-dot { animation: none; }
+  .dtt__reasoning[data-reclaim="true"] .dtt__process,
+  .dts__entry-wrap[data-reclaim="true"] .dts__process { animation: none; }
   .dtt__retry-row[data-active] .dtt__retry-text {
     animation: none;
     color: inherit;
@@ -959,6 +974,17 @@ header > [role='tablist'] > [class*='_tab'][class*='_tabActive']::after {
 @media (prefers-reduced-motion: reduce) {
   header > [role='tablist'] > [class*='_tab'],
   header > [role='tablist'] > [class*='_tab']::after { transition: none; }
+}
+
+/* ══ 壳窗口控制留位（仅壳内生效）═══════════════════════════════════════
+   桌面壳（Electron 无边框窗口）右上角自绘 最小化/最大化/关闭 三枚按钮
+   （合计约 96px 宽）。官方 header 右 padding 本为 28px，这里 +100px →
+   128px：标题行里的 utilities / corner（工作区按钮、更多、侧栏展开）与
+   「对话 / 轨迹」标签簇整体左移 100px，右上角让给壳按钮。
+   :has(> [class*='_titleRow']) 只锁会话 header；dsh-in-shell 类由
+   shell-chrome.ts 在确认页面被 iframe 承载后挂上，浏览器直开零影响。 */
+.dsh-in-shell header:has(> [class*='_titleRow']) {
+  padding-right: 128px;
 }
 `
 

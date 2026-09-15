@@ -123,7 +123,11 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess, cl
     )
   }
   return (
-    <div className="dtt__reasoning" data-running={running || undefined}>
+    <div
+      className="dtt__reasoning"
+      data-running={running || undefined}
+      data-reclaim={closed || undefined}
+    >
       <button
         type="button"
         className="dtt__process"

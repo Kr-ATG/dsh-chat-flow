@@ -557,7 +557,7 @@ const ToolEntry = memo(function ToolEntry({
   }
 
   return (
-    <div className={`${NS}__entry-wrap`}>
+    <div className={`${NS}__entry-wrap`} data-reclaim={closed || undefined}>
       <button
         type="button"
         className={`${NS}__process`}
