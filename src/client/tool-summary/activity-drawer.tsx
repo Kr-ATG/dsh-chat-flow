@@ -402,12 +402,35 @@ function DrawerApp() {
   //（共享 MODAL_ANIM_MS 只有 240ms，用它会提前卸载、退出播一半被掐掉，
   // 看起来就像没有关闭动画）。
   const [closing, setClosing] = useState(false)
+  const openTurnRef = useRef<number | null>(null)
+  const closeTimerRef = useRef<number | undefined>(undefined)
+  useEffect(() => () => {
+    if (closeTimerRef.current !== undefined) window.clearTimeout(closeTimerRef.current)
+  }, [])
   useEffect(() => {
     const store = activityStore()
     const render = (): void => {
       const turn = store.openTurn
+      if (turn === null) {
+        // Close and play exit animation in the SAME batched update: setting
+        // closing here avoids unmounting for one frame and remounting the
+        // next (which reads as a flash).
+        if (openTurnRef.current !== null) {
+          openTurnRef.current = null
+          if (closeTimerRef.current !== undefined) window.clearTimeout(closeTimerRef.current)
+          setOpenTurn(null)
+          setClosing(true)
+          closeTimerRef.current = window.setTimeout(() => { setClosing(false) }, DRAWER_ANIM_MS)
+        }
+        return
+      }
+      openTurnRef.current = turn
+      if (closeTimerRef.current !== undefined) {
+        window.clearTimeout(closeTimerRef.current)
+        closeTimerRef.current = undefined
+      }
       setOpenTurn(turn)
-      if (turn === null) return
+      setClosing(false)
       setLastTurn(turn)
       setOpenMode(store.activeMode)
       setData(store.get(turn))
@@ -415,12 +438,6 @@ function DrawerApp() {
     render()
     return store.subscribe(render)
   }, [])
-  useEffect(() => {
-    if (openTurn !== null || lastTurn === null) { setClosing(false); return undefined }
-    setClosing(true)
-    const id = window.setTimeout(() => { setClosing(false) }, DRAWER_ANIM_MS)
-    return () => window.clearTimeout(id)
-  }, [openTurn, lastTurn])
   // Esc 关弹窗。
   useEffect(() => {
     if (openTurn === null) return
