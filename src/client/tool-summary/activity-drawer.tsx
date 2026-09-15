@@ -10,7 +10,7 @@ import { createRoot } from 'react-dom/client'
 import { IconApiOutline14, IconThinkOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
-import { computeStats, formatDuration, isRunning, shortenPath, type ToolStats } from './tool-stats.ts'
+import { computeStats, formatDuration, isRunning, isUrlEntry, shortenEntry, type ToolStats } from './tool-stats.ts'
 import { kindByToolName, type ActivityKind } from './activity-kind.ts'
 import { KindIcon } from './icons.tsx'
 import { useNow } from './use-now.ts'
@@ -18,11 +18,14 @@ import { groupReasoning } from './reasoning-classify.ts'
 import { ToolCallTreeList } from './ToolGroupNodeView.tsx'
 import { ErrorBoundary } from '../error-boundary.tsx'
 import { MODAL_ANIM_MS, modalAnimClass, modalMaskAnimClass, modalStaggerClass } from '../modal-animation.ts'
+import { LiveThinkingStack, LIVE_RECLAIM_UNMOUNT_MS, type LiveThinkingItem } from '../thinking/live-stack.tsx'
 
 /** One reasoning block stranded in the drawer. */
 export interface ActivityReasoningItem {
   readonly text: string
   readonly running: boolean
+  /** 所属 assistant step（悬浮堆叠的「步骤 N」与稳定 key 用，无则按序号）。 */
+  readonly step?: number | undefined
 }
 
 /** Everything the drawer can show for one turn. */
@@ -159,17 +162,24 @@ function DrawerToolSummary({ stats, cwd, openFile, kinds }: {
       )}
       {stats.files.length > 0 && (
         <div className="dts__files">
-          {stats.files.map(path => (
-            <button
-              key={path}
-              type="button"
-              className="dts__file"
-              title={path}
-              onClick={() => { openFile(path) }}
-            >
-              {shortenPath(path, cwd)}
-            </button>
-          ))}
+          {stats.files.map(path => {
+            const url = isUrlEntry(path)
+            return (
+              <button
+                key={path}
+                type="button"
+                className="dts__file"
+                title={path}
+                onClick={() => {
+                  // URL 不是工作区文件：openFile 接不动，直接开新标签页。
+                  if (url) window.open(path, '_blank', 'noopener,noreferrer')
+                  else openFile(path)
+                }}
+              >
+                {shortenEntry(path, cwd)}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
@@ -399,46 +409,99 @@ function DrawerApp() {
     window.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('keydown', onKey) }
   }, [openTurn])
-  // 流式思考预览：贴着流式中回合的 control 行下方滚动显示最新思考文字。
-  // 预览由 control 行在流式时把行元素登记进来（setPreviewAnchor）。
-  const [preview, setPreview] = useState<{ readonly top: number; readonly left: number; readonly text: string } | null>(null)
+  // 悬浮思考预览堆叠：贴着干活中回合的 control 行下方，最多 2 张纵向堆叠。
+  // 预览由 control 行把行元素登记进来（setPreviewAnchor，思考流 + tool 间隙
+  // 常驻，整轮收口才清）；新段淡入、第 3 段把第 1 张往上消散、收口逐张回收。
+  const [preview, setPreview] = useState<{ readonly top: number; readonly left: number; readonly turn: number; readonly items: readonly LiveThinkingItem[] } | null>(null)
+  const [reclaimPreview, setReclaimPreview] = useState<{ readonly top: number; readonly left: number; readonly turn: number; readonly items: readonly LiveThinkingItem[] } | null>(null)
+  const reclaimTimerRef = useRef<number | undefined>(undefined)
+  const previewRef = useRef<typeof preview>(null)
+  previewRef.current = preview
+  useEffect(() => () => {
+    if (reclaimTimerRef.current !== undefined) window.clearTimeout(reclaimTimerRef.current)
+  }, [])
   useEffect(() => {
     const store = activityStore()
+    const sameItems = (
+      a: readonly LiveThinkingItem[],
+      b: readonly LiveThinkingItem[],
+    ): boolean => a.length === b.length && a.every((entry, idx) => (
+      entry.text === b[idx]?.text && entry.running === b[idx]?.running && entry.step === b[idx]?.step
+    ))
     const update = (): void => {
       const el = store.previewAnchorEl
-      if (el === undefined || !el.isConnected) { setPreview(null); return }
-      const box = el.getBoundingClientRect()
-      if (box.bottom < 0 || box.top > window.innerHeight) { setPreview(null); return }
       const turn = store.previewTurn
       const turnData = turn === null ? undefined : store.get(turn)
       const reasoning = turnData?.reasoning ?? []
-      let text = ''
-      for (let index = reasoning.length - 1; index >= 0; index -= 1) {
+      const items: LiveThinkingItem[] = []
+      for (let index = 0; index < reasoning.length; index += 1) {
         const item = reasoning[index]
-        if (item !== undefined && item.running) { text = item.text; break }
+        if (item === undefined || item.text === '') continue
+        items.push({
+          text: item.text,
+          step: item.step ?? (index + 1),
+          running: item.running,
+        })
       }
-      if (text === '') { setPreview(null); return }
-      setPreview({ top: box.bottom + 2, left: box.left, text })
+      const usable = el !== undefined && el.isConnected && turn !== null && items.length > 0
+      if (!usable) {
+        // 锚点没了（整轮收口）：把当前堆叠冻结成回收态逐张收，不一下全收；
+        // tool 间隙锚点常驻，走不到这里。
+        if (reclaimTimerRef.current !== undefined) return
+        const prev = previewRef.current
+        if (prev === null) return
+        setReclaimPreview({ top: prev.top, left: prev.left, turn: prev.turn, items: prev.items })
+        reclaimTimerRef.current = window.setTimeout(() => {
+          reclaimTimerRef.current = undefined
+          setReclaimPreview(null)
+        }, LIVE_RECLAIM_UNMOUNT_MS)
+        setPreview(null)
+        return
+      }
+      const box = (el as HTMLElement).getBoundingClientRect()
+      if (box.bottom < 0 || box.top > window.innerHeight) return
+      const top = box.bottom + 2
+      const left = (el as HTMLElement).getBoundingClientRect().left
+      // 新回合或新锚点：清掉上一轮的回收态，避免串味。
+      setReclaimPreview(null)
+      if (reclaimTimerRef.current !== undefined) {
+        window.clearTimeout(reclaimTimerRef.current)
+        reclaimTimerRef.current = undefined
+      }
+      const prev = previewRef.current
+      if (prev !== null && prev.turn === turn && prev.top === top && prev.left === left && sameItems(prev.items, items)) return
+      setPreview({ top, left, turn, items })
     }
     update()
+    // store 变更（锚点/思考文字）即时跟进，不等 500ms 轮询，收口回收不拖拍。
+    const unsubscribe = store.subscribe(() => { update() })
     const onMove = (): void => { requestAnimationFrame(update) }
     window.addEventListener('scroll', onMove, { passive: true, capture: true })
     window.addEventListener('resize', onMove)
     const id = window.setInterval(update, 500)
     return () => {
+      unsubscribe()
       window.removeEventListener('scroll', onMove, { capture: true } as EventListenerOptions)
       window.removeEventListener('resize', onMove)
       window.clearInterval(id)
     }
   }, [])
+  const floating = preview !== null
+    ? { ...preview, closing: false as const }
+    : reclaimPreview !== null
+      ? { ...reclaimPreview, closing: true as const }
+      : null
+  const floatingNode = floating === null ? null : (
+    <div className="dts__preview-stack" style={{ position: 'fixed', top: floating.top, left: floating.left }} aria-live="polite">
+      <LiveThinkingStack key={floating.turn} items={floating.items} closing={floating.closing} compact />
+    </div>
+  )
   // 滚动跟随由抽屉内部的钉底逻辑负责。
   const store = activityStore()
   const shownTurn = openTurn ?? lastTurn
   if (shownTurn === null || (openTurn === null && !closing)) {
-    // 无弹窗时仍可渲染流式思考预览。
-    return preview === null ? null : (
-      <div className="dtt__reasoning-live dts__preview" style={{ position: 'fixed', top: preview.top, left: preview.left, maxWidth: 520 }} aria-live="polite">{preview.text}</div>
-    )
+    // 无弹窗时仍可渲染悬浮思考预览堆叠。
+    return floatingNode
   }
   const turn = shownTurn
   const handlers = store.handlers()
@@ -474,9 +537,7 @@ function DrawerApp() {
           closing={closing}
         />
       </ErrorBoundary>
-      {preview !== null && (
-        <div className="dtt__reasoning-live dts__preview" style={{ position: 'fixed', top: preview.top, left: preview.left, maxWidth: 520 }} aria-live="polite">{preview.text}</div>
-      )}
+      {floatingNode}
     </>
   )
 }

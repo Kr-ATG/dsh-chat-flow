@@ -154,6 +154,29 @@ export function shortenPath(path: string, cwd: string | undefined): string {
   return path
 }
 
+/** Is this summary entry a web URL (web_fetch / browser args)? */
+export function isUrlEntry(entry: string): boolean {
+  return /^https?:\/\//i.test(entry)
+}
+
+/**
+ * 摘要 pill 的显示文本：URL 去协议、去查询串（percent 编码的搜索参数整段
+ * 丢掉，完整值留在 title），路径仍按 cwd 缩短。配合 CSS ellipsis 兜底。
+ */
+export function shortenEntry(entry: string, cwd: string | undefined): string {
+  if (isUrlEntry(entry)) {
+    try {
+      const url = new URL(entry)
+      const host = url.hostname.replace(/^www\./i, '')
+      const pathname = url.pathname.replace(/^\/+|\/+$/g, '')
+      return pathname === '' ? host : `${host}/${pathname}`
+    } catch {
+      // 解析失败原样交给 ellipsis。
+    }
+  }
+  return shortenPath(entry, cwd)
+}
+
 /** One-line summary of a call for the generic fallback row. */
 export function callSummary(block: ToolCallBlock): string {
   const name = callName(block)

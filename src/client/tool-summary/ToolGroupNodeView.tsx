@@ -32,7 +32,7 @@ import type { ViewCategory, ViewPhase } from './activity-view-model.ts'
 import { useNow } from './use-now.ts'
 import { activityStore, useDrawerOpen, type ActivityHandlers, type ActivityStore } from './activity-drawer.tsx'
 import { useMotionAllowed, useHeightAnimation } from '../motion-utils.ts'
-import { LiveThinkingCard } from '../thinking/ThinkingStepNodeView.tsx'
+import { LiveThinkingStack, LIVE_RECLAIM_UNMOUNT_MS, type LiveThinkingItem } from '../thinking/live-stack.tsx'
 import { useTurnActivityCounts } from './TurnProcessShadowView.tsx'
 import { LiveDownloadCard } from '../download/DownloadCard.tsx'
 import { downloadPercent, useDownloadState } from '../download/api.ts'
@@ -430,7 +430,7 @@ export function ToolCallTreeList({ block, cwd, openFile, inspectCall }: {
  * the conversation projection.
  */
 const ToolEntry = memo(function ToolEntry({
-  nodes, turn, turnStart, cwd, openFile, inspectCall, t, turnProcess, useChat,
+  nodes, turn, turnStart, cwd, openFile, inspectCall, t, turnProcess, useChat, closed,
 }: {
   readonly nodes: readonly ChatNode<'tool-call'>[]
   readonly turn: number
@@ -441,6 +441,8 @@ const ToolEntry = memo(function ToolEntry({
   readonly t: ChatViewSlotProps['t']
   readonly turnProcess?: { readonly foldable: boolean } | undefined
   readonly useChat: ChatNodeViewProps<'tool-call'>['useChat']
+  /** 回合已结束（开始总结）：堆叠逐张回收，而不是一下全收。 */
+  readonly closed: boolean
 }) {
   const store: ActivityStore = activityStore()
   useEffect(() => {
@@ -468,35 +470,24 @@ const ToolEntry = memo(function ToolEntry({
     return earliest
   }, [nodes])
   const elapsed = toolStart !== undefined ? Math.max(0, now - toolStart) : undefined
-  // 本轮正在流式输出的思考文字（有工具调用时思考 chip 让位，实时预览改挂
-  // 在工具行下方，回合结束自动消失；无工具时 chip 那边渲染，这里拿不到节点）。
-  const liveThinkingText = useChat(snapshot => {
-    if (turn === undefined) return ''
-    let text = ''
+  // 本轮全部非空思考段（时间序，有工具调用时思考 chip 让位，实时预览改挂
+  // 在工具行下方）。第 1 段完成后保留，第 2 段叠下面，最多 2 张；
+  // 中途 tool 间隙旧卡保留，只有回合 closed 才逐张回收。
+  const liveStackItems = useChat(snapshot => {
+    if (turn === undefined) return [] as readonly LiveThinkingItem[]
+    const out: LiveThinkingItem[] = []
     for (const key of snapshot.locations.getTurn(turn)) {
       const candidate = snapshot.nodes.get(key)
       if (candidate === undefined || candidate.kind !== 'assistant-step') continue
       const step = candidate as ChatNode<'assistant-step'>
-      if (step.data.status !== 'running') continue
+      const stepRunning = step.data.status === 'running'
       for (const block of step.data.blocks) {
-        if (block.kind === 'reasoning' && block.text !== '') text = block.text
+        if (block.kind === 'reasoning' && block.text !== '') {
+          out.push({ text: block.text, step: step.data.step, running: stepRunning })
+        }
       }
     }
-    return text
-  })
-  const liveThinkingStep = useChat(snapshot => {
-    if (turn === undefined) return 0
-    let step = 0
-    for (const key of snapshot.locations.getTurn(turn)) {
-      const candidate = snapshot.nodes.get(key)
-      if (candidate === undefined || candidate.kind !== 'assistant-step') continue
-      const node = candidate as ChatNode<'assistant-step'>
-      if (node.data.status !== 'running') continue
-      if (node.data.blocks.some(block => block.kind === 'reasoning' && block.text !== '')) {
-        step = node.data.step
-      }
-    }
-    return step
+    return out as readonly LiveThinkingItem[]
   })
   // 统计仍在运行的工具类型，决定是否在对话流外面直接显示下载/执行进度卡片。
   const liveActivity = useMemo(() => {
@@ -544,7 +535,26 @@ const ToolEntry = memo(function ToolEntry({
   const label = running
     ? elapsed !== undefined ? `工具调用中 · ${formatDuration(elapsed)}` : '工具调用中'
     : activity.reasoning > 0 ? `${resting}${t('message.turnProcess.separator') as string}${activity.reasoning} 次思考` : resting
-  if (controlActive) return null
+  // 总结瞬间 control 接管不能直接卸载：否则堆叠来不及播回收，看起来“一瞬间
+  // 就没了”。接管后保留挂载播完回收（只剩堆叠、按钮已让位），再彻底让位。
+  const entryMotion = useMotionAllowed(true)
+  const [deferredControl, setDeferredControl] = useState(controlActive)
+  useEffect(() => {
+    if (!controlActive) { setDeferredControl(false); return undefined }
+    if (liveStackItems.length === 0) { setDeferredControl(true); return undefined }
+    setDeferredControl(false)
+    if (!entryMotion) { setDeferredControl(true); return undefined }
+    const id = window.setTimeout(() => { setDeferredControl(true) }, LIVE_RECLAIM_UNMOUNT_MS)
+    return () => { window.clearTimeout(id) }
+  }, [controlActive, liveStackItems.length, entryMotion])
+  if (deferredControl) return null
+  if (controlActive) {
+    return (
+      <div className={`${NS}__entry-wrap`} data-reclaim="true">
+        <LiveThinkingStack items={liveStackItems} closing />
+      </div>
+    )
+  }
 
   return (
     <div className={`${NS}__entry-wrap`}>
@@ -564,9 +574,7 @@ const ToolEntry = memo(function ToolEntry({
         <span className={`${NS}__process-label`}>{label}</span>
         <IconChevronDownOutline14 className={`${NS}__process-chevron`} />
       </button>
-      {liveThinkingText !== '' && (
-        <LiveThinkingCard text={liveThinkingText} step={liveThinkingStep} />
-      )}
+      <LiveThinkingStack items={liveStackItems} closing={closed} />
       {liveDownloadCalls.map(({ block, url, outputPath }) => (
         <LiveDownloadCard key={block.callId} callId={block.callId} url={url} startedAt={block.time} outputPath={outputPath} />
       ))}
@@ -614,6 +622,8 @@ export const ToolGroupNodeView = memo(function ToolGroupNodeView(props: ChatNode
   if (nodes.length === 0) return null
   // Only the first node of the turn renders the chip; siblings render empty.
   if (node.key !== nodes[0]?.key) return null
+  const loc = node.location as { readonly kind?: string; readonly turn?: { readonly status?: string } } | undefined
+  const closed = loc !== undefined && (loc.kind === 'turn' || loc.kind === 'step') && loc.turn?.status === 'closed'
   return (
     <ToolEntry
       nodes={nodes}
@@ -625,6 +635,7 @@ export const ToolGroupNodeView = memo(function ToolGroupNodeView(props: ChatNode
       t={t}
       turnProcess={turnProcess}
       useChat={useChat}
+      closed={closed === true}
     />
   )
 })

@@ -624,24 +624,32 @@ const CSS = `
   white-space: nowrap;
 }
 
+/* 涉及文件/URL pill：中性主题色（不再整片品牌蓝），URL 去查询后仍可能长，
+   max-width + ellipsis 兜底，绝不越出总结卡。 */
 .dts__file {
+  box-sizing: border-box;
   margin: 0;
-  border: 1px solid color-mix(in srgb, var(--dts-accent) 22%, transparent);
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--dts-chip-border, var(--dsw-alias-border-l2, rgba(127,127,127,.22)));
   border-radius: 999px;
   padding: 0 9px;
-  background: color-mix(in srgb, var(--dts-accent) 10%, transparent);
-  color: var(--dts-accent);
+  background: var(--dts-fill, rgba(127,127,127,.04));
+  color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   font-family: var(--ds-font-family-code, monospace);
   font-size: 11px;
   line-height: 20px;
   white-space: nowrap;
-  transition: background-color .15s ease, border-color .15s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
 }
 
 .dts__file:hover {
-  border-color: color-mix(in srgb, var(--dts-accent) 45%, transparent);
-  background: color-mix(in srgb, var(--dts-accent) 18%, transparent);
+  border-color: var(--dsw-alias-border-l3, rgba(127,127,127,.34));
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,.1));
+  color: var(--dsw-alias-label-primary);
 }
 
 /* ---- 调用列表 ---- */

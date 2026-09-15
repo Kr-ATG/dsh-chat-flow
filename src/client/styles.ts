@@ -64,7 +64,7 @@ const CSS = `
 .dtt__card {
   min-width: 0;
   border-radius: 14px;
-  animation: dtt-card-in .26s cubic-bezier(.2, .8, .2, 1);
+  animation: dtt-card-in .48s cubic-bezier(.22, 1, .36, 1) both;
 }
 
 /* 中间步骤：轻量竖线卡 */
@@ -212,8 +212,8 @@ const CSS = `
 }
 
 @keyframes dtt-card-in {
-  from { opacity: .35; }
-  to { opacity: 1; }
+  from { opacity: 0; transform: translateY(20px) scale(.99); filter: blur(2px); }
+  to { opacity: 1; transform: none; filter: none; }
 }
 
 /* ── 回合过程行（官方 turn-process 行同款，见 .dtt__process）──────────────
@@ -283,6 +283,67 @@ const CSS = `
 .dtt__process[data-open] .dtt__process-chevron {
   transform: rotate(0);
 }
+/* 实时预览堆叠：最多 2 张纵向排列（第 3 段把第 1 张顶掉，第 4/5 张以此类推）。
+   间距由槽位 margin 承担（不用 flex gap），收起时 margin 一起收到 0，
+   下面的总结卡才是一路平滑滑上去，而不是最后 8px 咯噔一下。 */
+.dtt__reasoning-live-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  align-self: stretch;
+}
+
+/* 堆叠槽位：负责高度收放（grid 0fr/1fr 过渡），内卡负责淡入淡出位移。
+   高度一帧帧塌下去，上面的消散和下面的总结卡上滑是同一拍。 */
+.dtt__live-slot {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+
+.dtt__live-slot:last-child {
+  margin-bottom: 0;
+}
+
+.dtt__live-slot > .dtt__reasoning-live-card {
+  min-height: 0;
+}
+
+/* 新卡展开：挂载先塌着，下一帧张开（JS 切 data-open），高度 .45s。 */
+.dtt__live-slot[data-anim="enter"][data-open="false"] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-bottom: 0;
+}
+
+.dtt__live-slot[data-anim="enter"][data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows .45s cubic-bezier(.22, 1, .36, 1), opacity .38s ease, margin-bottom .45s ease;
+}
+
+/* 挤出 / 回收合拢：挂载先撑着，下一帧塌掉；margin 也收到 0。 */
+.dtt__live-slot[data-anim="collapse"][data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.dtt__live-slot[data-anim="collapse"][data-open="false"] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-bottom: 0;
+  transition: grid-template-rows .56s cubic-bezier(.22, 1, .36, 1), opacity .42s ease, margin-bottom .56s ease;
+}
+
+/* 回收更慢一拍（与内卡 .7s 对齐，stagger 由行内 transition-delay 给）。 */
+.dtt__live-slot[data-anim="collapse"][data-kind="reclaim"][data-open="false"] {
+  transition-duration: .7s, .5s, .7s;
+}
+
 /* 实时预览卡片（上游 better-display ReasoningCard 同款：标题 + 有界视口 +
    边缘渐隐；无底部控制按钮，上翻即停、滚回底部自动恢复跟随）。 */
 .dtt__reasoning-live-card {
@@ -292,6 +353,154 @@ const CSS = `
   border: 1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.22));
   border-radius: 12px;
   background: var(--dsw-alias-bg-module-platform, transparent);
+}
+
+/* 新卡淡入：挂载即播（同 key 的流式追加不重挂、不重播）。卡包在槽位里，
+   不再是堆叠的直接子节点。 */
+.dtt__live-slot > .dtt__reasoning-live-card:not([data-state]) {
+  animation: dtt-live-in .38s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+@keyframes dtt-live-in {
+  from { opacity: 0; transform: translateY(10px) scale(.985); filter: blur(2px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+
+/* 被第 3 张顶掉的第 1 张：往上逐渐消散（保持占位播完再卸载，避免下卡跳位）。 */
+.dtt__reasoning-live-card[data-state="leaving"] {
+  animation: dtt-live-dissolve .56s cubic-bezier(.4, 0, .6, 1) both;
+  pointer-events: none;
+}
+
+@keyframes dtt-live-dissolve {
+  0% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  100% { opacity: 0; transform: translateY(-22px) scale(.96); filter: blur(7px); }
+}
+
+/* 对话结束开始总结：不一下全收，逐张往上回收（stagger 由行内 animation-delay 给，
+   单卡 .7s + 间隔 .28s，2 张约 1s，肉眼能数出两拍）。 */
+.dtt__reasoning-live-card[data-state="reclaim"] {
+  animation: dtt-live-reclaim .7s cubic-bezier(.22, 1, .36, 1) both;
+  pointer-events: none;
+}
+
+@keyframes dtt-live-reclaim {
+  0% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  60% { opacity: .55; transform: translateY(-12px) scale(.975); filter: blur(2px); }
+  100% { opacity: 0; transform: translateY(-20px) scale(.94); filter: blur(5px); }
+}
+
+/* ── 重试行影子（官方 model-retry 行同款，类名换前缀）────────────────────
+   流式期原样显示；出总结卡（回合 closed）时影子组件直接返回 null，
+   空槽位由既有折叠规则收掉，不留空白条。 */
+.dtt__retry-row {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+}
+
+.dtt__retry-summary {
+  width: fit-content;
+  color: inherit;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 3px;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0;
+  list-style: none;
+  display: inline-flex;
+}
+
+.dtt__retry-summary::-webkit-details-marker {
+  display: none;
+}
+
+.dtt__retry-summary::after {
+  content: "";
+  opacity: .8;
+  border-bottom: 1.5px solid;
+  border-right: 1.5px solid;
+  width: 6px;
+  height: 6px;
+  transition: transform .12s;
+  transform: rotate(-45deg);
+}
+
+.dtt__retry-summary:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dtt__retry-summary:focus-visible {
+  outline: 1.5px solid var(--dsw-alias-button-info-fill);
+  outline-offset: 2px;
+}
+
+.dtt__retry-text {
+  color: inherit;
+}
+
+.dtt__retry-row[data-active] .dtt__retry-text {
+  background: linear-gradient(90deg, var(--dsw-alias-label-tertiary) 0%, var(--dsw-alias-label-tertiary) 40%, var(--dsw-alias-label-secondary) 50%, var(--dsw-alias-label-tertiary) 60%, var(--dsw-alias-label-tertiary) 100%);
+  color: transparent;
+  background-position: 100% 0;
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: dtt-retry-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes dtt-retry-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+.dtt__retry-row[open] .dtt__retry-summary::after {
+  transform: rotate(45deg);
+}
+
+.dtt__retry-details {
+  overflow-wrap: anywhere;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
+  gap: 2px;
+  margin-top: 3px;
+  padding-left: 14px;
+  display: grid;
+}
+
+.dtt__retry-detail-label {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 已完成的旧卡略收淡，正在跑的卡描边提亮 + 标题呼吸点。 */
+.dtt__reasoning-live-card[data-running="false"] {
+  opacity: .9;
+}
+
+.dtt__reasoning-live-card[data-running="true"] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary, #4176e6) 38%, var(--dsw-alias-border-l2, rgba(127,127,127,.22)));
+}
+
+.dtt__live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-business-primary, #4176e6);
+  vertical-align: 1px;
+  animation: dtt-live-dot-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes dtt-live-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .45; transform: scale(.8); }
+}
+
+/* 悬浮堆叠（紧凑模式 fixed 容器）收紧单卡视口，2 张不至于撑满屏。 */
+.dtt__reasoning-live-stack[data-compact] .dtt__reasoning-live {
+  max-height: 140px;
 }
 
 .dtt__reasoning-live-head {
@@ -367,6 +576,20 @@ const CSS = `
   z-index: 9991;
 }
 
+/* 悬浮堆叠容器（fixed 定位由行内 style 给 top/left，这里只管纵向堆 + 层级 + 宽度）。 */
+.dts__preview-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9991;
+  max-width: min(520px, calc(100vw - 32px));
+  min-width: min(320px, calc(100vw - 32px));
+}
+.dts__preview-stack .dtt__reasoning-live-card {
+  background: var(--dsw-alias-bg-layer-1, #fff);
+  box-shadow: 0 8px 24px rgba(15, 17, 21, .18);
+}
+
 .dtt__reasoning-live::-webkit-scrollbar {
   width: 4px;
   height: 4px;
@@ -432,6 +655,7 @@ const CSS = `
 /* 尊重系统「减少动态效果」偏好 */
 @media (prefers-reduced-motion: reduce) {
   .dtt__card { animation: none; }
+  .dtt__live-slot[data-anim][data-open] { transition: none; }
   .dtt__process-chevron {
     animation: none;
     transition: none;
@@ -439,6 +663,16 @@ const CSS = `
   .dtt__card-chip { transition: none; }
   .dtt__card-chip:hover { transform: none; }
   .dtt__fresh[data-fresh] { animation: none; }
+  .dtt__live-slot > .dtt__reasoning-live-card:not([data-state]),
+  .dtt__reasoning-live-card[data-state="leaving"],
+  .dtt__reasoning-live-card[data-state="reclaim"],
+  .dtt__live-dot { animation: none; }
+  .dtt__retry-row[data-active] .dtt__retry-text {
+    animation: none;
+    color: inherit;
+    background: none;
+    -webkit-text-fill-color: currentcolor;
+  }
   .dtt__process[data-running="true"] .dtt__process-label {
     animation: none;
     color: var(--dtt-rea-accent);

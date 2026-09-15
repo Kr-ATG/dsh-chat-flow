@@ -32,6 +32,7 @@ import { mountActivityDrawer } from './tool-summary/activity-drawer.tsx'
 import { ToolGroupNodeView } from './tool-summary/ToolGroupNodeView.tsx'
 import { TurnProcessShadowView } from './tool-summary/TurnProcessShadowView.tsx'
 import { ThinkingStepNodeView } from './thinking/ThinkingStepNodeView.tsx'
+import { RetryShadowView } from './retry/RetryShadowView.tsx'
 import { applyMessageScreenshot } from './shot/index.tsx'
 
 /** 顶层服务依赖（client boot graph 用）。 */
@@ -93,6 +94,16 @@ export function apply(ctx: ClientContext): void {
     }, ThinkingStepNodeView))
   })
 
+  // 重试行影子：流式期按官方同款渲染，出总结卡（回合 closed）即隐藏，
+  // 空槽位由既有折叠规则收掉，不留空白条。
+  guarded(ctx, 'model-retry seat', () => {
+    ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+      name: 'conversation.chat.node',
+      key: 'model-retry',
+      priority: -100,
+      locale: 'chat',
+    }, RetryShadowView))
+  })
   // download 原子卡片：接管内置 download 工具行（keyed tool.call.toolview，
   // key = wire 工具名）。host 半身注册 download 工具 + 进度路由；运行中约
   // 700ms 轮询真实进度（字节/速度/ETA），完成态读 meta 摘要。host 未就绪或

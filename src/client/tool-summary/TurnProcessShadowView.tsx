@@ -23,6 +23,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { activityStore } from './activity-drawer.tsx'
+import { isRunning } from './tool-stats.ts'
 
 const NS = 'dts'
 
@@ -32,16 +33,23 @@ export function useTurnActivityCounts(turn: number, useChat: ChatNodeViewProps<'
   readonly reasoning: number
   /** 本轮仍有 assistant-step 在流式输出。 */
   readonly streaming: boolean
+  /** 本轮仍有 tool-call 在执行（含 tool 间隙：思考已停但工具还在跑）。 */
+  readonly toolsRunning: boolean
 } {
   return useChat((snapshot) => {
     let tools = 0
     let reasoning = 0
     let streaming = false
+    let toolsRunning = false
     for (const key of snapshot.locations.getTurn(turn)) {
       const candidate = snapshot.nodes.get(key)
       if (candidate === undefined) continue
       if (candidate.kind === 'tool-call') {
         tools += 1
+        try {
+          const block = (candidate as ChatNode<'tool-call'>).data.root
+          if (isRunning(block)) toolsRunning = true
+        } catch { /* 块形状未知时按未运行处理 */ }
       } else if (candidate.kind === 'assistant-step') {
         const step = candidate as ChatNode<'assistant-step'>
         if (step.data.status === 'running') streaming = true
@@ -50,7 +58,7 @@ export function useTurnActivityCounts(turn: number, useChat: ChatNodeViewProps<'
         }
       }
     }
-    return { tools, reasoning, streaming }
+    return { tools, reasoning, streaming, toolsRunning }
   })
 }
 
@@ -69,20 +77,23 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
   if (turnProcess === undefined) return null
   if (!turnProcess.foldable) return null
   const open = turnProcess.open
-  // 思考中（流式）：把「实时思考预览」挂到本行下方（body 级跟随元素）。
+  // 实时思考预览堆叠（最多 2 张）：锚点在「本轮仍在干活」时常驻——思考流式
+  // 中 + tool 间隙（思考已停、工具还在跑）都保留旧卡，等第 2 张叠下面；
+  // 整轮收口（既无思考流、也无工具跑）才清锚点，悬浮堆叠逐张回收。
   // 流式回合 control 不 foldable 的场景走不到这里；foldable 且流式时官方
   // 行也还在，这里只负责登记预览锚点。
-  const streamingThinking = counts.reasoning > 0 && counts.streaming === true
+  const activeThinking = counts.reasoning > 0 && (counts.streaming === true || counts.toolsRunning === true)
   useEffect(() => {
-    // 本回合流式且有思考时，把 control 行登记为预览锚点；否则清掉。
-    if (streamingThinking) {
+    // 本轮有思考且仍在干活时，把 control 行登记为预览锚点；收口后清掉
+    // （悬浮堆叠自己播 stagger 回收，不一下全收）。
+    if (activeThinking) {
       const row = document.querySelector('[data-turn-process="' + node.data.turn + '"].' + NS + '__process')
       store.setPreviewAnchor((row as HTMLElement) ?? undefined, node.data.turn)
     } else {
       store.setPreviewAnchor(undefined, null)
     }
-    return () => { if (streamingThinking) store.setPreviewAnchor(undefined, null) }
-  }, [streamingThinking, node.data.turn, store])
+    return () => { if (activeThinking) store.setPreviewAnchor(undefined, null) }
+  }, [activeThinking, node.data.turn, store])
   // 只显示工具和思考：官方文案里的消息/subagent 计数不要（用户没要过）。
   const data = node.data
   const labels: string[] = []

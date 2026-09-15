@@ -15,7 +15,7 @@
  * 时长 + 实时文字滚动预览），点击打开共享活动抽屉看全文；同一回合其余步骤
  * 只渲染自己的正文。think 块一律不内联展示（避免长思考链拖拽滚动）。
  */
-import { memo, useEffect, useMemo } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { IconChevronDownOutline14, JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -28,7 +28,8 @@ import type { AssistantBlock, RenderMessageImages } from '@deepseek-ai/dsh-clien
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { activityStore, useDrawerOpen, type ActivityReasoningItem } from '../tool-summary/activity-drawer.tsx'
-import { useMotionAllowed, useSteppedFollow } from '../motion-utils.ts'
+import { LiveThinkingStack, LiveThinkingCard as StackLiveCard, LIVE_RECLAIM_UNMOUNT_MS, type LiveThinkingItem } from './live-stack.tsx'
+import { useMotionAllowed } from '../motion-utils.ts'
 import { formatDuration } from '../tool-summary/tool-stats.ts'
 import { useNow } from '../tool-summary/use-now.ts'
 import { FlowCard, type ReplyCardMeta } from '../flow-card.tsx'
@@ -68,13 +69,15 @@ interface ReasoningItem {
  * below it (upstream better-display ReasoningCard language: bounded viewport
  * with edge fades; no footer controls).
  */
-function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: {
+function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess, closed }: {
   items: readonly ReasoningItem[]
   running: boolean
   turn: number
   thinkingStart?: number | undefined
   t: ChatViewSlotProps['t']
   turnProcess?: { readonly foldable: boolean } | undefined
+  /** 回合已结束（开始总结）：堆叠逐张回收，而不是一下全收。 */
+  closed: boolean
 }) {
   const store = activityStore()
   // 思考材料登记挪到父组件（本轮有工具调用时 chip 不挂载、不占行，
@@ -90,18 +93,35 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: 
   const label = running
     ? elapsed !== undefined ? `思考中 · ${formatDuration(elapsed)}` : '思考中…'
     : t('message.turnProcess.thoughtForAWhile')
-  // 当前正在输出的思考文字（最后一个仍 running 的 reasoning 文本）。
-  const live = useMemo(() => {
-    if (!running) return { text: '', step: 0 }
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index]
-      if (item !== undefined && item.running) return { text: item.text, step: item.step }
-    }
-    return { text: '', step: 0 }
-  }, [items, running])
-  const liveText = live.text
-
-  if (controlActive) return null
+  // 堆叠输入：本轮全部非空思考段（时间序）。running=false 的中途 tool 间隙
+  // 不算结束，旧卡保留等第 2 张；只有回合 closed 才逐张回收。
+  const stackItems = useMemo<readonly LiveThinkingItem[]>(() => (
+    items
+      .filter(item => item.text !== '')
+      .map(item => ({ text: item.text, step: item.step, running: item.running }))
+  ), [items])
+  // 总结瞬间 control 接管不能直接卸载：否则堆叠来不及播回收，看起来“一瞬间
+  // 就没了”。接管后保留挂载播完回收（只剩堆叠、按钮已让位），再彻底让位。
+  const motion = useMotionAllowed(true)
+  const [deferredControl, setDeferredControl] = useState(controlActive)
+  useEffect(() => {
+    if (!controlActive) { setDeferredControl(false); return undefined }
+    if (stackItems.length === 0) { setDeferredControl(true); return undefined }
+    setDeferredControl(false)
+    if (!motion) { setDeferredControl(true); return undefined }
+    const id = window.setTimeout(() => { setDeferredControl(true) }, LIVE_RECLAIM_UNMOUNT_MS)
+    return () => { window.clearTimeout(id) }
+  }, [controlActive, stackItems.length, motion])
+  if (deferredControl) return null
+  // 接管过渡期（controlActive 但尚未让位）：按钮已是 control 影子行的，不再渲染，
+  // 堆叠按 closing 逐张回收，保证总结动画看得见。
+  if (controlActive) {
+    return (
+      <div className="dtt__reasoning" data-reclaim="true">
+        <LiveThinkingStack items={stackItems} closing />
+      </div>
+    )
+  }
   return (
     <div className="dtt__reasoning" data-running={running || undefined}>
       <button
@@ -120,52 +140,22 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess }: 
         <span className="dtt__process-label">{label}</span>
         <IconChevronDownOutline14 className="dtt__process-chevron" />
       </button>
-      {running && liveText !== '' && (
-        <LiveThinkingCard text={liveText} step={live.step} />
-      )}
+      <LiveThinkingStack items={stackItems} closing={closed} />
     </div>
   )
 }
 
 /**
- * 实时思考预览卡片（chip 行与工具行共用）：分步跟随（上游节拍）+ 边缘渐隐。
- * 无底部控制按钮：上翻/选中/点按即停，滚回底部自动恢复跟随。调用方保证只在
- * 有流式思考文字时挂载。
+ * 兼容 re-export：工具行仍 `import { LiveThinkingCard } from
+ * '../thinking/ThinkingStepNodeView.tsx'`，新实现在 live-stack.tsx。
  */
-export function LiveThinkingCard({ text, step }: { text: string; step: number }) {
-  // 跟随最新：思考文字增长时分步跟到底（上游 better-display 节拍：
-  // 840ms 停顿、500ms 走两行，burst 不加速追赶）——但仅当读者停在底部。
-  // 上翻/选中/点按即停（想看哪里自己滚），滚回底部自动恢复；
-  // 阈值与 ChatView 的 FOLLOW_THRESHOLD 一致。
-  const motion = useMotionAllowed(true)
-  const { ref, onScroll, onWheel, edges, overflow, following, setFollowing } = useSteppedFollow(text, true, motion)
-  return (
-    <div
-      className="dtt__reasoning-live-card"
-      data-following={following || undefined}
-      data-overflow={overflow || undefined}
-    >
-      <div className="dtt__reasoning-live-head">
-        <span className="dtt__reasoning-live-title">思考</span>
-        <span className="dtt__reasoning-live-step">步骤 {step}</span>
-      </div>
-      <div
-        className="dtt__reasoning-live"
-        data-edges={edges}
-        ref={ref}
-        onScroll={onScroll}
-        onWheel={onWheel}
-        role="region"
-        aria-label={`正在思考${overflow ? '，可滚动阅读' : ''}`}
-        tabIndex={overflow ? 0 : undefined}
-        onPointerDown={() => { if (following) setFollowing(false) }}
-        aria-live="polite"
-      >
-        {text}
-      </div>
-    </div>
-  )
-}
+export { StackLiveCard as LiveThinkingCard }
+export type { LiveThinkingItem }
+
+/**
+ * 旧单卡实现已迁移到 live-stack.tsx（堆叠 + 淡入/消散/回收）。
+ * 此处保留注释占位，避免外部按行号引用的文档失效。
+ */
 
 type AssistantBlockLike = AssistantBlock
 
@@ -381,6 +371,7 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     }
   }, [isFirstStep, reasoningItems, turnNumber])
   const folded = toolCount > 0
+  const turnClosedEarly = locationTurn?.status === 'closed'
   const chip = isFirstStep && reasoningItems.length > 0 && !folded
     ? <ReasoningChip
         items={reasoningItems}
@@ -389,6 +380,7 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
         thinkingStart={thinkingStart}
         t={t}
         turnProcess={turnProcess}
+        closed={turnClosedEarly === true}
       />
     : undefined
   // 本轮 git 相关调用：扫工具节点参数里的 git <动词>（见 tool-stats.gitVerbOf）。
