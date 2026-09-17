@@ -6,9 +6,9 @@
  * control 键整个接管：同一位置只留一行，文案/DOM 与官方逐字一致，
  * 点击行为一分为二——
  *
- * - 行正文：打开共享活动抽屉（有工具或思考记录就进对应分区；
- *   两边都没料才回退官方折叠）；
- * - 尾部 chevron：保留官方内联折叠开关（stopPropagation，不进抽屉）。
+ * - 行正文：点击始终打开共享活动抽屉（有工具进工具分区、纯思考进思考分区，
+ *   两边都有时页签可自由切换）；
+ * - 尾部 chevron：保留官方内联折叠开关（stopPropagation，仅用于折叠/展开原生流）。
  *
  * 成员槽位（思考 chip / 工具入口）以 `turnProcess.foldable` 判断 control
  * 是否接管：接管时只登记抽屉数据、不占行；无 control（非紧凑模式、
@@ -51,11 +51,14 @@ export function useTurnActivityCounts(turn: number, useChat: ChatNodeViewProps<'
           const block = (candidate as ChatNode<'tool-call'>).data.root
           if (isRunning(block)) toolsRunning = true
         } catch { /* 块形状未知时按未运行处理 */ }
-      } else if (candidate.kind === 'assistant-step') {
-        const step = candidate as ChatNode<'assistant-step'>
-        if (step.data?.status === 'running') streaming = true
-        for (const block of step.data?.blocks ?? []) {
-          if (block?.kind === 'reasoning' && block.text !== '') reasoning += 1
+      } else if (candidate.kind === 'assistant-step' || candidate.kind === 'assistant') {
+        const step = candidate as any
+        if (step.data?.status === 'running' || step.status === 'running') streaming = true
+        const blocks = step.data?.blocks ?? step.blocks ?? []
+        for (const block of blocks) {
+          const isReasoning = block?.kind === 'reasoning' || block?.type === 'reasoning'
+          const text = typeof block?.text === 'string' ? block.text : typeof block?.content === 'string' ? block.content : ''
+          if (isReasoning && text.trim() !== '') reasoning += 1
         }
       }
     }
@@ -66,7 +69,7 @@ export function useTurnActivityCounts(turn: number, useChat: ChatNodeViewProps<'
 /**
  * 完整收集一轮的活动节点（tool-call + assistant-step/reasoning）：
  * 优先从 locations.getTurn 读，若收口或折叠后被官方隐藏，则从 snapshot.nodes.values()
- * 中基于 location.turn 补齐隐藏成员，确保收口后依然有料可看、能开抽屉。
+ * 中基于 location.turn 或 data.turn 补齐隐藏成员，确保收口后依然有料可看、能开抽屉。
  * 纯读取函数，仅在用户点击打开抽屉时按需执行，绝不在 render / effect 循环执行。
  */
 export function collectTurnNodes(snapshot: any, turn: number): {
@@ -88,15 +91,19 @@ export function collectTurnNodes(snapshot: any, turn: number): {
       if (toolNode.key && !toolMap.has(toolNode.key)) {
         toolMap.set(toolNode.key, toolNode)
       }
-    } else if (candidate.kind === 'assistant-step') {
-      const step = candidate as ChatNode<'assistant-step'>
-      for (const block of step.data?.blocks ?? []) {
-        if (block?.kind === 'reasoning' && typeof block.text === 'string' && block.text !== '') {
-          if (!reasoningList.some(r => r.step === step.data?.step && r.text === block.text)) {
+    } else if (candidate.kind === 'assistant-step' || candidate.kind === 'assistant') {
+      const step = candidate as any
+      const blocks = step.data?.blocks ?? step.blocks ?? []
+      for (const block of blocks) {
+        const isReasoning = block?.kind === 'reasoning' || block?.type === 'reasoning'
+        const text = typeof block?.text === 'string' ? block.text : typeof block?.content === 'string' ? block.content : ''
+        if (isReasoning && text.trim() !== '') {
+          const stepNum = step.data?.step ?? step.step ?? 0
+          if (!reasoningList.some(r => r.step === stepNum && r.text === text)) {
             reasoningList.push({
-              text: block.text,
-              running: step.data?.status === 'running',
-              step: step.data?.step,
+              text,
+              running: step.data?.status === 'running' || step.status === 'running',
+              step: stepNum,
             })
           }
         }
@@ -104,6 +111,7 @@ export function collectTurnNodes(snapshot: any, turn: number): {
     }
   }
 
+  // 1. 优先从 locations.getTurn 收集本轮可见键
   try {
     const turnKeys = snapshot?.locations?.getTurn?.(turn)
     if (Array.isArray(turnKeys)) {
@@ -113,14 +121,29 @@ export function collectTurnNodes(snapshot: any, turn: number): {
     }
   } catch { /* ignore */ }
 
+  // 2. 穿透扫描全量节点表（补齐 compact/折叠时被过滤掉的 tool-call 与 assistant-step）
+  const scanCandidate = (node: any): void => {
+    if (!node) return
+    const loc = node.location
+    const candTurn = node.data?.turn
+      ?? (typeof loc?.turn === 'number' ? loc.turn : loc?.turn?.turn)
+    if (candTurn !== undefined && candTurn == turn) {
+      addNode(node)
+    }
+  }
+
   try {
     if (typeof snapshot?.nodes?.values === 'function') {
       for (const node of snapshot.nodes.values()) {
-        const loc = node?.location as { readonly kind?: string; readonly turn?: { readonly turn?: number } } | undefined
-        const candTurn = (loc?.kind === 'turn' || loc?.kind === 'step') ? loc.turn?.turn : undefined
-        if (candTurn === turn) {
-          addNode(node)
-        }
+        scanCandidate(node)
+      }
+    }
+  } catch { /* ignore */ }
+
+  try {
+    if (Array.isArray(snapshot?.order)) {
+      for (const key of snapshot.order) {
+        scanCandidate(snapshot?.nodes?.get?.(key))
       }
     }
   } catch { /* ignore */ }
@@ -170,14 +193,14 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
     labels.push(t(data.toolCallCount === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: data.toolCallCount }))
   }
 
-  const thinkingLabel = labels.length > 0 && counts.reasoning > 0 ? `${counts.reasoning} 次思考` : undefined
+  const thinkingLabel = labels.length > 0 && (counts.reasoning > 0 || data.inlineReasoning)
+    ? (counts.reasoning > 0 ? `${counts.reasoning} 次思考` : '思考')
+    : undefined
   const label = labels.length === 0
     ? t('message.turnProcess.thoughtForAWhile')
     : labels.filter(l => l !== thinkingLabel).join(t('message.turnProcess.separator'))
 
   const hasTools = data.toolCallCount > 0 || counts.tools > 0
-  const hasReasoning = counts.reasoning > 0
-  const canOpen = hasTools || hasReasoning
   const tab: ViewMode = hasTools ? 'tools' : 'reasoning'
 
   const toggle = (): void => { turnProcess.setOpen(!open) }
@@ -211,7 +234,7 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
       data-turn-process-subagents={data.subagentCount}
       aria-expanded={open}
       aria-label={[label, thinkingLabel].filter(Boolean).join(' ')}
-      onClick={canOpen ? () => { handleOpen(tab) } : toggle}
+      onClick={() => { handleOpen(tab) }}
     >
       <span className={`${NS}__process-label`}>{label}</span>
       {thinkingLabel !== undefined && (
@@ -219,8 +242,8 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
           className={`${NS}__process-think`}
           role="button"
           tabIndex={0}
-          title={`查看${counts.reasoning} 次思考`}
-          aria-label={`查看${counts.reasoning} 次思考`}
+          title={counts.reasoning > 0 ? `查看${counts.reasoning} 次思考` : '查看思考过程'}
+          aria-label={counts.reasoning > 0 ? `查看${counts.reasoning} 次思考` : '查看思考过程'}
           onClick={(event) => {
             event.stopPropagation()
             handleOpen('reasoning')
