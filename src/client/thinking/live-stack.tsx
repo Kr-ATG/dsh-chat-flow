@@ -179,7 +179,7 @@ export const LiveThinkingStack = memo(function LiveThinkingStack({ items, closin
     [items],
   )
   const anyRunning = useMemo(() => items.some(item => item.running), [items])
-  const followActive = anyRunning && !closing
+  const followActive = !closing
   const { ref, onScroll, onWheel, edges, overflow, following, setFollowing } =
     useSteppedFollow(probe, followActive, motion)
 
@@ -270,7 +270,6 @@ export const LiveThinkingStack = memo(function LiveThinkingStack({ items, closin
           role="region"
           aria-label={anyRunning ? '正在思考，可滚动阅读' : '已完成的思考，可滚动阅读'}
           tabIndex={overflow ? 0 : undefined}
-          onPointerDown={() => { if (following && followActive) setFollowing(false) }}
           aria-live={anyRunning ? 'polite' : 'off'}
         >
           <div className="dtt__reasoning-live-rail-inner">

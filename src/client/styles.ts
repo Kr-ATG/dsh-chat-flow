@@ -1025,27 +1025,7 @@ header > [role='tablist'] > [class*='_tab'][class*='_tabActive']::after {
   header > [role='tablist'] > [class*='_tab']::after { transition: none; }
 }
 
-/* ══ 壳窗口控制留位（仅壳内生效）═══════════════════════════════════════
-   桌面壳（Electron 无边框窗口）右上角自绘 最小化/最大化/关闭 三枚按钮
-   （合计约 102px 宽）。
-   1. 会话 header：右 padding 本为 28px，这里 +100px → 128px：
-      标题行里的 utilities / corner（工作区按钮、更多、侧栏展开）与
-      「对话 / 轨迹」标签簇整体左移 100px，右上角让给壳按钮。
-   2. 侧栏 dockkit 条带（文件/扩展面）：当右侧栏展开时，顶栏停靠面同样直抵
-      视口右上角；为含 stripChrome 的顶右 strip 留出 padding-right 112px，
-      让出右上角 3 枚窗口控制按钮，避免遮挡 split/fullscreen/collapse 图标；
-      同时通过 padding-top: 8px 使 28px 图标钮与壳按钮（44px 高，中心 y=22px）
-      完全平齐对齐。
-   dsh-in-shell 类由 shell-chrome.ts 在与壳完成 dsh:shell-chrome 能力握手后
-   挂上（旧壳不应答、浏览器直开均零影响，不留空档）。 */
-.dsh-in-shell header:has(> [class*='_titleRow']) {
-  padding-right: 128px;
-}
-
-.dsh-in-shell [data-dockkit-strip]:has([data-dockkit-strip-chrome]) {
-  padding-top: 8px;
-  padding-right: 112px;
-}
+/* ══ 壳窗口控制：全视口原样呈现（不再为右上角保留留位空档） ═════════════════ */
 `
 
 /** Inject the stylesheet once. */

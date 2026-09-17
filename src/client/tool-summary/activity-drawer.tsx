@@ -382,8 +382,11 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall, closing }: {
               </div>
             </div>
           )}
-          {reasoning.length === 0 && toolNodes.length === 0 && (
-            <div className="dts__empty">这一轮没有可显示的思考或工具调用</div>
+          {tab === 'reasoning' && reasoning.length === 0 && (
+            <div className="dts__empty">这一轮没有可显示的思考过程</div>
+          )}
+          {tab === 'tools' && toolNodes.length === 0 && (
+            <div className="dts__empty">这一轮没有可显示的工具调用</div>
           )}
         </div>
       </div>

@@ -6,27 +6,23 @@
  * control 键整个接管：同一位置只留一行，文案/DOM 与官方逐字一致，
  * 点击行为一分为二——
  *
- * - 行正文：打开共享活动抽屉（实时投影或仓库留存里有料就开，不分工具/
- *   思考分区，按有料的分区进；两边都没料才回退官方折叠，这行永远不死）；
+ * - 行正文：打开共享活动抽屉（有工具或思考记录就进对应分区；
+ *   两边都没料才回退官方折叠）；
  * - 尾部 chevron：保留官方内联折叠开关（stopPropagation，不进抽屉）。
- *
- * 注意收口后的情况：回合 closed 后实时投影里的思考块可能被清掉（计数归
- * 零），但流式期登记进仓库的材料还在——开门条件必须两边一起看，否则
- * 「已思考」行点上去毫无反应。
  *
  * 成员槽位（思考 chip / 工具入口）以 `turnProcess.foldable` 判断 control
  * 是否接管：接管时只登记抽屉数据、不占行；无 control（非紧凑模式、
  * 流式回合、旧 host）时回退到原来的自有行，抽屉照常可进。
  */
 
-import { memo, useEffect, useSyncExternalStore } from 'react'
+import { memo, useEffect, useRef } from 'react'
 import type { ChatNode, ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: activates the ui-chat / ui-tool SlotMap augmentation so
 // ChatNodeViewProps resolves its owner/keyed share.
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { activityStore } from './activity-drawer.tsx'
+import { activityStore, type ActivityReasoningItem, type ViewMode } from './activity-drawer.tsx'
 import { isRunning } from './tool-stats.ts'
 
 const NS = 'dts'
@@ -45,8 +41,9 @@ export function useTurnActivityCounts(turn: number, useChat: ChatNodeViewProps<'
     let reasoning = 0
     let streaming = false
     let toolsRunning = false
-    for (const key of snapshot.locations.getTurn(turn)) {
-      const candidate = snapshot.nodes.get(key)
+    const keys = snapshot?.locations?.getTurn?.(turn) ?? []
+    for (const key of keys) {
+      const candidate = snapshot?.nodes?.get?.(key)
       if (candidate === undefined) continue
       if (candidate.kind === 'tool-call') {
         tools += 1
@@ -56,73 +53,153 @@ export function useTurnActivityCounts(turn: number, useChat: ChatNodeViewProps<'
         } catch { /* 块形状未知时按未运行处理 */ }
       } else if (candidate.kind === 'assistant-step') {
         const step = candidate as ChatNode<'assistant-step'>
-        if (step.data.status === 'running') streaming = true
-        for (const block of step.data.blocks) {
-          if (block.kind === 'reasoning') reasoning += 1
+        if (step.data?.status === 'running') streaming = true
+        for (const block of step.data?.blocks ?? []) {
+          if (block?.kind === 'reasoning' && block.text !== '') reasoning += 1
         }
       }
     }
     return { tools, reasoning, streaming, toolsRunning }
-  })
+  }, (a, b) => a.tools === b.tools && a.reasoning === b.reasoning && a.streaming === b.streaming && a.toolsRunning === b.toolsRunning)
 }
 
-/** 开门条件：实时投影有料，或仓库里还留着本轮材料（收口后投影可能已清）。 */
-function useCanOpen(turn: number, counts: { readonly tools: number; readonly reasoning: number }): {
-  readonly canOpen: boolean
-  readonly tab: 'tools' | 'reasoning'
-  readonly thinkCount: number
+/**
+ * 完整收集一轮的活动节点（tool-call + assistant-step/reasoning）：
+ * 优先从 locations.getTurn 读，若收口或折叠后被官方隐藏，则从 snapshot.nodes.values()
+ * 中基于 location.turn 补齐隐藏成员，确保收口后依然有料可看、能开抽屉。
+ * 纯读取函数，仅在用户点击打开抽屉时按需执行，绝不在 render / effect 循环执行。
+ */
+export function collectTurnNodes(snapshot: any, turn: number): {
+  readonly tools: readonly ChatNode<'tool-call'>[]
+  readonly reasoning: readonly ActivityReasoningItem[]
+  readonly turnStart?: number | undefined
 } {
-  const store = activityStore()
-  const retained = useSyncExternalStore(store.subscribe, () => store.get(turn))
-  const retainedTools = retained?.tools !== undefined ? retained.tools.length : 0
-  const retainedReasoning = retained?.reasoning !== undefined ? retained.reasoning.length : 0
-  const hasTools = counts.tools > 0 || retainedTools > 0
-  const hasReasoning = counts.reasoning > 0 || retainedReasoning > 0
-  return {
-    canOpen: hasTools || hasReasoning,
-    tab: hasTools ? 'tools' : 'reasoning',
-    thinkCount: counts.reasoning > 0 ? counts.reasoning : retainedReasoning,
+  const toolMap = new Map<string, ChatNode<'tool-call'>>()
+  const reasoningList: ActivityReasoningItem[] = []
+
+  if (snapshot === null || snapshot === undefined) {
+    return { tools: [], reasoning: [] }
   }
+
+  const addNode = (candidate: any): void => {
+    if (candidate === undefined || candidate === null) return
+    if (candidate.kind === 'tool-call') {
+      const toolNode = candidate as ChatNode<'tool-call'>
+      if (toolNode.key && !toolMap.has(toolNode.key)) {
+        toolMap.set(toolNode.key, toolNode)
+      }
+    } else if (candidate.kind === 'assistant-step') {
+      const step = candidate as ChatNode<'assistant-step'>
+      for (const block of step.data?.blocks ?? []) {
+        if (block?.kind === 'reasoning' && typeof block.text === 'string' && block.text !== '') {
+          if (!reasoningList.some(r => r.step === step.data?.step && r.text === block.text)) {
+            reasoningList.push({
+              text: block.text,
+              running: step.data?.status === 'running',
+              step: step.data?.step,
+            })
+          }
+        }
+      }
+    }
+  }
+
+  try {
+    const turnKeys = snapshot?.locations?.getTurn?.(turn)
+    if (Array.isArray(turnKeys)) {
+      for (const key of turnKeys) {
+        addNode(snapshot?.nodes?.get?.(key))
+      }
+    }
+  } catch { /* ignore */ }
+
+  try {
+    if (typeof snapshot?.nodes?.values === 'function') {
+      for (const node of snapshot.nodes.values()) {
+        const loc = node?.location as { readonly kind?: string; readonly turn?: { readonly turn?: number } } | undefined
+        const candTurn = (loc?.kind === 'turn' || loc?.kind === 'step') ? loc.turn?.turn : undefined
+        if (candTurn === turn) {
+          addNode(node)
+        }
+      }
+    }
+  } catch { /* ignore */ }
+
+  const tools = [...toolMap.values()].sort((a, b) => (a.anchorSeq ?? 0) - (b.anchorSeq ?? 0))
+  reasoningList.sort((a, b) => (a.step ?? 0) - (b.step ?? 0))
+  const turnStart = snapshot?.legacy?.turnTimings?.get?.(turn)?.startTime
+
+  return { tools, reasoning: reasoningList, turnStart }
 }
 
 /** Single per-turn row at the official control position (priority -100 shadows builtin). */
 export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: ChatNodeViewProps<'turn-process'>) {
-  const { node, useChat, turnProcess, t } = props
+  const { node, useChat, turnProcess, t, cwd, openFile, inspectCall } = props
   const store = activityStore()
-  const counts = useTurnActivityCounts(node.data.turn, useChat)
-  const { canOpen, tab, thinkCount } = useCanOpen(node.data.turn, counts)
+  const turn = node.data.turn
+
+  // 1. 获取计数（浅比较，避免非必要重渲染）
+  const counts = useTurnActivityCounts(turn, useChat)
+
+  // 2. 捕获最新 snapshot 引用供点击时读取（返回值恒定为 0，永不触发重渲染）
+  const snapshotRef = useRef<any>(null)
+  useChat((snapshot) => {
+    snapshotRef.current = snapshot
+    return 0
+  })
+
   if (turnProcess === undefined) return null
   if (!turnProcess.foldable) return null
   const open = turnProcess.open
-  // 实时思考预览轨道：锚点在「本轮仍在干活」时常驻——思考流式
-  // 中 + tool 间隙（思考已停、工具还在跑）都保留旧段，新段在下面长出来；
-  // 整轮收口（既无思考流、也无工具跑）才清锚点，悬浮轨道逐行滑出回收。
-  // 流式回合 control 不 foldable 的场景走不到这里；foldable 且流式时官方
-  // 行也还在，这里只负责登记预览锚点。
+
+  // 实时思考预览堆叠
   const activeThinking = counts.reasoning > 0 && (counts.streaming === true || counts.toolsRunning === true)
   useEffect(() => {
-    // 本轮有思考且仍在干活时，把 control 行登记为预览锚点；收口后清掉
-    // （悬浮轨道自己播逐行滑出回收，不一下全收）。
     if (activeThinking) {
-      const row = document.querySelector('[data-turn-process="' + node.data.turn + '"].' + NS + '__process')
-      store.setPreviewAnchor((row as HTMLElement) ?? undefined, node.data.turn)
+      const row = document.querySelector('[data-turn-process="' + turn + '"].' + NS + '__process')
+      store.setPreviewAnchor((row as HTMLElement) ?? undefined, turn)
     } else {
       store.setPreviewAnchor(undefined, null)
     }
     return () => { if (activeThinking) store.setPreviewAnchor(undefined, null) }
-  }, [activeThinking, node.data.turn, store])
-  // 只显示工具和思考：官方文案里的消息/subagent 计数不要（用户没要过）。
+  }, [activeThinking, turn, store])
+
   const data = node.data
   const labels: string[] = []
-  if (data.toolCallCount > 0) labels.push(t(data.toolCallCount === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: data.toolCallCount }))
-  // 思考数缀在官方文案后面（`N 次工具调用 · 思考 M`，与抽屉页签同口径）；
-  // 纯思考回合保持官方「已思考」不动。行正文有料就进抽屉（不分工具/思考，
-  // 按有料的分区开），两边都没料才回退官方折叠；chevron 永远是官方开关。
-  const thinkingLabel = labels.length > 0 && thinkCount > 0 ? `${thinkCount} 次思考` : undefined
+  if (data.toolCallCount > 0) {
+    labels.push(t(data.toolCallCount === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: data.toolCallCount }))
+  }
+
+  const thinkingLabel = labels.length > 0 && counts.reasoning > 0 ? `${counts.reasoning} 次思考` : undefined
   const label = labels.length === 0
     ? t('message.turnProcess.thoughtForAWhile')
     : labels.filter(l => l !== thinkingLabel).join(t('message.turnProcess.separator'))
+
+  const hasTools = data.toolCallCount > 0 || counts.tools > 0
+  const hasReasoning = counts.reasoning > 0
+  const canOpen = hasTools || hasReasoning
+  const tab: ViewMode = hasTools ? 'tools' : 'reasoning'
+
   const toggle = (): void => { turnProcess.setOpen(!open) }
+
+  // 仅在用户主动点击时收集数据并注入 store，绝不在 render/effect 阶段触发
+  const handleOpen = (mode: ViewMode): void => {
+    const snapshot = snapshotRef.current
+    if (snapshot) {
+      const collected = collectTurnNodes(snapshot, turn)
+      if (collected.tools.length > 0) {
+        store.setTools(turn, collected.tools, cwd, collected.turnStart)
+      }
+      if (collected.reasoning.length > 0) {
+        store.setReasoning(turn, collected.reasoning)
+      }
+    }
+    if (openFile && inspectCall) {
+      store.setHandlers({ openFile, inspectCall })
+    }
+    store.open(turn, mode)
+  }
+
   return (
     <button
       type="button"
@@ -134,7 +211,7 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
       data-turn-process-subagents={data.subagentCount}
       aria-expanded={open}
       aria-label={[label, thinkingLabel].filter(Boolean).join(' ')}
-      onClick={canOpen ? () => { store.open(data.turn, tab) } : toggle}
+      onClick={canOpen ? () => { handleOpen(tab) } : toggle}
     >
       <span className={`${NS}__process-label`}>{label}</span>
       {thinkingLabel !== undefined && (
@@ -142,17 +219,17 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
           className={`${NS}__process-think`}
           role="button"
           tabIndex={0}
-          title={`查看${thinkCount} 次思考`}
-          aria-label={`查看${thinkCount} 次思考`}
+          title={`查看${counts.reasoning} 次思考`}
+          aria-label={`查看${counts.reasoning} 次思考`}
           onClick={(event) => {
             event.stopPropagation()
-            store.open(data.turn, 'reasoning')
+            handleOpen('reasoning')
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault()
               event.stopPropagation()
-              store.open(data.turn, 'reasoning')
+              handleOpen('reasoning')
             }
           }}
         >
@@ -165,7 +242,10 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
         tabIndex={0}
         title={open ? '折叠本轮原文' : '展开本轮原文'}
         aria-label={open ? '折叠本轮原文' : '展开本轮原文'}
-        onClick={(event) => { event.stopPropagation(); toggle() }}
+        onClick={(event) => {
+          event.stopPropagation()
+          toggle()
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
