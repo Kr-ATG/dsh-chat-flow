@@ -18,9 +18,10 @@
  *    快照 hook）+ `useSessions`（会话列表，取标题）；
  *  - 注册 id 换成 `chat-flow-screenshot`（与 webui 并存时各有各的按钮）。
  */
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
 import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { getKrChatStore } from '../kr-chat/kr-chat-store.ts'
 // Type-only: 激活 ui-chat 的 SlotMap 合并（assistant-actions 槽位 props 契约）
 // + ui-session 的会话标准 props 合并（useChat 之外还有 sessionId / useSessions）。
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -30,6 +31,8 @@ import { useModalClose, ensureModalAnimStyles } from '../modal-animation.ts'
 import { collectMessages, deriveCurrentDialogueTitle, type ShotMessage, type ShotRange } from './collect.ts'
 import { ShotPanel } from './Panel.tsx'
 import { cls, ensureStyles } from './styles.ts'
+
+import { setLatestChatSnapshot } from '../tool-summary/TurnProcessShadowView.tsx'
 
 /** 相机图标（16px 线性精致镂空，与操作栏复制/分支图标同规格）。 */
 function CameraIcon(): JSX.Element {
@@ -62,6 +65,7 @@ export function AssistantScreenshotAction(
   // 只把快照落进 ref（返回常量 → 不触发重渲染），点击时再读。
   const snapRef = useRef<ChatSnapshot | null>(null)
   useChat((snapshot: ChatSnapshot) => {
+    setLatestChatSnapshot(snapshot)
     snapRef.current = snapshot
     return 0
   })
@@ -84,6 +88,12 @@ export function AssistantScreenshotAction(
   // 本次对话标题：从本轮问答提取（用户要求卡片标题是本次对话而不是整段会话）。
   const dialogueTitle = snapRef.current ? deriveCurrentDialogueTitle(snapRef.current, messageId) : ''
   const defaultTitle = dialogueTitle || sessionTitle
+
+  const krStore = getKrChatStore()
+  const krState = useSyncExternalStore(cb => krStore.subscribe(cb), () => krStore.snapshot)
+  if (krState.activeTab !== 'kr') {
+    return null
+  }
 
   return (
     <>

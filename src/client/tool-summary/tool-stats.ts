@@ -208,8 +208,8 @@ export function formatDuration(ms: number): string {
 }
 
 /** Elapsed duration of one tool call: live for running, settled span otherwise. */
-export function callDurationMs(block: ToolCallBlock, now: number): number | undefined {
-  if (isRunning(block)) return Math.max(0, now - block.time)
+export function callDurationMs(block: ToolCallBlock, now?: number): number | undefined {
+  if (isRunning(block)) return Math.max(0, (now ?? Date.now()) - block.time)
   if (block.callTime === null) return undefined
   return Math.max(0, block.time - block.callTime)
 }

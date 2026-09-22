@@ -547,6 +547,9 @@ const ToolEntry = memo(function ToolEntry({
     const id = window.setTimeout(() => { setDeferredControl(true) }, LIVE_RECLAIM_UNMOUNT_MS)
     return () => { window.clearTimeout(id) }
   }, [controlActive, liveStackItems.length, entryMotion])
+  const isKrMode = typeof document !== 'undefined' && document.body.hasAttribute('data-dsh-kr-chat')
+  if (isKrMode) return null
+
   if (deferredControl) return null
   if (controlActive) {
     return (
@@ -605,6 +608,9 @@ const ToolEntry = memo(function ToolEntry({
 
 /** Shadows the built-in `tool-call` renderer: one chip per turn, drawer on click. */
 export const ToolGroupNodeView = memo(function ToolGroupNodeView(props: ChatNodeViewProps<'tool-call'>) {
+  const isKrMode = typeof document !== 'undefined' && document.body?.getAttribute('data-dsh-kr-chat') === 'true'
+  if (isKrMode) return null
+
   const { node, useChat, cwd, openFile, inspectCall, t, turnProcess } = props
   const turn = turnNumber(node)
   const nodes = useChat(snapshot => {

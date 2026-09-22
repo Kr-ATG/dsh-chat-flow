@@ -70,19 +70,43 @@ function toMessage(node: { kind: string; data: unknown } | undefined): ShotMessa
     const text = assistantText(node.data as TailData)
     return text.trim() === '' ? null : { role: 'assistant', text }
   }
+  if (node.kind === 'assistant-step') {
+    const data = node.data as { blocks?: readonly { kind?: string; text?: string }[] }
+    const blocks = data.blocks ?? []
+    const text = blocks
+      .filter(b => b.kind === 'text' && typeof b.text === 'string')
+      .map(b => b.text as string)
+      .join('')
+    return text.trim() === '' ? null : { role: 'assistant', text }
+  }
   return null
 }
 
-/** 找到承载指定 messageId 的 turn-tail 节点键与轮次（finalNode.messageId
+/** 找到承载指定 messageId 或指定 turn 轮次的 turn-tail 节点键与轮次（finalNode.messageId
  *  稳定 identity；interruption fallback 缺 messageId 时按序取最后一个可见回复）。 */
-function locateTail(snapshot: ChatSnapshot, messageId: unknown): { key: string; turn: number } | null {
+function locateTail(snapshot: ChatSnapshot, messageIdOrTurn: unknown): { key: string; turn: number } | null {
+  if (typeof messageIdOrTurn === 'number') {
+    for (const key of snapshot.order) {
+      const node = snapshot.nodes.get(key)
+      if (node === undefined || node.kind !== 'turn-tail') continue
+      const data = node.data as TailData
+      if (data.turn === messageIdOrTurn) {
+        return { key, turn: messageIdOrTurn }
+      }
+    }
+    const turnKeys = snapshot?.locations?.getTurn?.(messageIdOrTurn)
+    if (turnKeys && turnKeys.length > 0) {
+      const lastKey = turnKeys[turnKeys.length - 1]
+      return { key: lastKey, turn: messageIdOrTurn }
+    }
+  }
   let fallback: { key: string; turn: number } | null = null
   for (const key of snapshot.order) {
     const node = snapshot.nodes.get(key)
     if (node === undefined || node.kind !== 'turn-tail') continue
     const data = node.data as TailData
     const tail = { key, turn: typeof data.turn === 'number' ? data.turn : -1 }
-    if (data.closing?.finalNode?.messageId === messageId) return tail
+    if (data.closing?.finalNode?.messageId === messageIdOrTurn) return tail
     if (data.closing?.finalNode !== undefined) fallback = tail
   }
   return fallback
@@ -91,7 +115,7 @@ function locateTail(snapshot: ChatSnapshot, messageId: unknown): { key: string; 
 /**
  * 按范围抽取待截图消息。
  * @param snapshot - 当前 Chat 快照（useChat 的订阅值）。
- * @param messageId - 触发截图的那条 AI 回复的 id。
+ * @param messageId - 触发截图的那条 AI 回复的 id 或指定的 turn 轮次。
  * @param range - 截图范围。
  * @returns 时间顺序的消息数组（空数组表示无可截内容）。
  */
@@ -109,15 +133,33 @@ export function collectMessages(
   if (range === 'turn') {
     if (located === null || located.turn < 0) return []
     const out: ShotMessage[] = []
-    for (const key of snapshot.locations.getTurn(located.turn)) {
-      const message = toMessage(snapshot.nodes.get(key))
+    const turnKeys = snapshot.locations.getTurn(located.turn)
+    const hasTurnTail = turnKeys.some(k => snapshot.nodes.get(k)?.kind === 'turn-tail')
+    for (const key of turnKeys) {
+      const node = snapshot.nodes.get(key)
+      if (!node) continue
+      if (hasTurnTail && node.kind === 'assistant-step') continue
+      const message = toMessage(node)
       if (message !== null) out.push(message)
     }
     return out
   }
   const out: ShotMessage[] = []
+  const hasTurnTailMap = new Set<number>()
   for (const key of snapshot.order) {
-    const message = toMessage(snapshot.nodes.get(key))
+    const node = snapshot.nodes.get(key)
+    if (node?.kind === 'turn-tail' && typeof (node.data as TailData)?.turn === 'number') {
+      hasTurnTailMap.add((node.data as TailData).turn!)
+    }
+  }
+  for (const key of snapshot.order) {
+    const node = snapshot.nodes.get(key)
+    if (!node) continue
+    const turn = (node.data as any)?.turn
+    if (node.kind === 'assistant-step' && typeof turn === 'number' && hasTurnTailMap.has(turn)) {
+      continue
+    }
+    const message = toMessage(node)
     if (message !== null) out.push(message)
   }
   return out

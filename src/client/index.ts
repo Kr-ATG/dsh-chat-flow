@@ -35,6 +35,9 @@ import { ThinkingStepNodeView } from './thinking/ThinkingStepNodeView.tsx'
 import { RetryShadowView } from './retry/RetryShadowView.tsx'
 import { applyMessageScreenshot } from './shot/index.tsx'
 import { mountShellChrome } from './shell-chrome.ts'
+import { injectKrStyles } from './kr-chat/styles.ts'
+import { mountKrChatController } from './kr-chat/kr-chat-controller.tsx'
+import { KrTodoBridge } from './kr-chat/kr-todo-bridge.ts'
 
 /** 顶层服务依赖（client boot graph 用）。 */
 export const inject = ['slots']
@@ -48,7 +51,30 @@ function guarded(ctx: ClientContext, label: string, mount: () => void): void {
   }
 }
 
+let savedCtx: ClientContext | null = null
+export let officialAssistantNodeView: any = null
+
+export function getOfficialAssistantNodeView(): any {
+  if (officialAssistantNodeView) return officialAssistantNodeView
+  if (savedCtx) {
+    try {
+      const entries = savedCtx.slots.entries('conversation.chat.node')
+      const assistantEntry = entries.find((e: any) => e.options?.key === 'assistant-step' && (e.options?.priority ?? 0) >= 0)
+      if (assistantEntry?.component) {
+        officialAssistantNodeView = assistantEntry.component
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return officialAssistantNodeView
+}
+
 export function apply(ctx: ClientContext): void {
+  savedCtx = ctx
+  if (typeof window !== 'undefined') {
+    (window as any).__dshClientCtx__ = ctx
+  }
   // 样式：工具聚合（dts__）、思考/流卡（dtt__）两枚 + 截图面板（tsh__）独立
   // <style>，幂等注入。
   guarded(ctx, 'tool-summary styles', injectToolSummaryStyles)
@@ -63,33 +89,22 @@ export function apply(ctx: ClientContext): void {
   // 浏览器直开时整模块 no-op。
   guarded(ctx, 'shell chrome', mountShellChrome)
 
-  // 对话截图：assistant 消息操作栏相机按钮 → 截图面板（独立 id，无副作用）。
+  // 对话截图：assistant 消息操作栏相机按钮 → 截图面板（独立 id，KR模式生效）。
   guarded(ctx, 'screenshot seat', () => { applyMessageScreenshot(ctx) })
 
-  // 官方 control 行影子：紧凑模式 closed 回合的 control 位只留一行（正文进
-  // 抽屉、chevron 走官方折叠），成员槽位让位，避免出现两行一样的。无 control
-  // 时成员槽位回退到自有行。
-  guarded(ctx, 'turn-process seat', () => {
-    ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
-      name: 'conversation.chat.node',
-      key: 'turn-process',
-      priority: -100,
-      locale: 'chat',
-    }, TurnProcessShadowView))
-  })
+  // 捕获官方原生的 assistant-step 渲染组件，普通「对话」模式下直接由官方接管
+  try {
+    const entries = ctx.slots.entries('conversation.chat.node')
+    const assistantEntry = entries.find((e: any) => e.options?.key === 'assistant-step' && (e.options?.priority ?? 0) >= 0)
+    if (assistantEntry?.component) {
+      officialAssistantNodeView = assistantEntry.component
+    }
+  } catch (error) {
+    console.warn('[dsh-chat-flow] 捕获官方 assistant-step 失败：', error)
+  }
 
-  // 工具调用聚合：替换内置 tool-call 渲染器，每回合一枚 chip + 抽屉。
-  guarded(ctx, 'tool-call seat', () => {
-    ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
-      name: 'conversation.chat.node',
-      key: 'tool-call',
-      priority: -100,
-      locale: 'chat',
-    }, ToolGroupNodeView))
-  })
-
-  // 思考 chip + 对话流卡片：替换内置 assistant-step 渲染器（正文仍用官方
-  // MarkdownText，思考聚合进 chip，卡片回合结束后出现）。
+  // 思考与步骤呈现：在 KR 模式下呈现 KrFlowThoughtCard / KrFlowExecutingCard，
+  // 在普通「对话」模式下委托回官方 AssistantNodeView 原生渲染。
   guarded(ctx, 'assistant-step seat', () => {
     ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
       name: 'conversation.chat.node',
@@ -97,17 +112,6 @@ export function apply(ctx: ClientContext): void {
       priority: -100,
       locale: 'chat',
     }, ThinkingStepNodeView))
-  })
-
-  // 重试行影子：流式期按官方同款渲染，出总结卡（回合 closed）即隐藏，
-  // 空槽位由既有折叠规则收掉，不留空白条。
-  guarded(ctx, 'model-retry seat', () => {
-    ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
-      name: 'conversation.chat.node',
-      key: 'model-retry',
-      priority: -100,
-      locale: 'chat',
-    }, RetryShadowView))
   })
   // download 原子卡片：接管内置 download 工具行（keyed tool.call.toolview，
   // key = wire 工具名）。host 半身注册 download 工具 + 进度路由；运行中约
@@ -117,6 +121,18 @@ export function apply(ctx: ClientContext): void {
     ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
       { name: 'tool.call.toolview', key: 'download' },
       DownloadCard,
+    ))
+  })
+
+  // KR 对话双栏布局与执行大盘（新增视图分类「KR对话」，进入会话默认激活）
+  guarded(ctx, 'kr-chat styles', injectKrStyles)
+  guarded(ctx, 'kr-chat controller', mountKrChatController)
+
+  // 桥接官方 todos 投影，供右侧大盘实时展示真实任务
+  guarded(ctx, 'kr-todo bridge', () => {
+    ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
+      { name: 'conversation.input.dock', id: 'kr-todo-bridge', order: 999 },
+      KrTodoBridge,
     ))
   })
 }

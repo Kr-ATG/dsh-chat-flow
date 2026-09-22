@@ -65,7 +65,9 @@ export interface ShotPanelProps {
   /** 会话标题（整段会话截取时的备选）。 */
   sessionTitle?: string
   /** 会话工作目录（host 解析正文里的相对 HTML 路径）。 */
-  cwd: string
+  cwd?: string
+  /** 初始范围，默认 reply */
+  initialRange?: ShotRange
 }
 
 /** 可编辑文案输入框：blur / Enter 提交，Esc 还原。 */
@@ -101,8 +103,8 @@ function EditableText(props: {
 }
 
 /** 面板主体：选项条 + 预览台 + 底栏操作。 */
-export function ShotPanel({ closing, onClose, collect, title, dialogueTitle, sessionTitle, cwd }: ShotPanelProps): JSX.Element {
-  const [range, setRange] = useState<ShotRange>('reply')
+export function ShotPanel({ closing, onClose, collect, title, dialogueTitle, sessionTitle, cwd = '', initialRange }: ShotPanelProps): JSX.Element {
+  const [range, setRange] = useState<ShotRange>(() => initialRange ?? 'reply')
   const [theme, setTheme] = useState<ShotTheme>(() => currentTheme())
   const [cardWidth, setCardWidth] = useState<number>(DEFAULT_WIDTH)
   const [widthDraft, setWidthDraft] = useState<string>(String(DEFAULT_WIDTH))

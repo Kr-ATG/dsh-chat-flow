@@ -15,7 +15,7 @@
  * 时长 + 实时文字滚动预览），点击打开共享活动抽屉看全文；同一回合其余步骤
  * 只渲染自己的正文。think 块一律不内联展示（避免长思考链拖拽滚动）。
  */
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { IconChevronDownOutline14, JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -40,6 +40,9 @@ import { ProtoTabsCard } from '../proto/ProtoTabsCard.tsx'
 import { gitVerbOf } from '../tool-summary/tool-stats.ts'
 import { GeneratedImageStrip } from '../generated-images/GeneratedImageStrip.tsx'
 import { useGeneratedImages } from '../generated-images/use-generated-images.ts'
+import { getKrChatStore } from '../kr-chat/kr-chat-store.ts'
+import { getOfficialAssistantNodeView } from '../index.ts'
+import { latestChatSnapshot, setLatestChatSnapshot } from '../tool-summary/TurnProcessShadowView.tsx'
 
 const EMPTY_STEPS: readonly ChatNode<'assistant-step'>[] = []
 const EMPTY_TOOLS: readonly ChatNode<'tool-call'>[] = []
@@ -59,6 +62,88 @@ interface ReasoningItem {
   readonly running: boolean
   /** The owning assistant step number (for the live card heading). */
   readonly step: number
+}
+
+/** KR 对话卡片化思考过程（去掉旧折叠，直观展现步骤） */
+function KrFlowThoughtCard({
+  items,
+  turnNumber,
+}: {
+  readonly items: readonly ReasoningItem[]
+  readonly turnNumber?: number
+}) {
+  const points = useMemo(() => {
+    const text = items.map((i) => i.text).join('\n')
+    const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
+    const numbered = lines.filter((l) => /^\d+[\.、\s]/.test(l))
+    if (numbered.length > 0) return numbered
+    return lines.slice(0, 3)
+  }, [items])
+
+  if (points.length === 0) return null
+  const store = getKrChatStore()
+
+  return (
+    <div
+      className="kr-flow-thought-card"
+      onClick={() => {
+        if (turnNumber !== undefined) {
+          store.setSelectedTurn(turnNumber)
+          store.setPanelOpen(true)
+        }
+      }}
+      style={{ cursor: 'pointer' }}
+      title="点击在右侧大盘中查看完整轨迹"
+    >
+      <div className="kr-flow-thought-card__header">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2 6a6 6 0 1 1 10.174 4.31c-.203.196-.359.4-.453.619l-.762 1.769A.5.5 0 0 1 10.5 13a.5.5 0 0 1 0 1 .5.5 0 0 1 0 1l-.224.447a1 1 0 0 1-.894.553H6.618a1 1 0 0 1-.894-.553L5.5 15a.5.5 0 0 1 0-1 .5.5 0 0 1 0-1 .5.5 0 0 1-.46-.302l-.761-1.77a1.964 1.964 0 0 0-.453-.618A5.984 5.984 0 0 1 2 6zm6-5a5 5 0 0 0-3.479 8.592c.263.254.514.564.676.941L5.83 12h4.342l.632-1.467c.162-.377.413-.687.676-.941A5 5 0 0 0 8 1z" />
+        </svg>
+        <span>思考过程 ({points.length})</span>
+      </div>
+      <div className="kr-flow-thought-card__body">
+        {points.map((p, idx) => (
+          <div key={idx} style={{ marginBottom: 3 }}>
+            {p}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** KR 对话 Agent 正在执行卡片 */
+function KrFlowExecutingCard({
+  subtitle,
+  elapsed,
+  turnNumber,
+}: {
+  readonly subtitle?: string
+  readonly elapsed: string
+  readonly turnNumber?: number
+}) {
+  const store = getKrChatStore()
+
+  return (
+    <div
+      className="kr-flow-executing-card"
+      onClick={() => {
+        if (turnNumber !== undefined) {
+          store.setSelectedTurn(turnNumber)
+          store.setPanelOpen(true)
+        }
+      }}
+      style={{ cursor: 'pointer' }}
+      title="点击在右侧大盘查看实时工具调用"
+    >
+      <div className="kr-flow-executing-card__spinner" />
+      <div className="kr-flow-executing-card__info">
+        <div className="kr-flow-executing-card__title">Agent 正在执行</div>
+        <div className="kr-flow-executing-card__subtitle">{subtitle || '正在推进各项任务步骤与工具调用…'}</div>
+      </div>
+      <div className="kr-flow-executing-card__time">{elapsed}</div>
+    </div>
+  )
 }
 
 /**
@@ -282,6 +367,12 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
   props: ChatNodeViewProps<'assistant-step'>,
 ) {
   const { node, useTurnData, useChat, openFile, renderMessageImages, fileMentions, t, turnProcess } = props
+  const krStore = getKrChatStore()
+  const krState = useSyncExternalStore(
+    (cb) => krStore.subscribe(cb),
+    () => krStore.snapshot,
+  )
+  const isKrMode = krState.activeTab === 'kr'
   const data = node.data
   const locationTurn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
@@ -300,6 +391,7 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
   // Aggregate reasoning across every assistant step of this turn.
   const turnNumber = locationTurn?.turn
   const steps = useChat(snapshot => {
+    setLatestChatSnapshot(snapshot)
     if (turnNumber === undefined) return EMPTY_STEPS
     return snapshot.locations.getTurn(turnNumber)
       .map(key => snapshot.nodes.get(key))
@@ -370,24 +462,18 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
   // turn-process 一致，推理折叠不单独占行），chip 不挂载也得登记，抽屉里
   // 才有思考分区。
   useEffect(() => {
-    if (isFirstStep && reasoningItems.length > 0 && turnNumber !== undefined) {
+    if (isKrMode && isFirstStep && reasoningItems.length > 0 && turnNumber !== undefined) {
       activityStore().setReasoning(turnNumber, reasoningItems)
     }
-  }, [isFirstStep, reasoningItems, turnNumber])
-  const folded = toolCount > 0
-  const turnClosedEarly = locationTurn?.status === 'closed'
-  const chip = isFirstStep && reasoningItems.length > 0 && !folded
-    ? <ReasoningChip
-        items={reasoningItems}
-        running={turnRunning}
-        turn={turnNumber as number}
-        thinkingStart={thinkingStart}
-        t={t}
-        turnProcess={turnProcess}
-        closed={turnClosedEarly === true}
-      />
-    : undefined
+  }, [isKrMode, isFirstStep, reasoningItems, turnNumber])
+  const now = useNow(turnRunning)
+  const turnElapsed = thinkingStart !== undefined ? Math.max(0, now - thinkingStart) : 1000
+  const turnElapsedText = formatDuration(turnElapsed)
+
   // 本轮 git 相关调用：扫工具节点参数里的 git <动词>（见 tool-stats.gitVerbOf）。
+  // ⚠ 必须在下面的 krExecutingCard 之前求值 —— 之前 gitDetail 声明在使用点之后，
+  // 触发 TDZ（Cannot access 'gitDetail' before initialization），
+  // 让整个 conversation.chat.node 槽位崩溃、退化成官方渲染（总结卡随之消失）。
   const gitVerbs = useMemo(() => {
     const verbs: string[] = []
     for (const node of toolNodes) {
@@ -397,6 +483,30 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     return verbs
   }, [toolNodes])
   const gitDetail = useMemo(() => [...new Set(gitVerbs)].join(' · '), [gitVerbs])
+
+  const krThoughtCard = isKrMode && isFirstStep && reasoningItems.length > 0
+    ? <KrFlowThoughtCard items={reasoningItems} turnNumber={turnNumber as number} />
+    : undefined
+
+  const krExecutingCard = isKrMode && isFirstStep && turnRunning
+    ? <KrFlowExecutingCard subtitle={gitDetail || undefined} elapsed={turnElapsedText} turnNumber={turnNumber as number} />
+    : undefined
+
+  const folded = toolCount > 0
+  const turnClosedEarly = locationTurn?.status === 'closed'
+  const chip = isKrMode
+    ? undefined
+    : (isFirstStep && reasoningItems.length > 0 && !folded
+        ? <ReasoningChip
+            items={reasoningItems}
+            running={turnRunning}
+            turn={turnNumber as number}
+            thinkingStart={thinkingStart}
+            t={t}
+            turnProcess={turnProcess}
+            closed={turnClosedEarly === true}
+          />
+        : undefined)
   const timing = useChat((snapshot) => {
     if (turnNumber === undefined) return undefined
     return snapshot.legacy.turnTimings.get(turnNumber)
@@ -417,6 +527,7 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     const start = timing?.startTime
     const end = timing?.endTime
     return {
+      turnNumber: turnNumber as number,
       durationMs: start !== undefined && end !== undefined ? Math.max(0, end - start) : undefined,
       steps: steps.length,
       tools: toolCount,
@@ -426,6 +537,11 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     }
   }, [showCard, reasoningItems.length, steps.length, timing, toolCount, gitVerbs, gitDetail])
   const labels = useMemo(() => markdownLabelsFrom(t), [t])
+
+  const OfficialComp = getOfficialAssistantNodeView()
+  if (!isKrMode && OfficialComp) {
+    return <OfficialComp {...props} />
+  }
 
   const { hasVisible, rendered } = AssistantBody({
     blocks: visibleBlocks,
@@ -442,6 +558,8 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     <div className="dtt__assistant" data-streaming={streaming || undefined}>
       <div className="dtt__assistant-body">
         {chip}
+        {krThoughtCard}
+        {krExecutingCard}
         {rendered.length > 0 && (variant !== undefined
           ? <FlowCard variant={variant} meta={cardMeta} interrupted={interrupted}>{rendered}{gallery}</FlowCard>
           : <>{rendered}{gallery}</>)}

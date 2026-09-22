@@ -66,6 +66,8 @@ export interface ActivityStore {
   setHandlers(handlers: ActivityHandlers): void
   subscribe(fn: () => void): () => void
   get(turn: number): ActivityTurnData | undefined
+  getLatestTurn(): number
+  clear(): void
   handlers(): ActivityHandlers
 }
 
@@ -137,6 +139,18 @@ export function activityStore(): ActivityStore {
       return () => { listeners.delete(fn) }
     },
     get: (turn) => data.get(turn),
+    getLatestTurn: () => {
+      const keys = [...data.keys()]
+      return keys.length > 0 ? Math.max(...keys) : 1
+    },
+    clear: () => {
+      data.clear()
+      openTurn = null
+      activeMode = null
+      previewAnchorEl = undefined
+      previewTurn = null
+      notify()
+    },
     handlers: () => handlers,
   }
   globalObj[STORE_KEY] = store
@@ -346,7 +360,11 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall, closing }: {
               </button>
             </span>
           )}
-          <button type="button" className="dts__modal-close" onClick={close} aria-label="关闭">✕</button>
+          <button type="button" className="dts__modal-close" onClick={close} aria-label="关闭">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" />
+            </svg>
+          </button>
         </header>
         <div className={`dts__modal-scroll ${modalStaggerClass}`} ref={scrollRef} onScroll={onScrollPin}>
           {tab === 'reasoning' && reasoning.length > 0 && (
@@ -561,7 +579,11 @@ function DrawerApp() {
           >
             <header className="dts__modal-head">
               <span className="dts__modal-title">第 {turn} 轮</span>
-              <button type="button" className="dts__modal-close" onClick={closeAll} aria-label="关闭">✕</button>
+              <button type="button" className="dts__modal-close" onClick={closeAll} aria-label="关闭">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" />
+                </svg>
+              </button>
             </header>
             <div className="dts__modal-scroll">
               <div className="dts__empty">弹窗渲染失败，详情见控制台（F12）。关闭后换一轮重开可重试。</div>

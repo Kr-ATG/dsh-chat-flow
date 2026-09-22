@@ -12,9 +12,12 @@
  * assistant step 与 tool-call 节点数），不新增任何轮询或订阅。
  */
 import type { ReactNode } from 'react'
+import { getKrChatStore } from './kr-chat/kr-chat-store.ts'
 
 /** 本轮统计（全部可缺省：拿不到就不显示对应 chip）。 */
 export interface ReplyCardMeta {
+  /** 对应轮次号。 */
+  readonly turnNumber?: number | undefined
   /** 本回合总耗时（ms）。 */
   readonly durationMs?: number | undefined
   /** 本回合 assistant 步数。 */
@@ -79,7 +82,18 @@ export function FlowCard({ variant, meta, interrupted, children }: {
       className="dtt__card dtt__card--reply"
       data-interrupted={interrupted === true ? '' : undefined}
     >
-      <div className="dtt__card-head">
+      <div
+        className="dtt__card-head"
+        onClick={() => {
+          if (meta?.turnNumber !== undefined && typeof document !== 'undefined' && document.body.hasAttribute('data-dsh-kr-chat')) {
+            const s = getKrChatStore()
+            s.setSelectedTurn(meta.turnNumber)
+            s.setPanelOpen(true)
+          }
+        }}
+        title={meta?.turnNumber !== undefined ? `点击在右侧大盘查看第 ${meta.turnNumber} 轮详细轨迹` : undefined}
+        style={{ cursor: meta?.turnNumber !== undefined ? 'pointer' : undefined }}
+      >
         <span className="dtt__card-badge" data-interrupted={interrupted === true ? '' : undefined}>
           <CheckIcon />
           {interrupted === true ? '已中断' : '本轮完成'}
