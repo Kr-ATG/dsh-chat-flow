@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
-import { IconApiOutline14, IconThinkOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconApiOutlineRegular, IconThinkOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-runtime/client'
 import { computeStats, formatDuration, isRunning, isUrlEntry, shortenEntry, type ToolStats } from './tool-stats.ts'
@@ -179,7 +179,7 @@ function DrawerToolSummary({ stats, cwd, openFile, kinds }: {
 }) {
   return (
     <div className="dts__summary">
-      <div className="dts__summary-title"><IconApiOutline14 size={13} aria-hidden /> 工具调用总结</div>
+      <div className="dts__summary-title"><IconApiOutlineRegular size={13} aria-hidden /> 工具调用总结</div>
       <div className="dts__summary-line">
         共 <b>{stats.total}</b> 次调用
         {stats.running > 0 && <> · <b>{stats.running}</b> 次进行中</>}
@@ -330,10 +330,10 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall, closing }: {
           <span className="dts__modal-title">
             第 {turn} 轮
             {!showTabs && tab === 'reasoning' && (
-              <> · <IconThinkOutline14 size={14} aria-hidden /> {reasoning.length}</>
+              <> · <IconThinkOutlineRegular size={14} aria-hidden /> {reasoning.length}</>
             )}
             {!showTabs && tab === 'tools' && (
-              <> · <IconApiOutline14 size={14} aria-hidden /> {toolNodes.length}</>
+              <> · <IconApiOutlineRegular size={14} aria-hidden /> {toolNodes.length}</>
             )}
           </span>
           {showTabs && (
@@ -346,7 +346,7 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall, closing }: {
                 data-active={tab === 'reasoning' || undefined}
                 onClick={() => { setTab('reasoning') }}
               >
-                <IconThinkOutline14 size={13} aria-hidden /> {reasoning.length} 次思考
+                <IconThinkOutlineRegular size={13} aria-hidden /> {reasoning.length} 次思考
               </button>
               <button
                 type="button"
@@ -356,7 +356,7 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall, closing }: {
                 data-active={tab === 'tools' || undefined}
                 onClick={() => { setTab('tools') }}
               >
-                <IconApiOutline14 size={13} aria-hidden /> 工具 {toolNodes.length}
+                <IconApiOutlineRegular size={13} aria-hidden /> 工具 {toolNodes.length}
               </button>
             </span>
           )}
@@ -370,7 +370,7 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall, closing }: {
           {tab === 'reasoning' && reasoning.length > 0 && (
             <div className="dts__modal-panel">
               <header className="dts__modal-panel-head">
-                <span className="dts__modal-panel-title"><IconThinkOutline14 size={14} aria-hidden /> 思考过程</span>
+                <span className="dts__modal-panel-title"><IconThinkOutlineRegular size={14} aria-hidden /> 思考过程</span>
                 {reasoningRunning && elapsed !== undefined && (
                   <span className="dts__modal-panel-live">思考中 · {formatDuration(elapsed)}</span>
                 )}
@@ -381,7 +381,7 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall, closing }: {
           {tab === 'tools' && toolNodes.length > 0 && (
             <div className="dts__modal-panel">
               <header className="dts__modal-panel-head">
-                <span className="dts__modal-panel-title"><IconApiOutline14 size={14} aria-hidden /> 工具调用</span>
+                <span className="dts__modal-panel-title"><IconApiOutlineRegular size={14} aria-hidden /> 工具调用</span>
                 {toolsRunning && toolsElapsed !== undefined && (
                   <span className="dts__modal-panel-live">进行中 · {formatDuration(toolsElapsed)}</span>
                 )}

@@ -455,7 +455,6 @@ export const KrAgentPanel = memo(function KrAgentPanel({
         {/* 工具调用卡片 */}
         <KrToolCallsCard
           tools={toolViews}
-          turn={displayTurn}
           onInspectCall={(callId) => {
             try {
               actStore.handlers().inspectCall(callId)

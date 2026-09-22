@@ -38,6 +38,7 @@ import { mountShellChrome } from './shell-chrome.ts'
 import { injectKrStyles } from './kr-chat/styles.ts'
 import { mountKrChatController } from './kr-chat/kr-chat-controller.tsx'
 import { KrTodoBridge } from './kr-chat/kr-todo-bridge.ts'
+import { KR_CHAT_ENABLED } from './kr-chat/enabled.ts'
 
 /** 顶层服务依赖（client boot graph 用）。 */
 export const inject = ['slots']
@@ -106,11 +107,14 @@ export function apply(ctx: ClientContext): void {
   // 思考与步骤呈现：在 KR 模式下呈现 KrFlowThoughtCard / KrFlowExecutingCard，
   // 在普通「对话」模式下委托回官方 AssistantNodeView 原生渲染。
   guarded(ctx, 'assistant-step seat', () => {
+    const entries = ctx.slots.entries('conversation.chat.node')
+    const assistantEntry = entries.find((e: any) => e.options?.key === 'assistant-step' && (e.options?.priority ?? 0) >= 0)
     ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
       name: 'conversation.chat.node',
       key: 'assistant-step',
       priority: -100,
       locale: 'chat',
+      ...(assistantEntry?.options?.inject ? { inject: assistantEntry.options.inject } : {}),
     }, ThinkingStepNodeView))
   })
   // download 原子卡片：接管内置 download 工具行（keyed tool.call.toolview，
@@ -124,11 +128,21 @@ export function apply(ctx: ClientContext): void {
     ))
   })
 
-  // KR 对话双栏布局与执行大盘（新增视图分类「KR对话」，进入会话默认激活）
-  guarded(ctx, 'kr-chat styles', injectKrStyles)
-  guarded(ctx, 'kr-chat controller', mountKrChatController)
+  // KR 对话双栏布局与执行大盘（视图分类「KR对话」+ 右侧 Agent 轨迹大盘）。
+  //
+  // 已被 KR_CHAT_ENABLED 关闭 —— 只隐藏、不删除：控制器、样式、面板组件全部
+  // 原样留在 kr-chat/ 下，把 enabled.ts 里的开关改回 true 即完整恢复。
+  if (KR_CHAT_ENABLED) {
+    guarded(ctx, 'kr-chat styles', injectKrStyles)
+    guarded(ctx, 'kr-chat controller', mountKrChatController)
+  }
 
-  // 桥接官方 todos 投影，供右侧大盘实时展示真实任务
+  // 桥接官方 todos 投影，供右侧大盘实时展示真实任务。
+  //
+  // 大盘已隐藏，但这个座位同时是「会话身份登记点」：它在 session 作用域、
+  // 空白 Hero 态照常渲染，会话 id 一变即清空活动抽屉 / live todos / 已选轮次，
+  // 免得切会话后抽屉里还留着上一会话的思考与工具树。与 KR 的可见 UI 无关，
+  // 因此不随开关关闭。
   guarded(ctx, 'kr-todo bridge', () => {
     ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
       { name: 'conversation.input.dock', id: 'kr-todo-bridge', order: 999 },

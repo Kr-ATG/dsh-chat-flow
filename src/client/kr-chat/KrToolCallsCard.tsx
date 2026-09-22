@@ -5,7 +5,6 @@
  * 卡片内的按钮无法真正重放工具调用）。
  */
 import { memo, useState, useCallback } from 'react'
-import { activityStore } from '../tool-summary/activity-drawer.tsx'
 
 export interface ToolCallItemView {
   readonly id: string
@@ -25,13 +24,11 @@ export interface ToolCallItemView {
 
 export interface ToolCallsCardProps {
   readonly tools: readonly ToolCallItemView[]
-  readonly turn?: number
   readonly onInspectCall?: (callId: string) => void
 }
 
 export const KrToolCallsCard = memo(function KrToolCallsCard({
   tools,
-  turn,
   onInspectCall,
 }: ToolCallsCardProps) {
   const [collapsed, setCollapsed] = useState(false)
@@ -62,13 +59,6 @@ export const KrToolCallsCard = memo(function KrToolCallsCard({
       setTimeout(() => setCopiedKey(null), 1800)
     } catch {
       // fallback
-    }
-  }
-
-  const openDrawer = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (typeof turn === 'number' && turn > 0) {
-      activityStore().open(turn, 'tools')
     }
   }
 
@@ -122,19 +112,6 @@ export const KrToolCallsCard = memo(function KrToolCallsCard({
           </svg>
         </span>
         <span className="kr-card__title">工具调用 ({tools.length})</span>
-        {typeof turn === 'number' && turn > 0 && (
-          <button
-            type="button"
-            className="kr-card__open-drawer-btn"
-            title="在居中弹窗中查看完整台账"
-            onClick={openDrawer}
-          >
-            <span>台账</span>
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M3.5 2.5h6v6M9.5 2.5l-6 6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        )}
         <span className="kr-card__chevron" data-collapsed={collapsed ? 'true' : 'false'}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6">
             <path d="M2.5 4.5 6 8 9.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -485,23 +462,6 @@ export const KrToolCallsCard = memo(function KrToolCallsCard({
                         </button>
                       )}
 
-                      {typeof turn === 'number' && turn > 0 && (
-                        <button
-                          type="button"
-                          className="kr-tool-footer-btn kr-tool-footer-btn--link"
-                          onClick={openDrawer}
-                          title="在居中弹窗中查看本轮全部调用详情"
-                        >
-                          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="1.5" y="2" width="9" height="8" rx="1.2" />
-                            <path d="M1.5 4.5h9" />
-                          </svg>
-                          <span>弹窗完整台账</span>
-                          <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3.5 2.5h6v6M9.5 2.5l-6 6" />
-                          </svg>
-                        </button>
-                      )}
                     </div>
                   </div>
                 )}

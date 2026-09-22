@@ -17,7 +17,7 @@
  */
 import { memo, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
-import { IconChevronDownOutline14, JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular, JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   AssistantChatData, ChatNode, ChatNodeViewProps, ChatViewSlotProps, TurnTailOwnerProps,
@@ -41,6 +41,7 @@ import { gitVerbOf } from '../tool-summary/tool-stats.ts'
 import { GeneratedImageStrip } from '../generated-images/GeneratedImageStrip.tsx'
 import { useGeneratedImages } from '../generated-images/use-generated-images.ts'
 import { getKrChatStore } from '../kr-chat/kr-chat-store.ts'
+import { KR_CHAT_ENABLED } from '../kr-chat/enabled.ts'
 import { getOfficialAssistantNodeView } from '../index.ts'
 import { latestChatSnapshot, setLatestChatSnapshot } from '../tool-summary/TurnProcessShadowView.tsx'
 
@@ -227,7 +228,7 @@ function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess, cl
         onClick={() => { store.open(turn, 'reasoning') }}
       >
         <span className="dtt__process-label">{label}</span>
-        <IconChevronDownOutline14 className="dtt__process-chevron" />
+        <IconChevronDownOutlineRegular className="dtt__process-chevron" />
       </button>
       <LiveThinkingStack items={stackItems} closing={closed} />
     </div>
@@ -373,6 +374,15 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     () => krStore.snapshot,
   )
   const isKrMode = krState.activeTab === 'kr'
+  /**
+   * 本视图是否由插件自己渲染。
+   *
+   * KR 开启时（历史设计）：只有 KR 视图走插件渲染，「对话」委托回官方
+   * AssistantNodeView 原生渲染 —— 增强呈现只属于 KR 那一栏。
+   * KR 关闭后（KR_CHAT_ENABLED = false）：没有 KR 视图可去，「对话」本身就是
+   * 插件渲染，回到 KR 之前的形态（思考 chip / 步骤卡 / proto-tabs / diagram）。
+   */
+  const pluginRenders = !KR_CHAT_ENABLED || isKrMode
   const data = node.data
   const locationTurn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
@@ -462,10 +472,10 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
   // turn-process 一致，推理折叠不单独占行），chip 不挂载也得登记，抽屉里
   // 才有思考分区。
   useEffect(() => {
-    if (isKrMode && isFirstStep && reasoningItems.length > 0 && turnNumber !== undefined) {
+    if (pluginRenders && isFirstStep && reasoningItems.length > 0 && turnNumber !== undefined) {
       activityStore().setReasoning(turnNumber, reasoningItems)
     }
-  }, [isKrMode, isFirstStep, reasoningItems, turnNumber])
+  }, [pluginRenders, isFirstStep, reasoningItems, turnNumber])
   const now = useNow(turnRunning)
   const turnElapsed = thinkingStart !== undefined ? Math.max(0, now - thinkingStart) : 1000
   const turnElapsedText = formatDuration(turnElapsed)
@@ -494,6 +504,8 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
 
   const folded = toolCount > 0
   const turnClosedEarly = locationTurn?.status === 'closed'
+  // KR 视图里思考由 KrFlowThoughtCard 承接，chip 让位；KR 关闭后「对话」就是
+  // 插件渲染，chip 照常出现（= KR 之前的形态）。
   const chip = isKrMode
     ? undefined
     : (isFirstStep && reasoningItems.length > 0 && !folded
@@ -539,8 +551,18 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
   const labels = useMemo(() => markdownLabelsFrom(t), [t])
 
   const OfficialComp = getOfficialAssistantNodeView()
-  if (!isKrMode && OfficialComp) {
-    return <OfficialComp {...props} />
+  if (!pluginRenders && OfficialComp) {
+    const defaultUsePresentation = (selector: (policy: any) => any) => selector({
+      mode: 'detailed',
+      foldCompletedTurns: true,
+      stepGrouping: 'collapsed',
+      liveProcessDetail: true,
+      settledReasoningPreview: true,
+    })
+    const usePresentation = typeof (props as any).usePresentation === 'function'
+      ? (props as any).usePresentation
+      : defaultUsePresentation
+    return <OfficialComp {...props} usePresentation={usePresentation} />
   }
 
   const { hasVisible, rendered } = AssistantBody({

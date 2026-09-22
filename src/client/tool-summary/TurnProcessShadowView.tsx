@@ -21,7 +21,7 @@ import type { ChatNode, ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-cha
 // ChatNodeViewProps resolves its owner/keyed share.
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
-import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { activityStore, type ActivityReasoningItem, type ViewMode } from './activity-drawer.tsx'
 import { isRunning } from './tool-stats.ts'
 import { getKrChatStore } from '../kr-chat/kr-chat-store.ts'
@@ -489,7 +489,7 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
           }
         }}
       >
-        <IconChevronDownOutline14 className={`${NS}__process-chevron`} />
+        <IconChevronDownOutlineRegular size={14} className={`${NS}__process-chevron`} />
       </span>
     </button>
   )

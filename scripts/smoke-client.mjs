@@ -293,18 +293,30 @@ const drawerHost = bodyItems.find((item) => item?.id === 'dsh-activity-drawer-ro
 if (drawerHost === undefined) fail('activity drawer host was not appended to document.body')
 else pass('activity drawer host mounted on document.body')
 
-// 八枚 <style> 注入 head。
+// 八枚 <style> 注入 head。KR 对话总开关关闭时少注入一枚 dsh-kr-chat-styles
+// （只隐藏不删除，见 src/client/kr-chat/enabled.ts），因此这里与开关同源断言。
+const krEnabled = /export const KR_CHAT_ENABLED = (true|false)/.exec(
+  readFileSync(resolve(ROOT, 'src/client/kr-chat/enabled.ts'), 'utf8'),
+)?.[1] === 'true'
 const styleIds = headItems.filter((item) => item?.tagName === 'STYLE').map((item) => item?.id ?? '')
-for (const expected of [
+const expectedStyles = [
   'dsh-chat-flow-styles', 'dsh-tool-summary-styles',
   'dsh-chat-flow-shot-styles', 'dsh-modal-animation-styles',
   'dsh-chat-flow-proto-styles', 'dsh-chat-flow-diagram-styles',
-  'dsh-chat-flow-download-styles', 'dsh-kr-chat-styles',
-]) {
+  'dsh-chat-flow-download-styles',
+  ...(krEnabled ? ['dsh-kr-chat-styles'] : []),
+]
+for (const expected of expectedStyles) {
   if (!styleIds.includes(expected)) fail(`missing injected <style id=${expected}>`)
 }
-if (styleIds.length === 8) pass('injected eight <style> sheets (dtt__ + dts__ + tsh__ + modal + proto + diagram + download + kr)')
-else if (styleIds.length > 8) fail(`unexpected extra styles: ${styleIds.join(', ')}`)
+if (!krEnabled && styleIds.includes('dsh-kr-chat-styles')) {
+  fail('KR_CHAT_ENABLED=false 时不应注入 dsh-kr-chat-styles（KR 只隐藏不删除）')
+}
+if (styleIds.length === expectedStyles.length) {
+  pass(`injected ${styleIds.length} <style> sheets (dtt__ + dts__ + tsh__ + modal + proto + diagram + download${krEnabled ? ' + kr' : ''})`)
+} else if (styleIds.length > expectedStyles.length) {
+  fail(`unexpected extra styles: ${styleIds.join(', ')}`)
+}
 
 // 1 个 keyed 槽位 assistant-step 注册 + 截图按钮注册 + download toolview + kr-todo-bridge。
 const cell = (key) => registeredSlots.find((s) => s?.slot === 'conversation.chat.node' && s?.key === key)

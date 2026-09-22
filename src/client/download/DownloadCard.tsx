@@ -13,7 +13,7 @@
  */
 
 import { memo, useEffect, useRef, useState } from 'react'
-import { IconDownloadOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconDownloadOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { formatDuration } from '../tool-summary/tool-stats.ts'
 
@@ -152,7 +152,7 @@ export const LiveDownloadCard = memo(function LiveDownloadCard({
   return (
     <div className={`${NS}__card`} data-state={status} data-determinate={ratio !== null || undefined}>
       <div className={`${NS}__head`}>
-        <IconDownloadOutline16 size={14} aria-hidden />
+        <IconDownloadOutlineRegular size={14} aria-hidden />
         <span className={`${NS}__title`}>
           {status === 'running' ? '下载中' : status === 'completed' ? '下载完成' : status === 'cancelled' ? '已取消' : '下载失败'}
           {status === 'running' && <span className={`${NS}__elapsed`}> · {formatDuration(elapsed)}</span>}
@@ -230,7 +230,7 @@ export const DownloadCard = memo(function DownloadCard(props: ToolCallViewProps)
   return (
     <div className={`${NS}__card`} data-state={isError ? 'failed' : 'completed'} data-determinate={ratio !== null || undefined}>
       <div className={`${NS}__head`}>
-        <IconDownloadOutline16 size={14} aria-hidden />
+        <IconDownloadOutlineRegular size={14} aria-hidden />
         <span className={`${NS}__title`}>{isError ? '下载失败' : '下载完成'}</span>
         <span className={`${NS}__stats`}>
           {bytes !== null && <span className={`${NS}__bytes`}>{formatBytes(bytes)}</span>}

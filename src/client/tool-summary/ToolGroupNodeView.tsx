@@ -16,9 +16,9 @@ import type { ChatNode, ChatNodeViewProps, ChatViewSlotProps } from '@deepseek-a
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import {
-  DiffBlock, IconApiOutline14, IconBrowseOutline16, IconChevronDownOutline14,
-  IconChevronRightOutline14, IconDownloadOutline16, IconEditOutline16, IconSearchOutline16,
-  IconSkillOutline16, IconSparkle16, JsonTree, MarkdownText, ReadBlock, SearchBlock,
+  DiffBlock, IconApiOutlineRegular, IconBrowseOutlineRegular, IconChevronDownOutlineRegular,
+  IconChevronRightOutlineRegular, IconDownloadOutlineRegular, IconEditOutlineRegular, IconSearchOutlineRegular,
+  IconSkillOutlineRegular, IconSparkleRegular, JsonTree, MarkdownText, ReadBlock, SearchBlock,
   TerminalBlock, WebBlock,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -83,8 +83,8 @@ const JSON_LABELS = {
 }
 
 const CATEGORY_ICONS = {
-  write: IconEditOutline16, read: IconBrowseOutline16, terminal: IconApiOutline14,
-  search: IconSearchOutline16, web: IconSearchOutline16, other: IconSparkle16,
+  write: IconEditOutlineRegular, read: IconBrowseOutlineRegular, terminal: IconApiOutlineRegular,
+  search: IconSearchOutlineRegular, web: IconSearchOutlineRegular, other: IconSparkleRegular,
 } satisfies Record<ViewCategory, unknown>
 
 const languageOf = (path: string | undefined): string | undefined => path?.split('.').at(-1)
@@ -257,7 +257,7 @@ export const SimpleToolRow = memo(function SimpleToolRow({
   const phase: ViewPhase = viewPhase(block)
   const facts = executionFacts(block)
   const text = resultParagraphs(block)
-  const Icon = name === 'skill' ? IconSkillOutline16 : CATEGORY_ICONS[category]
+  const Icon = name === 'skill' ? IconSkillOutlineRegular : CATEGORY_ICONS[category]
   const showBadge = phase === 'running' || phase === 'failed' || phase === 'interrupted'
   const now = useNow(running)
   const duration = callDurationMs(block, now)
@@ -317,9 +317,9 @@ export const SimpleToolRow = memo(function SimpleToolRow({
             inspectCall(block.callId)
           }}
         >
-          <IconChevronRightOutline14 size={13} aria-hidden />
+          <IconChevronRightOutlineRegular size={13} aria-hidden />
         </button>
-        <IconChevronDownOutline14 size={14} aria-hidden className={`${NS}__trow-chevron`} data-open={open || undefined} />
+        <IconChevronDownOutlineRegular size={14} aria-hidden className={`${NS}__trow-chevron`} data-open={open || undefined} />
       </div>
       {rowBodyPresent && (
         <div
@@ -575,7 +575,7 @@ const ToolEntry = memo(function ToolEntry({
         onClick={() => { store.open(turn, 'tools') }}
       >
         <span className={`${NS}__process-label`}>{label}</span>
-        <IconChevronDownOutline14 className={`${NS}__process-chevron`} />
+        <IconChevronDownOutlineRegular size={14} className={`${NS}__process-chevron`} />
       </button>
       <LiveThinkingStack items={liveStackItems} closing={closed} />
       {liveDownloadCalls.map(({ block, url, outputPath }) => (
@@ -584,7 +584,7 @@ const ToolEntry = memo(function ToolEntry({
       {showDownload && (
         <div className={`${NS}__download-card`}>
           <div className={`${NS}__download-head`}>
-            <IconDownloadOutline16 size={14} aria-hidden />
+            <IconDownloadOutlineRegular size={14} aria-hidden />
             <span className={`${NS}__download-title`}>下载中 · {formatDuration(elapsed ?? 0)}</span>
           </div>
           {liveActivity.downloadInfo?.url !== undefined && liveActivity.downloadInfo.url !== '' && (

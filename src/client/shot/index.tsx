@@ -22,6 +22,7 @@ import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
 import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { getKrChatStore } from '../kr-chat/kr-chat-store.ts'
+import { KR_CHAT_ENABLED } from '../kr-chat/enabled.ts'
 // Type-only: 激活 ui-chat 的 SlotMap 合并（assistant-actions 槽位 props 契约）
 // + ui-session 的会话标准 props 合并（useChat 之外还有 sessionId / useSessions）。
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -89,9 +90,11 @@ export function AssistantScreenshotAction(
   const dialogueTitle = snapRef.current ? deriveCurrentDialogueTitle(snapRef.current, messageId) : ''
   const defaultTitle = dialogueTitle || sessionTitle
 
+  // KR 开启时截图按钮只属于「KR对话」视图（KR 期间的既有设计）；
+  // KR 关闭后回到「对话」里常驻 —— 这是用户明确要的：截图在普通对话里也要有。
   const krStore = getKrChatStore()
   const krState = useSyncExternalStore(cb => krStore.subscribe(cb), () => krStore.snapshot)
-  if (krState.activeTab !== 'kr') {
+  if (KR_CHAT_ENABLED && krState.activeTab !== 'kr') {
     return null
   }
 

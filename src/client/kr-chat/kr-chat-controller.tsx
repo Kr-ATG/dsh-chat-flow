@@ -5,8 +5,13 @@
  * 1. 顶栏三标签：在 header [role="tablist"] 注入 [ KR对话 ]，与官方 [ 对话 ] [ 轨迹 ] 齐平；
  * 2. 默认进入 KR 分类：开箱即为 KR 对话，保持官方底层 chat 视图，确保多轮历史与输入框完整；
  * 3. 双栏大盘：在 [data-conversation-content] 渲染右侧可收起的大盘 KrAgentPanel；
- * 4. 右侧收起/展开：收起后左侧填满，并浮现微型胶囊方便随时展开；
+ * 4. 右侧收起/展开：标签行最右侧常驻「Agent 轨迹大盘」开关（与 KR对话/对话/轨迹
+ *    同一行、同一基线，margin-left:auto 顶到该行最右端），点一下收起、再点展开。
+ *    旧版是一枚 absolute + 阴影 + 毛玻璃的浮动胶囊，压在正文右上角；现已改为
+ *    行内座位，不再悬浮。
  * 5. 视图联动：点击 [ 对话 ] 切回标准单栏；点击 [ 轨迹 ] 切到原生轨迹；点击 [ KR对话 ] 恢复双栏大盘。
+ * 6. 空白新会话不占位：新对话刚打开、首条消息还没发出去时右栏整体不渲染
+ *    （判据 hasConversationContent()，不看会话 id —— 空白 Hero 态也会登记 id）。
  */
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
@@ -34,6 +39,25 @@ function resolveLatestTurn(): number {
       .filter(n => Number.isFinite(n) && n > 0)
     : []
   return domTurns.length > 0 ? Math.max(...domTurns) : 1
+}
+
+/**
+ * 会话是否已经「有内容」——即不是刚点开、首条消息还没发出去的空白新会话。
+ *
+ * 只认官方稳定钩子，不看会话 id：
+ *  1. [data-conversation-tabs]：官方 header 在 blank 态 hideChrome=true，
+ *     tablist 整块不渲染（session.blank && conversationPhase === 'blank'），
+ *     因此它存在 ⟺ 会话已经开张；
+ *  2. [data-conversation-scroll] [data-chat-turn]：对话流里已有轮次（切回历史会话）。
+ *
+ * 不能拿「会话 id 已登记」当判据：input.dock 座位（KrTodoBridge）在新建会话的
+ * 空白 Hero 态照常渲染，id 会立刻登记上来，于是「新对话刚打开、一个字都还没发」
+ * 也会长出右侧大盘 —— 这正是本次要修掉的误显示。
+ */
+function hasConversationContent(): boolean {
+  if (typeof document === 'undefined') return false
+  if (document.querySelector('[data-conversation-tabs]')) return true
+  return document.querySelectorAll('[data-conversation-scroll] [data-chat-turn]').length > 0
 }
 
 /** 同步顶部 Tab 按钮（纯 DOM 级稳定注入，与官方原生按钮像素级对齐） */
@@ -93,6 +117,59 @@ function syncKrTab(tablist: HTMLElement): void {
       chatBtn.setAttribute('aria-selected', 'true')
     }
   }
+
+  // 标签行最右侧的「Agent 轨迹大盘」开关（与官方 tab 同排，随 KR 模式出现/消失）
+  syncKrPanelToggle(tablist, isKr)
+}
+
+/** 大盘开关的图标（机器人/仪表盘），与旧版浮动胶囊保持同一枚图形。 */
+const KR_PANEL_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
+  + '<path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.38-1 1.72V7h4a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h4V5.72A2 2 0 0 1 10 4a2 2 0 0 1 2-2zm-5 7a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H7zm2 3a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm6 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/>'
+  + '</svg>'
+
+/**
+ * 同步标签行最右侧的「Agent 轨迹大盘」开合开关（纯 DOM 级稳定注入）。
+ *
+ * 座位：header [role="tablist"] 的最后一个子节点，靠 CSS 的 margin-left:auto
+ * 顶到该行最右端 —— 与 KR对话/对话/轨迹 同一行、同一基线，彻底取代旧版浮在
+ * 正文右上角的 absolute 胶囊（会压住对话内容，且脱离信息层级）。
+ *
+ * 只在 KR 模式下出现：切到「对话 / 轨迹」时整枚按钮移除，不留空位。
+ */
+function syncKrPanelToggle(tablist: HTMLElement, isKr: boolean): void {
+  const store = getKrChatStore()
+  let btn = document.getElementById('kr-panel-toggle-btn') as HTMLButtonElement | null
+
+  if (!isKr) {
+    if (btn) {
+      try { btn.remove() } catch {}
+    }
+    return
+  }
+
+  if (!btn || !btn.isConnected || btn.parentElement !== tablist) {
+    if (btn) {
+      try { btn.remove() } catch {}
+    }
+    btn = document.createElement('button')
+    btn.type = 'button'
+    btn.id = 'kr-panel-toggle-btn'
+    btn.className = 'kr-panel-toggle'
+    btn.innerHTML = `${KR_PANEL_ICON}<span>Agent 轨迹大盘</span>`
+    btn.onclick = (e) => {
+      e.stopPropagation()
+      store.togglePanel()
+      syncKrPanelToggle(tablist, true)
+    }
+    tablist.appendChild(btn)
+  }
+
+  const open = store.snapshot.panelOpen
+  // 开/关不做任何视觉区分（用户要求这里不出现颜色）：按钮常态一律中性灰。
+  // 状态只走无障碍与 tooltip 文案。
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false')
+  btn.setAttribute('aria-label', open ? '收起 Agent 实时轨迹大盘' : '展开 Agent 实时轨迹大盘')
+  btn.title = open ? '收起 Agent 实时轨迹大盘' : '展开 Agent 实时轨迹大盘'
 }
 
 /** KR 对话右侧大盘与展开胶囊 React 根组件 */
@@ -113,20 +190,20 @@ export function KrPanelSystem() {
     return subscribeLatestChatSnapshot(() => setSnapTick((t) => t + 1))
   }, [])
 
-  // 是否已绑定到真实会话。
+  // 是否已绑定到真实会话（input.dock 座位在会话内才渲染，会话 id 由它登记）。
   //
-  // 「新建会话首页」（尚未创建会话）时 input.dock 座位不渲染，会话 id 为 null，
-  // 大盘整体不出现；一旦进入某个会话（哪怕是还没发消息的空白新会话），
-  // 会话 id 就会登记上来，此时渲染大盘并显示干净空态 —— 因此判据不能再用
-  // 「有没有 tablist / 有没有对话轮次」：空白新会话里 tablist 与轮次都不存在，
-  // 那正是本次要修的场景。
+  // 注意：id 已登记 ≠ 会话有内容 —— 新建会话的空白 Hero 态同样会登记 id。
+  // 「刚点开新对话、首条还没发出去」是否该显示右栏，由下面的
+  // hasConversationContent() 单独把关。
   const hasBoundSession = latestChatSessionId !== null
     || (typeof document !== 'undefined' && Boolean(
       document.querySelector('header [role="tablist"]') ||
       document.querySelectorAll('[data-chat-turn]').length > 0
     ))
 
-  if (krState.activeTab !== 'kr' || !hasBoundSession) {
+  // 空白新会话（新对话刚开始、还没发送出去）不显示右侧大盘：
+  // 没有内容可看，右栏只会是一块空壳，白占半屏宽。
+  if (krState.activeTab !== 'kr' || !hasBoundSession || !hasConversationContent()) {
     return null
   }
 
@@ -149,19 +226,9 @@ export function KrPanelSystem() {
     )
   }
 
-  return (
-    <button
-      type="button"
-      className="kr-expand-capsule"
-      onClick={() => store.setPanelOpen(true)}
-      title="展开 Agent 实时轨迹大盘"
-    >
-      <svg viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.38-1 1.72V7h4a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h4V5.72A2 2 0 0 1 10 4a2 2 0 0 1 2-2zm-5 7a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H7zm2 3a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm6 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/>
-      </svg>
-      <span>Agent 轨迹大盘</span>
-    </button>
-  )
+  // 收起态不再渲染浮动胶囊：重新展开的入口已固定在标签行最右侧
+  // （#kr-panel-toggle-btn，由 syncKrPanelToggle 注入）。
+  return null
 }
 
 let mounted = false
@@ -169,6 +236,8 @@ let panelRoot: Root | null = null
 let currentContainer: HTMLElement | null = null
 /** 上次已交给 React 根渲染的会话 id，用于会话切换时强制整树刷新。 */
 let lastRenderedSessionId: string | null | undefined = undefined
+/** 上次的「会话是否有内容」闸门值，翻转时强制重渲染（见 syncDom）。 */
+let lastContentGate: boolean | undefined = undefined
 
 export function mountKrChatController(): void {
   if (mounted || typeof document === 'undefined') return
@@ -303,6 +372,16 @@ export function mountKrChatController(): void {
     // 否则空白新会话期间大盘由上一会话的渲染结果继续挂在屏幕上。
     if (lastRenderedSessionId !== latestChatSessionId) {
       lastRenderedSessionId = latestChatSessionId
+      if (panelRoot) {
+        panelRoot.render(<KrPanelSystem />)
+      }
+    }
+
+    // 「空白新会话」闸门翻转（点开新对话 ↔ 发出首条 / 切回有历史的会话）时同样
+    // 强制重渲染：状态广播不一定恰好在翻转那一刻到达，这里兜住 250ms 的确定性。
+    const contentGate = hasConversationContent()
+    if (contentGate !== lastContentGate) {
+      lastContentGate = contentGate
       if (panelRoot) {
         panelRoot.render(<KrPanelSystem />)
       }

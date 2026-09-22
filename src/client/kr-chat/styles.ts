@@ -122,28 +122,36 @@ body[data-dsh-kr-chat="true"],
   --kr-warning: #f59e0b;
   --kr-error: #ef4444;
   /*
-   * 三层表面刻意拉开：底板微沉、卡片浮起、描边可辨。
+   * 表面策略：底板就是应用本色（不额外染色），卡片靠「阴影」浮起来。
    *
-   * 早前 canvas / surface / card 三者都取 --dsw-alias-bg-layer-*，而浅色主题下
-   * layer-1/2/3 全部是 #fff —— 面板、滚动区、卡片糊成一整片纯白，只靠 4% 黑的
-   * 描边区分，观感就是「平、脏、没层次」。
-   *
-   * 这里不再借用 --dsw-specific-tip：浅色下它是 #f5f6f7（比卡片暗，正确），
-   * 但深色下是 #353638（比卡片 #232324 还亮），会让卡片在深色主题里「陷下去」。
-   * 也不混 --dsw-alias-label-primary —— 它浅色是近黑、深色是近白，方向会反过来。
-   * 固定朝纯黑混 6%：两种主题下底板都恰好比卡片沉一档，卡片始终是浮起的那层。
+   * 曾试过把底板朝黑混 6% 造出「灰底 + 白卡」的层次，但浅色主题下那块
+   * 浅灰面板观感很脏，而且与官方对话区（纯白）割裂。现在底板直接取
+   * --dsw-alias-bg-base：浅色=纯白、深色=#151517，卡片仍取 layer-1
+   * （浅色=白、深色=#232324），层次完全交给阴影 + 发丝描边。
+   * 深色下卡片本就比底板亮，阴影只做加强，不承担主要区分。
    */
   --kr-card-bg: var(--dsw-alias-bg-layer-1, #ffffff);
   --kr-surface-bg: var(--dsw-alias-bg-layer-1, #ffffff);
-  --kr-canvas-bg: color-mix(in srgb, var(--kr-card-bg) 94%, #000000);
-  /* 描边从 border-l1（4% 黑，几乎看不见）提到 l2（10%），卡片边界才成立 */
-  --kr-card-border: var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
-  --kr-card-hover: var(--dsw-alias-border-l3, rgba(0, 0, 0, 0.16));
+  --kr-canvas-bg: var(--dsw-alias-bg-base, #ffffff);
+  /* 描边退到发丝级：浅色 4% 黑 / 深色 6% 白（l1 自带主题感知），
+     卡片的边界感主要来自阴影，不再用重描边「画框」。 */
+  --kr-card-border: var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
+  --kr-card-hover: var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.16));
   --kr-hairline: var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
   --kr-hover-bg: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
   --kr-fill-bg: var(--dsw-alias-interactive-bg-active, rgba(38, 49, 72, 0.1));
-  --kr-card-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-  --kr-card-shadow-hover: 0 2px 8px rgba(16, 24, 40, 0.07);
+  /* 两层柔和投影：近处一层压实边缘，远处一层铺开浮起感。
+     阴影现在独自承担「卡片浮起」的表达（底板已不再染色），所以比纯装饰时更实一档。 */
+  --kr-card-shadow: 0 1px 3px rgba(16, 24, 40, 0.1), 0 4px 12px rgba(16, 24, 40, 0.08);
+  --kr-card-shadow-hover: 0 2px 5px rgba(16, 24, 40, 0.12), 0 8px 20px rgba(16, 24, 40, 0.12);
+}
+
+/* 深色主题：底色本身已分层，阴影改为加强纵深（纯黑在深底上才可见）。 */
+body[data-ds-dark-theme],
+body[data-ds-dark-theme] .kr-split__side {
+  --kr-card-border: rgba(255, 255, 255, 0.07);
+  --kr-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.36), 0 3px 10px rgba(0, 0, 0, 0.24);
+  --kr-card-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.44), 0 8px 20px rgba(0, 0, 0, 0.32);
 }
 
 .kr-split {
@@ -557,29 +565,6 @@ body[data-dsh-kr-chat="true"],
 .kr-card__badge--done {
   background: var(--kr-hover-bg);
   color: var(--dsw-alias-label-tertiary);
-}
-
-.kr-card__open-drawer-btn {
-  background: var(--kr-hover-bg);
-  border: 1px solid var(--kr-card-border);
-  color: var(--dsw-alias-label-secondary);
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 11px;
-  cursor: pointer;
-  margin-left: auto;
-  margin-right: 4px;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  transition: all 0.15s ease;
-}
-
-.kr-card__open-drawer-btn:hover {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.18));
-  color: var(--dsw-alias-label-primary);
-  border-color: var(--kr-card-hover);
 }
 
 .kr-card__chevron {
@@ -1066,41 +1051,56 @@ body[data-dsh-kr-chat="true"],
   flex: none;
 }
 
-/* ══ 收起后浮动展开胶囊 ════════════════════════════════════════════════════ */
-.kr-expand-capsule {
-  position: absolute;
-  top: 14px;
-  right: 18px;
-  z-index: 25;
+/* ══ 标签行最右侧的「Agent 轨迹大盘」开关 ══════════════════════════════════
+   座位是 header [role="tablist"] 的最后一个子节点：margin-left:auto 把它顶到
+   KR对话 / 对话 / 轨迹 这一行的最右端，与三个 tab 同行、同基线。
+   （旧版 .kr-expand-capsule 是 position:absolute + 阴影 + backdrop-filter 的
+   浮动胶囊，浮在正文右上角压内容；这里改为行内座位，不再悬浮。）
+
+   常态一律中性灰、无底色：开/关不靠颜色区分（用户明确不要这里出现颜色），
+   大盘在不在屏幕上本身就是状态指示，开关只提供 hover 反馈与 tooltip 文案。 */
+.kr-panel-toggle {
+  margin-left: auto;
+  align-self: center;
+  flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  border-radius: 20px;
-  background: var(--dsw-alias-bg-module-platform, rgba(30, 34, 42, 0.85));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--kr-card-border);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
-  color: var(--dsw-alias-label-primary);
-  font-size: 12px;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: inherit;
+  font-size: 13px;
   font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  animation: kr-fade-in 0.24s ease-out;
+  outline: none;
+  user-select: none;
+  transition: color .18s ease, background-color .18s ease, border-color .18s ease;
 }
 
-.kr-expand-capsule:hover {
-  border-color: var(--kr-accent);
-  color: var(--kr-accent);
-  transform: translateY(-1px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-}
-
-.kr-expand-capsule svg {
+.kr-panel-toggle svg {
   width: 15px;
   height: 15px;
-  color: var(--kr-accent);
+  flex: none;
+  color: currentColor;
+}
+
+.kr-panel-toggle:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, .12));
+}
+
+.kr-panel-toggle:focus-visible {
+  border-color: var(--kr-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kr-panel-toggle { transition: none; }
 }
 
 @keyframes kr-fade-in {
@@ -1200,11 +1200,22 @@ body[data-dsh-kr-chat="true"] [data-chat-flow-kind="plan"] {
 }
 `
 
-/** 注入 KR 对话样式表 */
+/**
+ * 注入 KR 对话样式表。
+ *
+ * 幂等但「可刷新」：DSH 的 client HMR（patchReload: live）会重新执行 apply()，
+ * 此时 KR_STYLES 常量可能已经变了；旧实现只认「标签已存在就返回」，新规则永远
+ * 进不来，页面上会一直挂着上一版 CSS（表现为新座位完全没有样式）。因此这里
+ * 在内容不一致时原地刷新 textContent。
+ */
 export function injectKrStyles(): void {
   const STYLE_ID = 'dsh-kr-chat-styles'
   if (typeof document === 'undefined') return
-  if (document.getElementById(STYLE_ID)) return
+  const existing = document.getElementById(STYLE_ID)
+  if (existing) {
+    if (existing.textContent !== KR_STYLES) existing.textContent = KR_STYLES
+    return
+  }
   const tag = document.createElement('style')
   tag.id = STYLE_ID
   tag.textContent = KR_STYLES

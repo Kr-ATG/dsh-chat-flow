@@ -13,6 +13,7 @@
  */
 import type { ReactNode } from 'react'
 import { getKrChatStore } from './kr-chat/kr-chat-store.ts'
+import { KR_CHAT_ENABLED } from './kr-chat/enabled.ts'
 
 /** 本轮统计（全部可缺省：拿不到就不显示对应 chip）。 */
 export interface ReplyCardMeta {
@@ -77,6 +78,10 @@ export function FlowCard({ variant, meta, interrupted, children }: {
   const steps = meta?.steps ?? 0
   const git = meta?.git
   const gitDetail = meta?.gitDetail
+  // 卡片头点开右侧大盘是 KR 专属交互。KR 关闭后大盘不存在，这里连「可点击」
+  // 的外观（pointer 光标 + 「点击在右侧大盘查看…」tooltip）一起收起来，
+  // 否则会留下一个点了没反应、文案还指向不存在面板的假入口。
+  const krPanelLink = KR_CHAT_ENABLED && meta?.turnNumber !== undefined
   return (
     <div
       className="dtt__card dtt__card--reply"
@@ -85,14 +90,14 @@ export function FlowCard({ variant, meta, interrupted, children }: {
       <div
         className="dtt__card-head"
         onClick={() => {
-          if (meta?.turnNumber !== undefined && typeof document !== 'undefined' && document.body.hasAttribute('data-dsh-kr-chat')) {
+          if (krPanelLink && typeof document !== 'undefined' && document.body.hasAttribute('data-dsh-kr-chat')) {
             const s = getKrChatStore()
-            s.setSelectedTurn(meta.turnNumber)
+            s.setSelectedTurn(meta.turnNumber as number)
             s.setPanelOpen(true)
           }
         }}
-        title={meta?.turnNumber !== undefined ? `点击在右侧大盘查看第 ${meta.turnNumber} 轮详细轨迹` : undefined}
-        style={{ cursor: meta?.turnNumber !== undefined ? 'pointer' : undefined }}
+        title={krPanelLink ? `点击在右侧大盘查看第 ${meta.turnNumber} 轮详细轨迹` : undefined}
+        style={{ cursor: krPanelLink ? 'pointer' : undefined }}
       >
         <span className="dtt__card-badge" data-interrupted={interrupted === true ? '' : undefined}>
           <CheckIcon />
