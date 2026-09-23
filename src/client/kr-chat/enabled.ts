@@ -17,4 +17,4 @@
  *       步骤卡 / proto-tabs / diagram 呈现（见 pluginRenders）。
  *  3. 截图按钮回到「对话」里常驻（不再要求 KR 模式）。
  */
-export const KR_CHAT_ENABLED = false
+export const KR_CHAT_ENABLED = true
