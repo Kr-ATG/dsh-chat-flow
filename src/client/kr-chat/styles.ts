@@ -237,7 +237,11 @@ body[data-ds-dark-theme] .kr-split__side {
   gap: 10px;
   border-bottom: 1px solid var(--kr-hairline);
   flex: none;
-  background: var(--kr-surface-bg);
+  /* 顶栏是面板级 chrome（横贯整个右栏），跟大盘底板同色。
+     不能取 --kr-surface-bg —— 那个 token 是给卡片/药丸内部小元素的
+     「白底」用的（它们要浮在灰底上分层），顶栏用它就会在这条 60px 上
+     留一道白色，与左右两栏的侧边栏色对不上。 */
+  background: var(--kr-canvas-bg);
 }
 
 .kr-panel__close-btn {
