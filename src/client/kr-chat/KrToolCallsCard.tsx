@@ -6,6 +6,9 @@
  */
 import { memo, useState, useCallback } from 'react'
 
+/** 折叠态默认列出的工具调用条数；超出部分点「展开其余」查看。 */
+const TOOL_LIST_PREVIEW_COUNT = 5
+
 export interface ToolCallItemView {
   readonly id: string
   readonly callId?: string
@@ -35,8 +38,13 @@ export const KrToolCallsCard = memo(function KrToolCallsCard({
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [activeTabs, setActiveTabs] = useState<Record<string, 'result' | 'input' | 'raw'>>({})
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  /* 默认只列前 5 条：一轮跑十几二十次调用时，整列表会把右侧大盘拉得很长，
+     真正的详情（参数/结果）反而要滚很久才够到。需要时点「展开其余 N 次」看全。 */
+  const [showAllTools, setShowAllTools] = useState(false)
 
   if (tools.length === 0) return null
+
+  const visibleTools = showAllTools ? tools : tools.slice(0, TOOL_LIST_PREVIEW_COUNT)
 
   const toggleExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -121,7 +129,7 @@ export const KrToolCallsCard = memo(function KrToolCallsCard({
 
       {!collapsed && (
         <div className="kr-tools-list">
-          {tools.map((tool) => {
+          {visibleTools.map((tool) => {
             const isExpanded = expandedIds.has(tool.id)
             const isFailed = tool.status === 'failed'
             const isRunning = tool.status === 'running'
@@ -468,6 +476,37 @@ export const KrToolCallsCard = memo(function KrToolCallsCard({
               </div>
             )
           })}
+
+          {/* 超出预览条数时给一个展开入口（与思考卡「展开其余 N 项要点」同款） */}
+          {tools.length > TOOL_LIST_PREVIEW_COUNT && (
+            <button
+              type="button"
+              className="kr-expand-btn"
+              onClick={() => setShowAllTools(!showAllTools)}
+            >
+              <span>
+                {showAllTools
+                  ? '收起'
+                  : `展开其余 ${tools.length - TOOL_LIST_PREVIEW_COUNT} 次调用`}
+              </span>
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{
+                  transform: showAllTools ? 'rotate(180deg)' : 'none',
+                  transition: 'transform 0.15s ease',
+                }}
+              >
+                <path d="M2.5 4.5 6 8 9.5 4.5" />
+              </svg>
+            </button>
+          )}
         </div>
       )}
     </div>
