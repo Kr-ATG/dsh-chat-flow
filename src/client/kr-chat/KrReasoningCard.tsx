@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — 思考过程卡片（带电灯泡图标、要点、展开详情）。
+ * dsh-chat-plus — 思考过程卡片（带电灯泡图标、要点、展开详情）。
  */
 import { memo, useMemo, useState } from 'react'
 

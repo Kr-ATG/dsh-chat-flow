@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — KR 对话功能总开关。
+ * dsh-chat-plus — KR 对话功能总开关。
  *
  * 控制「KR对话」这个视图分类 + 右侧 Agent 实时轨迹大盘（KrAgentPanel）。
  *

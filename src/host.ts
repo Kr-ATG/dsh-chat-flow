@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — 思考与工具调用聚合（host 半身）。
+ * dsh-chat-plus — 思考与工具调用聚合（host 半身）。
  *
  * 两条 host 路由，都在浏览器侧消费：
  *
@@ -33,7 +33,7 @@ import { applyDownloadRoutes, applyDownloadTool } from './download/index.ts'
 export { applyDownloadRoutes, downloadTool, readDownloadState, watchShellDownload } from './download/index.ts'
 
 /** Stable Cordis plugin name. */
-export const name = 'dsh-chat-flow'
+export const name = 'dsh-chat-plus'
 
 /** 生图结果 spill 文件（纯文本 JSON）大小上限：2720×1536 PNG base64 约 9MB，留余量到 24MB。 */
 const MAX_SPILL_BYTES = 24 * 1024 * 1024
@@ -150,7 +150,7 @@ export function apply(ctx: Record<string, any>): void {
       kind: 'exact',
       path: '/api/chat-flow/generated-images',
       handler: (req: any, res: any) => handleGeneratedImages(webCtx, req, res),
-    }), 'dsh-chat-flow: generated-images route')
+    }), 'dsh-chat-plus: generated-images route')
     // 对话截图：常驻无头浏览器渲染 + render/save/reveal/image/diagnose
     // （prefix 路由；applyScreenshot 内部自己挂 effect 与回收）。
     applyScreenshot(webCtx)

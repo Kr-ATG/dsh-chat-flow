@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — KR 对话双栏布局与执行大盘独立样式表。
+ * dsh-chat-plus — KR 对话双栏布局与执行大盘独立样式表。
  */
 
 export const KR_STYLES = `

@@ -1,0 +1,5 @@
+# 构建产物按 LF 入库：Windows 检出若转成 CRLF，安装副本与本地构建的 md5
+# 会对不上，排查"产物不一致"时非常浪费时间（lib/ 是随仓库提交的交付物）。
+lib/*.js   text eol=lf
+lib/*.map  -text
+*          text=auto

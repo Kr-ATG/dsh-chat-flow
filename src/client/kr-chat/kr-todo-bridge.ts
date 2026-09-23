@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — DSH 原生 todo 投影桥接器。
+ * dsh-chat-plus — DSH 原生 todo 投影桥接器。
  * 注入至 conversation.input.dock 槽位，静默获取官方 useProjection('todos') 实时数据并广播。
  *
  * 该座位同时是插件的「会话身份登记点」：input.dock 是 session 作用域且在新建

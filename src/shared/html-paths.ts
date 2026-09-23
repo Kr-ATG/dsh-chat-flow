@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — 本地 HTML 路径抽取（截图管线用：正文里提到的本地 HTML 内嵌进截图）。
+ * dsh-chat-plus — 本地 HTML 路径抽取（截图管线用：正文里提到的本地 HTML 内嵌进截图）。
  *
  * 从助手正文（markdown 源文本）里找出指向本地 .html/.htm 的路径。
  * 零依赖纯函数，不引运行时包。

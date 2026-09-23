@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — 对话截图（host 半身，自 dsh-webui 移植，重做版）。
+ * dsh-chat-plus — 对话截图（host 半身，自 dsh-webui 移植，重做版）。
  *
  * 数据流：消息操作栏相机按钮 → 面板选范围/主题/宽度 → POST /render（渲染，
  * 结果只进内存缓存，不落盘）→ 面板里看预览 → POST /save 才写文件到
@@ -392,7 +392,7 @@ export function applyScreenshot(webCtx: Context): void {
       if (req.method === 'GET' && tail === '/diagnose') { void handleDiagnose(req, res); return }
       json(res, 404, { ok: false, error: '未知的截图接口' })
     },
-  }), 'dsh-chat-flow: screenshot routes')
+  }), 'dsh-chat-plus: screenshot routes')
   // 插件卸载/重载时关掉常驻渲染实例，别留孤儿进程。
-  webCtx.effect(() => () => { void shutdownRenderer() }, 'dsh-chat-flow: screenshot renderer shutdown')
+  webCtx.effect(() => () => { void shutdownRenderer() }, 'dsh-chat-plus: screenshot renderer shutdown')
 }

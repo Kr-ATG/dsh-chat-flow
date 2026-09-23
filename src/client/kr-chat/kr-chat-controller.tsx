@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — KR 对话系统控制器（kr-chat-controller）。
+ * dsh-chat-plus — KR 对话系统控制器（kr-chat-controller）。
  *
  * 核心职能：
  * 1. 顶栏三标签：在 header [role="tablist"] 注入 [ KR对话 ]，与官方 [ 对话 ] [ 轨迹 ] 齐平；

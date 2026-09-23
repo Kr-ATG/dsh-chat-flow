@@ -1,8 +1,8 @@
 /**
- * dsh-chat-flow — browser half smoke test.
+ * dsh-chat-plus — browser half smoke test.
  *
  * Executes `lib/client.js` under a stubbed DSH client environment and asserts:
- *   1. registers exactly one `__ModuleLoader__` entry with id "dsh-chat-flow"
+ *   1. registers exactly one `__ModuleLoader__` entry with id "dsh-chat-plus"
  *   2. the factory exports `apply` (function) and `inject` (array = ['slots'])
  *   3. `apply(ctx)` mounts the shared activity drawer (body 级宿主) + 注入七枚
  *      <style>（dsh-chat-flow-styles / dsh-tool-summary-styles /
@@ -235,8 +235,8 @@ if (registrations.length !== 1) fail(`expected 1 loader registration, got ${regi
 else pass('registered exactly one __ModuleLoader__ entry')
 
 const entry = registrations[0]
-if (entry?.id !== 'dsh-chat-flow') fail(`expected id "dsh-chat-flow", got ${JSON.stringify(entry?.id)}`)
-else pass('loader id is "dsh-chat-flow"')
+if (entry?.id !== 'dsh-chat-plus') fail(`expected id "dsh-chat-plus", got ${JSON.stringify(entry?.id)}`)
+else pass('loader id is "dsh-chat-plus"')
 
 const require = (id) => {
   if (id in MODULES) return MODULES[id]

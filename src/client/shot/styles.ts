@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — 对话截图面板样式（自 dsh-webui 移植；class 前缀 tsh-）（client 端，运行时注入 <style>）。
+ * dsh-chat-plus — 对话截图面板样式（自 dsh-webui 移植；class 前缀 tsh-）（client 端，运行时注入 <style>）。
  *
  * 规格对齐官方 ModelsSection：输入框/下拉 32px、行内小按钮胶囊 28px、
  * 主按钮胶囊 36px、行卡片圆角 12px、填充面用 bg-module-platform。
@@ -142,7 +142,7 @@ export function ensureStyles(): void {
   if (document.getElementById(STYLE_ID) !== null) return
   const tag = document.createElement('style')
   tag.id = STYLE_ID
-  tag.dataset.plugin = 'dsh-chat-flow'
+  tag.dataset.plugin = 'dsh-chat-plus'
   tag.textContent = SHEET
   document.head.appendChild(tag)
 }

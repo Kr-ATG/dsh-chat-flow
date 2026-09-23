@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — 下载进度轮询 hook（client 半身）。
+ * dsh-chat-plus — 下载进度轮询 hook（client 半身）。
  *
  * 供抽屉行（SimpleToolRow）等轻量场景复用：按 callId 轮询 host 半身的
  * /api/chat-flow/download/progress，拿不到就回 null（优雅降级为纯时长）。

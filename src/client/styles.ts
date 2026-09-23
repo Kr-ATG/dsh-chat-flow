@@ -1,7 +1,7 @@
 /**
- * dsh-chat-flow — 注入式样式（思考 chip + 对话流卡片）。
+ * dsh-chat-plus — 注入式样式（思考 chip + 对话流卡片）。
  *
- * 命名空间 `dtt__`（dsh-chat-flow），与 webui 的 dsh-better-markdown__/
+ * 命名空间 `dtt__`（dsh-chat-plus），与 webui 的 dsh-better-markdown__/
  * dsh-reply-card__ 不冲突；工具聚合的 dts__ 样式在 tool-summary/styles.ts。
  *
  * ⚠ 注入式 CSS 注释红线：注释内部严禁出现「星号紧跟正斜杠」的两字符闭合序列

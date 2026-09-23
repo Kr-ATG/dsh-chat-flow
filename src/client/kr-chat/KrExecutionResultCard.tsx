@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — 执行结果卡片。
+ * dsh-chat-plus — 执行结果卡片。
  */
 import { memo } from 'react'
 

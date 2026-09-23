@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — 对话截图入口（client 端，自 dsh-webui 移植）：
+ * dsh-chat-plus — 对话截图入口（client 端，自 dsh-webui 移植）：
  * assistant 消息操作栏的相机按钮。
  *
  * 点击打开截图面板（范围 / 主题 / 宽度可选，预览后再决定保存）。消息文本从

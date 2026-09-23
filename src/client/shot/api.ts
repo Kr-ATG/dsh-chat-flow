@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — 对话截图 API 客户端（client 端，自 dsh-webui 移植）。
+ * dsh-chat-plus — 对话截图 API 客户端（client 端，自 dsh-webui 移植）。
  *
  * 三个接口：/render（渲染进内存预览）、/save（落盘）、/reveal（打开目录）。
  */

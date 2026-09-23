@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — download 卡片样式（命名空间 dtt-dl，幂等注入）。
+ * dsh-chat-plus — download 卡片样式（命名空间 dtt-dl，幂等注入）。
  * 视觉基线与 dts__download-card 一致：--dts-accent 品牌蓝、bg-layer 表面、
  * 12px 圆角、细描边；进度条两态：确定比例填充+游标辉光 / 不定长游标滑动，
  * 均带过渡动画（用户偏好：UI 改动默认带动效）。

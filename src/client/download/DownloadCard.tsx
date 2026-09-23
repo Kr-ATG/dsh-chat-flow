@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — download 工具的原子卡片（client 半身）。
+ * dsh-chat-plus — download 工具的原子卡片（client 半身）。
  *
  * 注册进 ui-tool 的 keyed `tool.call.toolview` 槽位（key: 'download'），
  * 接管内置 download 工具行的渲染：

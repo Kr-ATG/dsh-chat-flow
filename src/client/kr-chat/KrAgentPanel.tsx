@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — KR 对话右侧 Agent 实时执行与轨迹大盘。
+ * dsh-chat-plus — KR 对话右侧 Agent 实时执行与轨迹大盘。
  */
 import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'

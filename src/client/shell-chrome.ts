@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — 壳窗口控制联动（shell chrome bridge）。
+ * dsh-chat-plus — 壳窗口控制联动（shell chrome bridge）。
  *
  * 观察官方主题属性 <body data-ds-dark-theme>（ui-theme boot 脚本与
  * ThemePresenter 共同维护），把 { type: 'dsh:theme', theme } postMessage

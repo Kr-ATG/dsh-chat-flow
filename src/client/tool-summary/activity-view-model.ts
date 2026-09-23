@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — tool-summary/activity-view-model.ts
+ * dsh-chat-plus — tool-summary/activity-view-model.ts
  *
  * 弹窗内工具卡片的纯展示推导：阶段、分类、标题、摘要、台账。
  * 展示语言参考 github:aa2246740/dsh-better-display（MIT）的 ToolActivity

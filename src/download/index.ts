@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — download 工具（host 半身）。
+ * dsh-chat-plus — download 工具（host 半身）。
  *
  * 模型侧：wire 工具 `download`（url / dest / overwrite），Node 全局 fetch
  * 流式写盘，进度（receivedBytes / totalBytes / speedBps / status）记入进程内
@@ -469,7 +469,7 @@ export function applyDownloadRoutes(webCtx: Record<string, any>): void {
         json(res, 500, { ok: false, error: 'internal error' })
       }
     },
-  }), 'dsh-chat-flow: download routes')
+  }), 'dsh-chat-plus: download routes')
 }
 
 /** 读请求体（小 JSON）。 */
@@ -532,5 +532,5 @@ async function probeTotalBytes(url: string): Promise<number | null> {
  * @param toolsCtx - tools 服务已就绪的插件上下文。
  */
 export function applyDownloadTool(toolsCtx: Record<string, any>): void {
-  toolsCtx.effect(() => toolsCtx.tools.register(downloadTool), 'dsh-chat-flow: download tool')
+  toolsCtx.effect(() => toolsCtx.tools.register(downloadTool), 'dsh-chat-plus: download tool')
 }

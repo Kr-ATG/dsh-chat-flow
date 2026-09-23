@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — model-retry 行影子（官方重试提示行同款）。
+ * dsh-chat-plus — model-retry 行影子（官方重试提示行同款）。
  *
  * 官方 `conversation.chat.node / model-retry`（RetryNodeView）在流式期显示
  * 「已重试模型请求（1/5）· 1s」等多行；出总结卡（回合 closed）后这些行还

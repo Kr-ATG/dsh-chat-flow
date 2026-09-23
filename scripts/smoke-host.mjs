@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — host 半身冒烟测试。
+ * dsh-chat-plus — host 半身冒烟测试。
  *
  * 断言 lib/index.js 在裸 node（无 tsx、无 DSH 运行时）下可加载，并导出
  * 合法的 Cordis 插件形状。host 半身现在注册三条路由：
@@ -47,7 +47,7 @@ if (externalImports.length > 0) {
 }
 
 const mod = await import(new URL(`file://${HOST.replace(/\\/g, '/')}`))
-if (mod.name !== 'dsh-chat-flow') fail(`expected name "dsh-chat-flow", got ${JSON.stringify(mod.name)}`)
+if (mod.name !== 'dsh-chat-plus') fail(`expected name "dsh-chat-plus", got ${JSON.stringify(mod.name)}`)
 else pass(`exports name = ${mod.name}`)
 if (typeof mod.apply !== 'function') fail('apply is not a function')
 else pass('exports apply()')

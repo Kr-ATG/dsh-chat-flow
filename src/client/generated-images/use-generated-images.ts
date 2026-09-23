@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — 本回合生图结果收集 hook（客户端）。
+ * dsh-chat-plus — 本回合生图结果收集 hook（客户端）。
  *
  * 两级取数：
  *  1. **内联**：工具结果 JSON 未超 DSH spill 阈值时，文本即完整 JSON，

@@ -39,11 +39,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     // 打出组件栈：没有它，崩溃只会表现为「气泡点不开」，无从下手。
-    console.error("[dsh-chat-flow] " + this.props.label + " 渲染崩溃：", error, info.componentStack ?? '')
+    console.error("[dsh-chat-plus] " + this.props.label + " 渲染崩溃：", error, info.componentStack ?? '')
     try {
       this.props.onError?.(error)
     } catch (callbackError) {
-      console.error('[dsh-chat-flow] 错误边界回调失败：', callbackError)
+      console.error('[dsh-chat-plus] 错误边界回调失败：', callbackError)
     }
   }
 

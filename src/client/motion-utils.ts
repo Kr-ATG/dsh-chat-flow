@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — client/motion-utils.ts
+ * dsh-chat-plus — client/motion-utils.ts
  *
  * 动效常量与小 hook，移植自 github:aa2246740/dsh-better-display（MIT）：
  * - `REASON_HOLD / REASON_STEP / REASON_LINES`：思考跟随的「840ms 停顿、

@@ -1,4 +1,4 @@
-# dsh-chat-flow — DSH 对话流增强
+# dsh-chat-plus — DSH 对话体验增强套件
 
 把 dsh-webui 全家桶里的对话体验拆成独立插件（webui 卸载后补回），零 DSH 源码改动、
 纯插件注入。当前 9 项能力 + 4 组动效，分四组：
@@ -58,7 +58,7 @@ variant 可选 pill / expand / glow，缺省 pill（方案A）。未闭合围栏
 ## 一句话安装（DSH）
 
 ```bash
-dsh plugin --profile web add github:Kr-ATG/dsh-chat-flow
+dsh plugin --profile web add github:Kr-ATG/dsh-chat-plus
 ```
 
 重启 DeepSeek Harness 即可。本包在 package.json 声明了 `dsh.bundle.patch`，
@@ -67,21 +67,21 @@ dsh plugin --profile web add github:Kr-ATG/dsh-chat-flow
 本地开发安装（junction，与 dsh-done-pill 同款）：
 
 ```powershell
-New-Item -ItemType Junction -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\dsh-chat-flow" -Target D:\AI\Dsh\dsh-chat-flow
+New-Item -ItemType Junction -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\dsh-chat-plus" -Target D:\AI\Dsh\dsh-chat-plus
 ```
 
 并在 `~/.dsh/profiles/web/cordis.patch.yml` 追加（同 id 条目按 last-write-wins 合并）：
 
 ```yaml
 - insert:
-    - id: dsh-chat-flow
-      name: dsh-chat-flow
+    - id: dsh-chat-plus
+      name: dsh-chat-plus
 ```
 
 ## 卸载
 
 ```bash
-dsh plugin --profile web remove dsh-chat-flow
+dsh plugin --profile web remove dsh-chat-plus
 ```
 
 本地 junction 安装：删除 junction 与 profile patch 里的 insert 条目，重启 DSH。

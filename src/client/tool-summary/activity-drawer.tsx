@@ -107,7 +107,7 @@ export function activityStore(): ActivityStore {
       try {
         ensureDrawerMounted()
       } catch (healError) {
-        console.warn('[dsh-chat-flow] 弹窗 open 前自愈挂载失败：', healError)
+        console.warn('[dsh-chat-plus] 弹窗 open 前自愈挂载失败：', healError)
       }
       openTurn = turn; activeMode = mode; notify()
       // 二次兜底：自愈靠 childNodes 判断，根已死但 DOM 残留时会 early-return，
@@ -117,11 +117,11 @@ export function activityStore(): ActivityStore {
         try {
           mountActivityDrawer(true)
         } catch (healError) {
-          console.warn('[dsh-chat-flow] 弹窗无订阅者强制重挂失败：', healError)
+          console.warn('[dsh-chat-plus] 弹窗无订阅者强制重挂失败：', healError)
         }
       }
       try {
-        console.log('[dsh-chat-flow] 弹窗 open：第 ' + turn + ' 轮 / ' + mode)
+        console.log('[dsh-chat-plus] 弹窗 open：第 ' + turn + ' 轮 / ' + mode)
       } catch { /* 日志永不挡路 */ }
     },
     close: (reason?: string) => { void reason; openTurn = null; activeMode = null; notify() },
@@ -664,12 +664,12 @@ export function mountActivityDrawer(force?: boolean): void {
         // 下一微任务重挂一个新根（key 代数 +1，老错不残留）；若重挂也崩，
         // 控制台会留下两条渲染崩溃日志用于定位，不会静默死掉。
         try {
-          console.error('[dsh-chat-flow] 活动抽屉根崩溃，正在自愈重挂…')
+          console.error('[dsh-chat-plus] 活动抽屉根崩溃，正在自愈重挂…')
         } catch { /* 日志永不挡路 */ }
         queueMicrotask(() => {
           try { mountActivityDrawer() } catch (remountError) {
             try {
-              console.error('[dsh-chat-flow] 活动抽屉根自愈重挂失败：', remountError)
+              console.error('[dsh-chat-plus] 活动抽屉根自愈重挂失败：', remountError)
             } catch { /* 忽略 */ }
           }
         })

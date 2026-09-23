@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — build script.
+ * dsh-chat-plus — build script.
  *
  * Two bundles from one esbuild run (模板：dsh-done-pill/build.mjs）：
  *
@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DSH_CHECKOUT = process.env.DSH_CHECKOUT ?? 'D:/AI/deepseek-harness'
-const PLUGIN_ID = 'dsh-chat-flow'
+const PLUGIN_ID = 'dsh-chat-plus'
 
 /** Resolve esbuild (own node_modules → DSH checkout pnpm store → error). */
 function loadEsbuild() {
@@ -46,7 +46,7 @@ function loadEsbuild() {
   }
 
   throw new Error(
-    'dsh-chat-flow: cannot find esbuild.\n'
+    'dsh-chat-plus: cannot find esbuild.\n'
     + '  Run `pnpm install` in this directory (esbuild is a devDependency).\n'
     + `  Or set DSH_CHECKOUT to a DSH checkout to borrow its copy (currently: ${DSH_CHECKOUT}).`,
   )
@@ -163,7 +163,7 @@ function assertHostExternals(outfile) {
 
   if (violations.length > 0) {
     throw new Error(
-      'dsh-chat-flow: host bundle imports packages that an installed plugin cannot resolve.\n'
+      'dsh-chat-plus: host bundle imports packages that an installed plugin cannot resolve.\n'
       + violations.map(v => `  - ${v}`).join('\n')
       + '\n\n'
       + 'DSH ships @deepseek-ai/* as source only; a plugin inside a profile\'s\n'
@@ -177,5 +177,5 @@ function assertHostExternals(outfile) {
 
 await Promise.all([esbuild.build(clientBundle), esbuild.build(hostBundle)])
 const hostExternals = assertHostExternals(resolve(HERE, 'lib/index.js'))
-console.log('[dsh-chat-flow] built lib/index.js + lib/client.js')
-console.log(`[dsh-chat-flow] host runtime imports: ${hostExternals.length === 0 ? '(none)' : hostExternals.join(', ')}`)
+console.log('[dsh-chat-plus] built lib/index.js + lib/client.js')
+console.log(`[dsh-chat-plus] host runtime imports: ${hostExternals.length === 0 ? '(none)' : hostExternals.join(', ')}`)

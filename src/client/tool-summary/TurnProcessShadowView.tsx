@@ -1,5 +1,5 @@
 /**
- * Official turn-process control, shadowed (dsh-chat-flow).
+ * Official turn-process control, shadowed (dsh-chat-plus).
  *
  * 紧凑模式下官方 control 行与插件自有行会渲染出两行完全一样的
  * 「N 次工具调用 › / 已思考 ›」（control 在前、插件行在成员位），因此把

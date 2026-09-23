@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — KR 对话状态管理 Store。
+ * dsh-chat-plus — KR 对话状态管理 Store。
  *
  * 管理 KR 对话双栏界面的关键交互状态：
  * 1. 右侧 Agent 轨迹大盘开合状态（panelOpen，默认展开，可持久化）；

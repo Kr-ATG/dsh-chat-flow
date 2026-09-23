@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — KR 对话双栏主视图（KrChatView）。
+ * dsh-chat-plus — KR 对话双栏主视图（KrChatView）。
  *
  * 架构：
  * 1. 左栏：直接挂载原生 ChatView（包含完整的历史消息流、虚拟滚动、Markdown 渲染与底部输入框），

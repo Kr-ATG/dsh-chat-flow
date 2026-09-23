@@ -1,5 +1,5 @@
 /**
- * dsh-chat-flow — client 半身入口（思考 chip + 工具调用聚合 + 对话流卡片
+ * dsh-chat-plus — client 半身入口（思考 chip + 工具调用聚合 + 对话流卡片
  * + 对话截图）。
  *
  * 自 dsh-webui 的 dsh-better-markdown（思考 chip 部分）+ dsh-tool-summary
@@ -48,7 +48,7 @@ function guarded(ctx: ClientContext, label: string, mount: () => void): void {
   try {
     mount()
   } catch (error) {
-    console.warn(`[dsh-chat-flow] ${label} 挂载失败：${error instanceof Error ? error.message : String(error)}`)
+    console.warn(`[dsh-chat-plus] ${label} 挂载失败：${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -101,7 +101,7 @@ export function apply(ctx: ClientContext): void {
       officialAssistantNodeView = assistantEntry.component
     }
   } catch (error) {
-    console.warn('[dsh-chat-flow] 捕获官方 assistant-step 失败：', error)
+    console.warn('[dsh-chat-plus] 捕获官方 assistant-step 失败：', error)
   }
 
   // 思考与步骤呈现：在 KR 模式下呈现 KrFlowThoughtCard / KrFlowExecutingCard，
