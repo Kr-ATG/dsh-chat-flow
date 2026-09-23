@@ -16,6 +16,7 @@ import { ShotPanel } from '../shot/Panel.tsx'
 import { collectMessages, deriveCurrentDialogueTitle, type ShotRange, type ShotMessage } from '../shot/collect.ts'
 import { useModalClose } from '../modal-animation.ts'
 import { getLiveDshTodos, subscribeLiveDshTodos } from './kr-todo-bridge.ts'
+import { KR_PANEL_HEADER_VISIBLE } from './enabled.ts'
 
 export interface KrAgentPanelProps {
   readonly latestTurn: number
@@ -319,7 +320,12 @@ export const KrAgentPanel = memo(function KrAgentPanel({
 
   return (
     <div className={`kr-split__side ${krState.fullscreen ? 'kr-split__side--fullscreen' : ''}`}>
-      {/* 顶部 Header */}
+      {/* 顶部 Header：头像 + 标题（当前对话提问）+ 副标题（任务/工具统计行）
+          + 右侧「生成对话截图」「收起大盘 ×」两枚按钮。
+          整块由 KR_PANEL_HEADER_VISIBLE 门控（默认隐藏，只隐藏不删除）：
+          收起入口在顶部标签行最右端的「Agent 轨迹大盘」开关，截图入口在
+          assistant 消息操作栏的相机按钮，因此隐藏顶栏不丢任何能力。 */}
+      {KR_PANEL_HEADER_VISIBLE && (
       <div className="kr-panel__header">
         <div className="kr-panel__avatar">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -376,6 +382,7 @@ export const KrAgentPanel = memo(function KrAgentPanel({
           </button>
         </div>
       </div>
+      )}
 
       {/* 滚动卡片列表 */}
       <div className="kr-panel__scroll">

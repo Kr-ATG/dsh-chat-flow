@@ -18,3 +18,22 @@
  *  3. 截图按钮回到「对话」里常驻（不再要求 KR 模式）。
  */
 export const KR_CHAT_ENABLED = true
+
+/**
+ * KR 右侧大盘「顶部 Header」显隐开关。
+ *
+ * 大盘顶栏 = 机器人头像 + 标题（当前对话提问）+ 副标题（`N/M 项任务已完成` 等
+ * 统计行）+ 右侧「生成对话截图」「收起大盘 ×」两枚按钮。
+ *
+ * ⚠ 同样是**隐藏开关，不是删除**：KrAgentPanel 里的整块 JSX、`kr-panel__header`
+ * 那一套样式（头像/标题行/副标题/按钮）全部原样保留，改回 true 重新 build 即完整
+ * 恢复顶栏。
+ *
+ * false（默认）= 右栏只剩「任务 / 思考 / 工具调用」三张卡（用户明确要的形态）。
+ * 功能零损失，因为两个入口都另有归属：
+ *  1. 收起/展开大盘 —— 顶部标签行最右端常驻的「Agent 轨迹大盘」开关
+ *     （#kr-panel-toggle-btn，见 kr-chat-controller.tsx 的 syncKrPanelToggle）；
+ *  2. 对话截图 —— assistant 消息操作栏的相机按钮常驻（见 shot/index.tsx），
+ *     与顶栏那枚按钮走同一个 ShotPanel。
+ */
+export const KR_PANEL_HEADER_VISIBLE = false
