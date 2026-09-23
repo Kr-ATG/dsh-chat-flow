@@ -144,6 +144,13 @@ body[data-dsh-kr-chat="true"],
      阴影现在独自承担「卡片浮起」的表达（底板已不再染色），所以比纯装饰时更实一档。 */
   --kr-card-shadow: 0 1px 3px rgba(16, 24, 40, 0.1), 0 4px 12px rgba(16, 24, 40, 0.08);
   --kr-card-shadow-hover: 0 2px 5px rgba(16, 24, 40, 0.12), 0 8px 20px rgba(16, 24, 40, 0.12);
+  /*
+   * 右栏「悬浮」投影：只往左投（负 X），让大盘看起来浮在对话流之上。
+   * 取向刻意克制——比卡片阴影更淡、更宽，只交代层次，不抢正文的注意力；
+   * 负 spread 把外扩收回来，避免在 440px 的栏宽旁糊出一大片灰。
+   * 注意：这里不用重投影，历史上那版 -4px/24px 在浅色下显脏且抢戏。
+   */
+  --kr-side-shadow: -1px 0 2px rgba(16, 24, 40, 0.04), -10px 0 28px -8px rgba(16, 24, 40, 0.10);
 }
 
 /* 深色主题：底色本身已分层，阴影改为加强纵深（纯黑在深底上才可见）。 */
@@ -152,6 +159,8 @@ body[data-ds-dark-theme] .kr-split__side {
   --kr-card-border: rgba(255, 255, 255, 0.07);
   --kr-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.36), 0 3px 10px rgba(0, 0, 0, 0.24);
   --kr-card-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.44), 0 8px 20px rgba(0, 0, 0, 0.32);
+  /* 深色下纯黑才可见，同样只往左投、保持克制。 */
+  --kr-side-shadow: -1px 0 2px rgba(0, 0, 0, 0.32), -10px 0 28px -8px rgba(0, 0, 0, 0.45);
 }
 
 .kr-split {
@@ -186,6 +195,9 @@ body[data-ds-dark-theme] .kr-split__side {
   flex-direction: column;
   /* 分隔靠一根 hairline 即可；原来的 -4px/24px 重投影在浅色下脏且抢戏 */
   border-left: 1px solid var(--kr-hairline);
+  /* 往左投的投影 → 大盘看起来浮在对话流之上（而非切下来的一块）。
+     阴影独立成层、不改栏宽，所以对话流的排版与滚动位置零位移。 */
+  box-shadow: var(--kr-side-shadow);
   background: var(--kr-canvas-bg);
   position: relative;
   z-index: 10;
@@ -193,6 +205,8 @@ body[data-ds-dark-theme] .kr-split__side {
   overflow: hidden;
 }
 
+/* 全屏态铺满整个 split：此时它不再「浮在旁边」，投影必须撤掉，
+   否则会在四边漏出一圈灰边。 */
 .kr-split__side--fullscreen {
   position: absolute;
   top: 0;
@@ -202,6 +216,7 @@ body[data-ds-dark-theme] .kr-split__side {
   width: 100% !important;
   max-width: none !important;
   z-index: 50;
+  box-shadow: none;
 }
 
 /* ══ 右栏顶部 Header ═══════════════════════════════════════════════════════ */
