@@ -6,8 +6,15 @@
  */
 import { memo, useState, useCallback } from 'react'
 
-/** 折叠态默认列出的工具调用条数；超出部分点「展开其余」查看。 */
-const TOOL_LIST_PREVIEW_COUNT = 5
+/**
+ * 折叠态默认列出的工具调用条数。
+ *
+ * **0 = 一条都不列**：用户明确要求工具调用默认整块折叠，只留标题行与「展开 N 次
+ * 调用」入口。理由和大盘顶栏隐藏一致——右栏的信息主角是「做了什么」而不是每次
+ * 调用的参数与返回，铺开 5 行会把思考/记忆挤出屏幕。想看得点一下展开，展开后是
+ * 全量列表。
+ */
+const TOOL_LIST_PREVIEW_COUNT = 0
 
 export interface ToolCallItemView {
   readonly id: string
@@ -477,7 +484,7 @@ export const KrToolCallsCard = memo(function KrToolCallsCard({
             )
           })}
 
-          {/* 超出预览条数时给一个展开入口（与思考卡「展开其余 N 项要点」同款） */}
+          {/* 展开入口：折叠态一条都不列，只留这个按钮（与思考卡「展开其余 N 项要点」同款） */}
           {tools.length > TOOL_LIST_PREVIEW_COUNT && (
             <button
               type="button"
@@ -487,7 +494,7 @@ export const KrToolCallsCard = memo(function KrToolCallsCard({
               <span>
                 {showAllTools
                   ? '收起'
-                  : `展开其余 ${tools.length - TOOL_LIST_PREVIEW_COUNT} 次调用`}
+                  : `展开 ${tools.length} 次调用`}
               </span>
               <svg
                 width="10"
