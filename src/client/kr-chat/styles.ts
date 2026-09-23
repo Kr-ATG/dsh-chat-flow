@@ -141,18 +141,18 @@ body[data-dsh-kr-chat="true"],
    * 表面策略：**只让大盘这一层浮起来**，里面的卡片一律贴平。
    *
    * 大盘（.kr-split__side）已经有往左投的 --kr-side-shadow 承担「浮在对话流
-   * 之上」；卡片若再自带外投影，两者同是纯白底、各投一层，视觉上就成了
+   * 之上」；卡片若再自带外投影，两者同色底、各投一层，视觉上就成了
    * 「悬浮了两层」（尤其卡片里还套着展开态的 kr-tool-card-item，是第三层）。
    * 现在卡片的边界只靠发丝描边 + 圆角表达，投影留给 hover 做即时反馈。
    *
-   * 曾试过把底板朝黑混 6% 造出「灰底 + 白卡」的层次，但浅色主题下那块
-   * 浅灰面板观感很脏，而且与官方对话区（纯白）割裂。现在底板直接取
-   * --dsw-alias-bg-base：浅色=纯白、深色=#151517，卡片取 layer-1
-   * （浅色=白、深色=#232324）；深色下卡片本就比底板亮，靠色差即可分层。
+   * 底板取**左侧官方侧边栏同一个 token**（--dsw-specific-sidebar-fill：
+   * 浅色 #f9fafb、深色走主题自身），让右栏与左栏同色、读起来是同一层 chrome；
+   * 卡片仍取 layer-1（浅色=白、深色=#232324），于是浅色下「灰底 + 白卡」
+   * 自带层次，不再依赖阴影区分。
    */
   --kr-card-bg: var(--dsw-alias-bg-layer-1, #ffffff);
   --kr-surface-bg: var(--dsw-alias-bg-layer-1, #ffffff);
-  --kr-canvas-bg: var(--dsw-alias-bg-base, #ffffff);
+  --kr-canvas-bg: var(--dsw-specific-sidebar-fill, var(--dsw-alias-bg-base, #ffffff));
   /* 描边退到发丝级：浅色 4% 黑 / 深色 6% 白（l1 自带主题感知）。
      卡片不再靠投影浮起，边界感全交给这根描边。 */
   --kr-card-border: var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
