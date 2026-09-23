@@ -120,6 +120,9 @@ body[data-dsh-kr-chat="true"] header [role="tablist"] > button[role="tab"]:not(#
   color: var(--dsw-alias-label-tertiary) !important;
   font-weight: 500 !important;
 }
+body[data-dsh-kr-chat="true"] header [role="tablist"] > button[role="tab"]:not(#kr-chat-tab-btn):hover {
+  color: var(--dsw-alias-label-primary) !important;
+}
 body[data-dsh-kr-chat="true"] header [role="tablist"] #kr-chat-tab-btn {
   color: var(--dsw-alias-state-business-primary, #4176e6) !important;
   font-weight: 500 !important;

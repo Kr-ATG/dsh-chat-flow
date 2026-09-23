@@ -56,6 +56,7 @@ function stubNode(tag = 'div') {
     remove() {},
     setAttribute(k, v) { node.attrs[k] = v },
     getAttribute(k) { return node.attrs[k] ?? null },
+    hasAttribute(k) { return k in node.attrs },
     removeAttribute(k) { delete node.attrs[k] },
     addEventListener() {},
     removeEventListener() {},

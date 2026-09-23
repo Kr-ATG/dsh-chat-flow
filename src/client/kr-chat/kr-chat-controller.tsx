@@ -60,6 +60,18 @@ function hasConversationContent(): boolean {
   return document.querySelectorAll('[data-conversation-scroll] [data-chat-turn]').length > 0
 }
 
+function setAttrIfDiff(el: Element, name: string, value: string): void {
+  if (el.getAttribute(name) !== value) {
+    el.setAttribute(name, value)
+  }
+}
+
+function setClassIfDiff(el: Element, className: string): void {
+  if (el.className !== className) {
+    el.className = className
+  }
+}
+
 /** 同步顶部 Tab 按钮（纯 DOM 级稳定注入，与官方原生按钮像素级对齐） */
 function syncKrTab(tablist: HTMLElement): void {
   const store = getKrChatStore()
@@ -88,35 +100,29 @@ function syncKrTab(tablist: HTMLElement): void {
         store.setActiveTab('kr')
         // 仅当当前处于原生“轨迹”视图时，才需要触发原生“对话”按钮切回底层 chat 流
         const trajectoryBtn = Array.from(tablist.querySelectorAll<HTMLButtonElement>('button[role="tab"]'))
-          .find(b => b.id !== 'kr-chat-tab-btn' && b.textContent?.trim().includes('轨迹'))
+          .find(b => b.id !== 'kr-chat-tab-btn' && b.textContent?.trim() === '轨迹')
         const isTrajectoryActive = trajectoryBtn?.getAttribute('aria-selected') === 'true'
-          || trajectoryBtn?.className.includes('Active')
+          || trajectoryBtn?.className.split(' ').includes(activeClass)
         if (isTrajectoryActive) {
           const chatBtn = Array.from(tablist.querySelectorAll<HTMLButtonElement>('button[role="tab"]'))
-            .find(b => b.id !== 'kr-chat-tab-btn' && b.textContent?.trim().includes('对话'))
+            .find(b => b.id !== 'kr-chat-tab-btn' && b.textContent?.trim() === '对话')
           chatBtn?.click()
         }
       } finally {
-        setTimeout(() => { isSwitchingToKr = false }, 100)
+        setTimeout(() => { isSwitchingToKr = false }, 150)
       }
       syncKrTab(tablist)
     }
     tablist.insertBefore(btn, tablist.firstChild)
   }
 
-  btn.className = isKr ? `${baseClass} ${activeClass} kr-tab-btn kr-tab-btn--active` : `${baseClass} kr-tab-btn`
-  btn.setAttribute('aria-selected', isKr ? 'true' : 'false')
+  const expectedBtnClass = isKr ? `${baseClass} ${activeClass} kr-tab-btn kr-tab-btn--active` : `${baseClass} kr-tab-btn`
+  setClassIfDiff(btn, expectedBtnClass)
+  setAttrIfDiff(btn, 'aria-selected', isKr ? 'true' : 'false')
 
-  // 当处于 KR 模式时，原生“对话”按钮不显示激活线；切回对话时恢复
-  if (chatBtn && chatBtn.textContent?.trim().includes('对话')) {
-    if (isKr) {
-      chatBtn.classList.remove(activeClass)
-      chatBtn.setAttribute('aria-selected', 'false')
-    } else if (store.snapshot.activeTab === 'chat') {
-      chatBtn.classList.add(activeClass)
-      chatBtn.setAttribute('aria-selected', 'true')
-    }
-  }
+  // 当处于 KR 模式时，原生的“对话”与“轨迹”视觉由 CSS (body[data-dsh-kr-chat="true"])
+  // 接管，绝不直接去修改原生 chatBtn 的 classList 与 aria-selected，
+  // 避免与官方 DSH React 虚拟 DOM 调和发生恶性竞争与闪烁。
 
   // 标签行最右侧的「Agent 轨迹大盘」开关（与官方 tab 同排，随 KR 模式出现/消失）
   syncKrPanelToggle(tablist, isKr)
@@ -134,18 +140,11 @@ const KR_PANEL_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden=
  * 顶到该行最右端 —— 与 KR对话/对话/轨迹 同一行、同一基线，彻底取代旧版浮在
  * 正文右上角的 absolute 胶囊（会压住对话内容，且脱离信息层级）。
  *
- * 只在 KR 模式下出现：切到「对话 / 轨迹」时整枚按钮移除，不留空位。
+ * 只在 KR 模式下可见：切到「对话 / 轨迹」时隐藏，不影响官方 tab 排版。
  */
 function syncKrPanelToggle(tablist: HTMLElement, isKr: boolean): void {
   const store = getKrChatStore()
   let btn = document.getElementById('kr-panel-toggle-btn') as HTMLButtonElement | null
-
-  if (!isKr) {
-    if (btn) {
-      try { btn.remove() } catch {}
-    }
-    return
-  }
 
   if (!btn || !btn.isConnected || btn.parentElement !== tablist) {
     if (btn) {
@@ -164,12 +163,19 @@ function syncKrPanelToggle(tablist: HTMLElement, isKr: boolean): void {
     tablist.appendChild(btn)
   }
 
-  const open = store.snapshot.panelOpen
-  // 开/关不做任何视觉区分（用户要求这里不出现颜色）：按钮常态一律中性灰。
-  // 状态只走无障碍与 tooltip 文案。
-  btn.setAttribute('aria-expanded', open ? 'true' : 'false')
-  btn.setAttribute('aria-label', open ? '收起 Agent 实时轨迹大盘' : '展开 Agent 实时轨迹大盘')
-  btn.title = open ? '收起 Agent 实时轨迹大盘' : '展开 Agent 实时轨迹大盘'
+  const expectedDisplay = isKr ? '' : 'none'
+  if (btn.style.display !== expectedDisplay) {
+    btn.style.display = expectedDisplay
+  }
+
+  if (isKr) {
+    const open = store.snapshot.panelOpen
+    const openStr = open ? 'true' : 'false'
+    const label = open ? '收起 Agent 实时轨迹大盘' : '展开 Agent 实时轨迹大盘'
+    setAttrIfDiff(btn, 'aria-expanded', openStr)
+    setAttrIfDiff(btn, 'aria-label', label)
+    if (btn.title !== label) btn.title = label
+  }
 }
 
 /** KR 对话右侧大盘与展开胶囊 React 根组件 */
@@ -253,9 +259,10 @@ export function mountKrChatController(): void {
     if (!target || target.id === 'kr-chat-tab-btn') return
 
     const text = target.textContent?.trim() || ''
-    if (text.includes('轨迹')) {
+    // 严格全等匹配：避免 text.includes('对话') 误判 'KR对话'
+    if (text === '轨迹') {
       store.setActiveTab('trajectory')
-    } else if (text.includes('对话')) {
+    } else if (text === '对话') {
       store.setActiveTab('chat')
     }
 
@@ -330,9 +337,13 @@ export function mountKrChatController(): void {
     const isKr = store.snapshot.activeTab === 'kr' && hasActiveChat
 
     if (isKr) {
-      document.body.setAttribute('data-dsh-kr-chat', 'true')
+      if (document.body.getAttribute('data-dsh-kr-chat') !== 'true') {
+        document.body.setAttribute('data-dsh-kr-chat', 'true')
+      }
     } else {
-      document.body.removeAttribute('data-dsh-kr-chat')
+      if (document.body.getAttribute('data-dsh-kr-chat') !== null) {
+        document.body.removeAttribute('data-dsh-kr-chat')
+      }
     }
 
     // 若当前脱离了会话（如回到新会话页），重置已选轮次
@@ -362,7 +373,7 @@ export function mountKrChatController(): void {
 
     let container = document.getElementById('dsh-kr-panel-container')
     if (!hasActiveChat) {
-      if (container) {
+      if (container && container.style.display !== 'none') {
         container.style.display = 'none'
       }
       return
@@ -401,7 +412,9 @@ export function mountKrChatController(): void {
         panelRoot = null
       }
     } else {
-      container.style.display = 'contents'
+      if (container.style.display !== 'contents') {
+        container.style.display = 'contents'
+      }
     }
 
     if (!panelRoot && container) {

@@ -87,9 +87,13 @@ class KrChatStore {
         document.querySelectorAll('[data-chat-turn]').length > 0
       )
       if (tab === 'kr' && hasActiveChat) {
-        document.body.setAttribute('data-dsh-kr-chat', 'true')
+        if (document.body.getAttribute('data-dsh-kr-chat') !== 'true') {
+          document.body.setAttribute('data-dsh-kr-chat', 'true')
+        }
       } else {
-        document.body.removeAttribute('data-dsh-kr-chat')
+        if (document.body.getAttribute('data-dsh-kr-chat') !== null) {
+          document.body.removeAttribute('data-dsh-kr-chat')
+        }
       }
     }
   }
