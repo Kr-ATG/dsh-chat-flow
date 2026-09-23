@@ -703,9 +703,84 @@ body[data-ds-dark-theme] .kr-split__side {
   color: var(--dsw-alias-label-secondary);
 }
 
+/*
+ * 有界视口：最多 15 行（12px 字号 × 1.6 行高 = 19.2px/行 → 288px），
+ * 超出部分在视口内滚动，卡片不再被思考内容撑成长条。
+ * 上下缘按滚动位置渐隐，与左侧实时轨道同一套做法（data-edges）。
+ */
+.kr-reasoning-view {
+  --kr-reasoning-line: 19.2px;
+  max-height: calc(var(--kr-reasoning-line) * 15);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scroll-behavior: auto;
+  overflow-anchor: none;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--dsw-alias-scrollbar-bg-l2, rgba(127, 127, 127, .4)) transparent;
+}
+
+.kr-reasoning-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kr-reasoning-view[data-edges="both"] {
+  -webkit-mask-image: linear-gradient(transparent 0, black 18px, black calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(transparent 0, black 18px, black calc(100% - 18px), transparent 100%);
+}
+
+.kr-reasoning-view[data-edges="top"] {
+  -webkit-mask-image: linear-gradient(transparent 0, black 18px, black 100%);
+  mask-image: linear-gradient(transparent 0, black 18px, black 100%);
+}
+
+.kr-reasoning-view[data-edges="bottom"] {
+  -webkit-mask-image: linear-gradient(black 0, black calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(black 0, black calc(100% - 18px), transparent 100%);
+}
+
+.kr-reasoning-view:focus-visible {
+  outline: 2px solid var(--kr-accent);
+  outline-offset: -2px;
+}
+
+.kr-reasoning-view::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.kr-reasoning-view::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.kr-reasoning-view::-webkit-scrollbar-thumb {
+  background: var(--dsw-alias-scrollbar-bg-l2, rgba(127, 127, 127, .4));
+  border-radius: 2px;
+}
+
+@media (forced-colors: active) {
+  .kr-reasoning-view { -webkit-mask-image: none !important; mask-image: none !important; }
+}
+
+/* 跟随状态提示（只在截停时出现，给用户明确反馈） */
+.kr-card__follow {
+  flex: none;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  background: var(--kr-hover-bg);
+  white-space: nowrap;
+}
+
 .kr-reasoning-row {
   display: flex;
   gap: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .kr-reasoning-num {

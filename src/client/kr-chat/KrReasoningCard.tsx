@@ -1,7 +1,22 @@
 /**
- * dsh-chat-plus — 思考过程卡片（带电灯泡图标、要点、展开详情）。
+ * dsh-chat-plus — 思考过程卡片（带电灯泡图标、要点、实时跟随滚动）。
+ *
+ * 行为（2026-09 需求：实时滚动 + 可手动截停 + 最大 15 行）：
+ * 1. **实时滚动**：思考流式增长时视口自动跟到底，新内容逐行出现；复用左侧
+ *    实时轨道那套 `useSteppedFollow`（同一节拍与手感，两处体验一致）。
+ * 2. **可手动截停**：向上滚动即停住跟随（读者要往回看时不会被拽走），
+ *    滚回底部（≤24px）自动恢复；选中文字期间也不跟随。
+ * 3. **最大 15 行**：视口高度按 15 行封顶（见 CSS --kr-reasoning-rows），
+ *    超出部分在视口内滚动，不再把卡片撑成长条。
+ *
+ * 与旧版的差异：旧版是「默认 3 条 + 展开其余 N 项」的静态列表；现在改成
+ * 有界视口内的完整文本流——内容不再被截断，滚动由用户掌控。
  */
 import { memo, useMemo, useState } from 'react'
+import { useMotionAllowed, useSteppedFollow } from '../motion-utils.ts'
+
+/** 视口最多显示的行数（超出在视口内滚动）。 */
+export const REASONING_MAX_ROWS = 15
 
 export interface ReasoningCardProps {
   readonly reasoningTexts: readonly string[]
@@ -13,23 +28,26 @@ export const KrReasoningCard = memo(function KrReasoningCard({
   running,
 }: ReasoningCardProps) {
   const [collapsed, setCollapsed] = useState(false)
-  const [expandedDetail, setExpandedDetail] = useState(false)
+  const motion = useMotionAllowed(true)
 
-  // 提取思考要点行
+  // 要点行：优先编号行，否则逐行取全部（完整保留，不再截前 4 行）
   const points = useMemo(() => {
     const full = reasoningTexts.join('\n')
-    if (!full.trim()) return []
-
+    if (!full.trim()) return [] as readonly string[]
     const lines = full.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
-    // 优先寻找以数字开头的要点，如 "1. 分析需求: ..."
     const numbered = lines.filter((l) => /^\d+[\.、\s]/.test(l))
-    if (numbered.length > 0) return numbered
-
-    // 否则取前 4 行简明要点
-    return lines.slice(0, 4)
+    return numbered.length > 0 ? numbered : lines
   }, [reasoningTexts])
 
+  // 跟随探针：内容或运行态变化都触发重新贴底
+  const probe = useMemo(() => `${running ? '1' : '0'}:${points.join('\u0000')}`, [points, running])
+  const followActive = running && !collapsed
+  const { ref, onScroll, onWheel, edges, overflow, following } =
+    useSteppedFollow(probe, followActive, motion)
+
   if (reasoningTexts.length === 0 && !running) return null
+
+  const hasContent = points.length > 0
 
   return (
     <div className="kr-card kr-card--reasoning">
@@ -41,8 +59,14 @@ export const KrReasoningCard = memo(function KrReasoningCard({
           </svg>
         </span>
         <span className="kr-card__title">
-          思考过程 {points.length > 0 ? `(${points.length})` : running ? '(思考中…)' : ''}
+          思考过程 {hasContent ? `(${points.length})` : running ? '(思考中…)' : ''}
         </span>
+        {/* 跟随状态提示：截停时给出明确反馈（否则用户不知道为何不再滚动） */}
+        {followActive && overflow && (
+          <span className="kr-card__follow" data-following={following ? 'true' : 'false'}>
+            {following ? '跟随中' : '已暂停'}
+          </span>
+        )}
         <span className="kr-card__chevron" data-collapsed={collapsed ? 'true' : 'false'}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6">
             <path d="M2.5 4.5 6 8 9.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -52,43 +76,30 @@ export const KrReasoningCard = memo(function KrReasoningCard({
 
       {!collapsed && (
         <div className="kr-reasoning-list">
-          {points.length > 0 ? (
-            (expandedDetail ? points : points.slice(0, 3)).map((item, idx) => (
-              <div className="kr-reasoning-row" key={idx}>
-                <span>{item}</span>
+          {hasContent ? (
+            <div
+              className="kr-reasoning-view"
+              data-edges={edges}
+              data-following={followActive && following ? 'true' : undefined}
+              ref={ref}
+              onScroll={onScroll}
+              onWheel={onWheel}
+              role="region"
+              aria-label={running ? '正在思考，可滚动阅读' : '已完成的思考，可滚动阅读'}
+              tabIndex={overflow ? 0 : undefined}
+              aria-live={running ? 'polite' : 'off'}
+            >
+              <div className="kr-reasoning-inner">
+                {points.map((item, idx) => (
+                  <div className="kr-reasoning-row" key={idx}>
+                    <span>{item}</span>
+                  </div>
+                ))}
               </div>
-            ))
+            </div>
           ) : (
             <div style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
               {running ? '正在深入推演需求与实施方案…' : '本轮无独立思考记录'}
-            </div>
-          )}
-
-          {points.length > 3 && (
-            <div>
-              <button
-                type="button"
-                className="kr-expand-btn"
-                onClick={() => setExpandedDetail(!expandedDetail)}
-              >
-                <span>{expandedDetail ? '收起详情' : `展开其余 ${points.length - 3} 项要点`}</span>
-                <svg
-                  width="10"
-                  height="10"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{
-                    transform: expandedDetail ? 'rotate(180deg)' : 'none',
-                    transition: 'transform 0.15s ease',
-                  }}
-                >
-                  <path d="M2.5 4.5 6 8 9.5 4.5" />
-                </svg>
-              </button>
             </div>
           )}
         </div>
