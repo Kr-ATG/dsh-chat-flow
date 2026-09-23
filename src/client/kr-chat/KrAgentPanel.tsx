@@ -9,7 +9,6 @@ import { callDurationMs, callName, computeStats, formatDuration, isRunning } fro
 import { rowTitle, toolArgsRaw, argFields, resultParagraphs, rawResultJson, executionFacts } from '../tool-summary/activity-view-model.ts'
 import { useNow } from '../tool-summary/use-now.ts'
 import { getKrChatStore } from './kr-chat-store.ts'
-import { KrMetricPills } from './KrMetricPills.tsx'
 import { KrTaskOverviewCard, type DshTaskItem } from './KrTaskOverviewCard.tsx'
 import { KrReasoningCard } from './KrReasoningCard.tsx'
 import { KrToolCallsCard, type ToolCallItemView } from './KrToolCallsCard.tsx'
@@ -148,8 +147,7 @@ export const KrAgentPanel = memo(function KrAgentPanel({
   const elapsedSec = elapsedMs / 1000
   const durationText = formatDuration(elapsedMs)
 
-  // 失败统计与工具列表构建
-  let failCount = 0
+  // 工具列表构建
   const toolViews: ToolCallItemView[] = tools.map((node, index) => {
     let name = 'tool'
     let title = '执行工具操作'
@@ -187,7 +185,6 @@ export const KrAgentPanel = memo(function KrAgentPanel({
         const isErr = root.isError || (r && (r.error || (typeof r.exitCode === 'number' && r.exitCode !== 0))) || (exitCode !== undefined && exitCode !== 0)
         if (isErr) {
           status = 'failed'
-          failCount += 1
           errorMsg = typeof r?.error === 'string' ? r.error : (typeof (root as any).error === 'string' ? (root as any).error : ((root as any).error?.message || '工具执行返回非零状态或异常'))
         }
       }
@@ -247,17 +244,13 @@ export const KrAgentPanel = memo(function KrAgentPanel({
     return hasContent ? '对话已就绪' : '等待本次对话开始…'
   }, [tasks, currentRunning, tools.length, durationText, hasContent])
 
-  // 执行统计药丸显示状态：平时默认完全收起（直接消失），按需点击顶栏图标展开
-  const [showMetrics, setShowMetrics] = useState(false)
-
   // 对话截图弹窗控制
   const [shotOpen, setShotOpen] = useState(false)
   const { closing: shotClosing, requestClose: requestShotClose } = useModalClose(shotOpen, () => { setShotOpen(false) })
 
   // 会话切换（新建 / 切换 / 离开）时重置本面板的本地视图状态，
-  // 避免「指标展开」「截图弹窗开着」等状态被带到新会话。
+  // 避免「截图弹窗开着」被带到新会话。
   useEffect(() => {
-    setShowMetrics(false)
     setShotOpen(false)
   }, [latestChatSessionId])
 
@@ -347,30 +340,13 @@ export const KrAgentPanel = memo(function KrAgentPanel({
               </span>
             )}
           </div>
-          <div
-            className="kr-panel__subtitle kr-panel__subtitle--clickable"
-            title={`${subtitle}（点击查看/收起执行统计指标）`}
-            onClick={() => setShowMetrics((v) => !v)}
-          >
+          {/* 统计副标题：纯展示，不可点击（统计指标按钮与药丸行已按要求移除） */}
+          <div className="kr-panel__subtitle" title={subtitle}>
             {subtitle}
           </div>
         </div>
 
         <div className="kr-panel__actions">
-          {/* 执行统计指标切换按钮：平时收起（直接消失），需要时点击展开 */}
-          <button
-            type="button"
-            className={`kr-panel__action-btn ${showMetrics ? 'kr-panel__action-btn--active' : ''}`}
-            onClick={() => setShowMetrics((v) => !v)}
-            title={showMetrics ? '收起执行统计指标（直接消失）' : `查看执行统计指标 (${tools.length} 次工具 · 耗时 ${durationText})`}
-            aria-label="查看执行统计指标"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 2.5 14 5.5 8 8.5 2 5.5z" />
-              <path d="M2 8.5 8 11.5 14 8.5" />
-              <path d="M2 11.5 8 14.5 14 11.5" />
-            </svg>
-          </button>
           <button
             type="button"
             className="kr-panel__action-btn"
@@ -433,17 +409,6 @@ export const KrAgentPanel = memo(function KrAgentPanel({
               {isViewingHistory ? '返回最新对话' : '跟随最新对话'}
             </button>
           </div>
-        )}
-
-        {/* 4 个指标药丸：平时默认完全收起（直接消失），点击顶栏指标按钮后展开 */}
-        {showMetrics && (
-          <KrMetricPills
-            turnNumber={displayTurn}
-            toolCount={tools.length}
-            failCount={failCount}
-            durationText={durationText}
-            onClose={() => setShowMetrics(false)}
-          />
         )}
 
         {/* 任务概览卡片：有真实任务时展示，若该轮无任务则自动返回 null */}

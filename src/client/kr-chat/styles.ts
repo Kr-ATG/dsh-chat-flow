@@ -456,81 +456,10 @@ body[data-ds-dark-theme] .kr-split__side {
   background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.22));
 }
 
-/* ══ 统计指标药丸（展开时以单行整洁展示，附带关闭按钮） ═════════════════ */
-.kr-pills-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  animation: kr-fade-in 0.18s ease;
-}
-
-@keyframes kr-fade-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.kr-pills-row .kr-pills {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-}
-
-.kr-pill {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 6px 3px;
-  background: var(--kr-surface-bg);
-  border: 1px solid var(--kr-card-border);
-  border-radius: 6px;
-  font-size: 11.5px;
-  color: var(--dsw-alias-label-secondary);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  box-shadow: none;
-}
-
-.kr-pill svg {
-  width: 13px;
-  height: 13px;
-  flex: none;
-  opacity: 0.8;
-}
-
-.kr-pill--fail {
-  background: var(--kr-surface-bg);
-  border-color: var(--kr-card-border);
-  color: var(--kr-error, #ef4444);
-}
-
-.kr-pills-close-btn {
-  flex: none;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--kr-surface-bg);
-  border: 1px solid var(--kr-card-border);
-  border-radius: 6px;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-  padding: 0;
-  transition: all 0.15s ease;
-  box-shadow: none;
-}
-
-.kr-pills-close-btn:hover {
-  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.15));
-  color: var(--dsw-alias-label-primary);
-  border-color: var(--kr-card-hover);
-}
+/* ══ 统计指标药丸已移除 ════════════════════════════════════════════════════
+   顶部「查看执行统计指标」按钮与它展开的药丸行（第 N 轮 / N 次工具调用 /
+   N 次失败 / 耗时）按用户要求整体去掉，相关样式随之删除。
+   @keyframes kr-fade-in 仍被工具详情面板使用，保留在文件下方定义处。 */
 
 /* ══ 通用卡片容器（高雅纯白、轻柔投影、精细微边框） ══════════════════════════ */
 .kr-card {
