@@ -28,7 +28,23 @@ body[data-dsh-kr-chat="true"] .dts__entry,
 body[data-dsh-kr-chat="true"] .dtt__chip,
 body[data-dsh-kr-chat="true"] [data-chat-call-id],
 body[data-dsh-kr-chat="true"] [data-chat-anchor-key^="call:"],
-body[data-dsh-kr-chat="true"] [data-turn-process] {
+body[data-dsh-kr-chat="true"] [data-turn-process],
+/*
+ * 官方把「同一个 assistant-step 节点」投影成两份 DOM：
+ *   [data-turn-process-member] 过程投影（groupPart=reasoning）
+ *   [data-turn-process-answer] 答案投影（groupPart=response）
+ * 本插件注册在 conversation.chat.node / assistant-step 上，不区分投影，
+ * 于是思考卡与总结卡在两份里各渲染一次。
+ *
+ * 官方只在折叠态隐藏过程投影（processHidden = foldable && processMember && !processOpen），
+ * 所以一旦展开（processOpen=true，包括 processMember 时自动 setOpen(true)），
+ * 两份同时可见 → 左侧每张卡都重复一遍（用户报的「点开思考到总结时出现两个」）。
+ *
+ * KR 模式下左侧只该留答案投影：过程内容由本插件自己的思考卡承接，工具明细收敛
+ * 到右侧大盘，所以把过程投影整个隐掉。实测每轮可见块数正好减半，且过程投影的
+ * 每一块在答案投影里都有同文副本（唯一内容丢失 0 条）。
+ */
+body[data-dsh-kr-chat="true"] [data-turn-process-member] {
   display: none !important;
 }
 
