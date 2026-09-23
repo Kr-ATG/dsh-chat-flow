@@ -1,7 +1,7 @@
 /**
  * dsh-chat-plus — KR 对话右侧 Agent 实时执行与轨迹大盘。
  */
-import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { activityStore } from '../tool-summary/activity-drawer.tsx'
 import { latestChatSnapshot, latestChatSessionId, collectTurnNodes, subscribeLatestChatSnapshot } from '../tool-summary/TurnProcessShadowView.tsx'
@@ -10,13 +10,15 @@ import { rowTitle, toolArgsRaw, argFields, resultParagraphs, rawResultJson, exec
 import { useNow } from '../tool-summary/use-now.ts'
 import { getKrChatStore } from './kr-chat-store.ts'
 import { KrTaskOverviewCard, type DshTaskItem } from './KrTaskOverviewCard.tsx'
-import { KrReasoningCard } from './KrReasoningCard.tsx'
+import { KrReasoningCard, REASONING_MAX_ROWS } from './KrReasoningCard.tsx'
 import { KrToolCallsCard, type ToolCallItemView } from './KrToolCallsCard.tsx'
+import { KrMemoryCard } from './KrMemoryCard.tsx'
+import { useAdaptiveReasoningRows } from './use-adaptive-rows.ts'
 import { ShotPanel } from '../shot/Panel.tsx'
 import { collectMessages, deriveCurrentDialogueTitle, type ShotRange, type ShotMessage } from '../shot/collect.ts'
 import { useModalClose } from '../modal-animation.ts'
 import { getLiveDshTodos, subscribeLiveDshTodos } from './kr-todo-bridge.ts'
-import { KR_PANEL_HEADER_VISIBLE } from './enabled.ts'
+import { KR_MEMORY_CARD_VISIBLE, KR_PANEL_HEADER_VISIBLE } from './enabled.ts'
 
 export interface KrAgentPanelProps {
   readonly latestTurn: number
@@ -249,6 +251,25 @@ export const KrAgentPanel = memo(function KrAgentPanel({
   const [shotOpen, setShotOpen] = useState(false)
   const { closing: shotClosing, requestClose: requestShotClose } = useModalClose(shotOpen, () => { setShotOpen(false) })
 
+  /* ── 右栏挤压自适应 ─────────────────────────────────────────────────────
+     记忆卡要求常驻右栏底部（KR_MEMORY_CARD_VISIBLE），它就必然与任务/思考/
+     工具三张卡争高度。右栏高度是固定的（.kr-panel__scroll 是 flex:1 1 0 的
+     滚动容器），唯一可让的尺寸是思考卡的视口行数，于是：
+       · 记忆卡条目变化 → KrMemoryCard 经 onContentChange 把 memoryTick +1；
+       · 思考/工具内容变化 → 下面那份 fingerprint 跟着变；
+       · 两者任一变化都让 useAdaptiveReasoningRows 重测，按溢出程度定一档行数。
+     没有记忆卡（开关关闭）时 fingerprint 仍会随思考内容变化，只是永远测不出
+     溢出，行数固定停在默认档。 */
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const [memoryTick, setMemoryTick] = useState(0)
+  const handleMemoryContentChange = useCallback(() => { setMemoryTick((tick) => tick + 1) }, [])
+  const reasoningChars = useMemo(
+    () => reasoningTexts.reduce((sum, text) => sum + text.length, 0),
+    [reasoningTexts],
+  )
+  const heightFingerprint = `${memoryTick}|${reasoningChars}|${reasoningTexts.length}|${tools.length}|${tasks.length}`
+  const reasoningRows = useAdaptiveReasoningRows(scrollRef, heightFingerprint)
+
   // 会话切换（新建 / 切换 / 离开）时重置本面板的本地视图状态，
   // 避免「截图弹窗开着」被带到新会话。
   useEffect(() => {
@@ -385,7 +406,7 @@ export const KrAgentPanel = memo(function KrAgentPanel({
       )}
 
       {/* 滚动卡片列表 */}
-      <div className="kr-panel__scroll">
+      <div className="kr-panel__scroll" ref={scrollRef}>
         {/* 空态：本次对话尚无任何内容（新会话空白期）。显式渲染，
             不依赖各卡片自行 return null —— 避免上一会话的缓存数据漏进来。 */}
         {!hasContent && !isViewingHistory && (
@@ -421,8 +442,12 @@ export const KrAgentPanel = memo(function KrAgentPanel({
         {/* 任务概览卡片：有真实任务时展示，若该轮无任务则自动返回 null */}
         <KrTaskOverviewCard tasks={tasks} isRunning={currentRunning} />
 
-        {/* 思考过程卡片 */}
-        <KrReasoningCard reasoningTexts={reasoningTexts} running={currentRunning} />
+        {/* 思考过程卡片（行数随右栏挤压自适应：默认 25 行，空间不够自动降档） */}
+        <KrReasoningCard
+          reasoningTexts={reasoningTexts}
+          running={currentRunning}
+          maxRows={reasoningRows}
+        />
 
         {/* 工具调用卡片 */}
         <KrToolCallsCard
@@ -435,6 +460,15 @@ export const KrAgentPanel = memo(function KrAgentPanel({
             }
           }}
         />
+        {/* 记忆卡片：常驻右栏底部（sticky），不随滚动跑掉；分「工作区记忆 /
+            全局记忆」两个分区，支持多选批量删除。放在最后一张 = DOM 顺序即
+            视觉顺序，sticky bottom:0 保证滚动时一直贴在视口底部。 */}
+        {KR_MEMORY_CARD_VISIBLE && (
+          <KrMemoryCard
+            squeezed={reasoningRows < REASONING_MAX_ROWS}
+            onContentChange={handleMemoryContentChange}
+          />
+        )}
       </div>
 
       {shotOpen && (

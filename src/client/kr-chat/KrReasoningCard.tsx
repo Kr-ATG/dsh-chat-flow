@@ -7,7 +7,8 @@
  * 2. **可手动截停**：向上滚动即停住跟随（读者要往回看时不会被拽走），
  *    滚回底部（≤24px）自动恢复；选中文字期间也不跟随。
  * 3. **最大 15 行**：视口高度按 15 行封顶（见 CSS --kr-reasoning-rows），
- *    超出部分在视口内滚动，不再把卡片撑成长条。
+ *    超出部分在视口内滚动，不再把卡片撑成长条。行数上限可由
+ *    `maxRows` prop 覆盖——右栏被常驻的记忆卡挤压时，大盘会传一档更小的值。
  *
  * 与旧版的差异：旧版是「默认 3 条 + 展开其余 N 项」的静态列表；现在改成
  * 有界视口内的完整文本流——内容不再被截断，滚动由用户掌控。
@@ -22,11 +23,17 @@ export const REASONING_MAX_ROWS = 25
 export interface ReasoningCardProps {
   readonly reasoningTexts: readonly string[]
   readonly running: boolean
+  /**
+   * 视口行数上限。默认 REASONING_MAX_ROWS；右栏被挤压时由 KrAgentPanel 经
+   * use-adaptive-rows.ts 算出一档更小的值传进来（记忆卡常驻底部会挤掉高度）。
+   */
+  readonly maxRows?: number
 }
 
 export const KrReasoningCard = memo(function KrReasoningCard({
   reasoningTexts,
   running,
+  maxRows = REASONING_MAX_ROWS,
 }: ReasoningCardProps) {
   const [collapsed, setCollapsed] = useState(false)
   const motion = useMotionAllowed(true)
@@ -89,8 +96,10 @@ export const KrReasoningCard = memo(function KrReasoningCard({
               aria-label={running ? '正在思考，可滚动阅读' : '已完成的思考，可滚动阅读'}
               tabIndex={overflow ? 0 : undefined}
               aria-live={running ? 'polite' : 'off'}
-              /* 行数上限由 JS 常量驱动，避免与 CSS 里的字面量各写一份而漂移 */
-              style={{ '--kr-reasoning-rows': REASONING_MAX_ROWS } as CSSProperties}
+              /* 行数上限由 JS 常量/入参驱动，避免与 CSS 里的字面量各写一份而漂移。
+                 右栏空间富余时用默认 25 行；被记忆卡等常驻内容挤压时由大盘
+                 自适应下调（见 use-adaptive-rows.ts）。 */
+              style={{ '--kr-reasoning-rows': maxRows } as CSSProperties}
             >
               <div className="kr-reasoning-inner">
                 {points.map((item, idx) => (

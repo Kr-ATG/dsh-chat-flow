@@ -1,5 +1,12 @@
 # 由 `dsh plugin add` 自动并入 profile，不要手工编辑 profile 的那份；
 # 要覆盖就在 profile 自己的 cordis.patch.yml（更晚的层）里改。
+# 停用内核 client-side skill 插件（由 dsh-chat-plus 的 triad/skill-source 接管：
+# 支持技能集合两级 slash 菜单与开关过滤，并补齐 SkillRow 工具行）
+- id: ui-skill
+  name: '@deepseek-ai/dsh-client-ui-skill'
+  disabled: true
+
 - insert:
     - id: dsh-chat-plus
       name: dsh-chat-plus
+

@@ -249,10 +249,12 @@ if (typeof mod.apply !== 'function') fail('factory did not export apply()')
 else pass('factory exports apply()')
 if (!Array.isArray(mod.inject)) fail('factory did not export inject[]')
 else pass(`factory exports inject[] = [${mod.inject.join(', ')}]`)
-if (JSON.stringify(mod.inject) !== JSON.stringify(['slots'])) {
-  fail(`expected inject = ['slots'], got [${mod.inject.join(', ')}]`)
+// inject[] 取并集：原 dsh-chat-plus 的 slots + 原 dsh-triad 的
+// locale / inputTriggers / sessions（四个工作台的服务面）。
+if (JSON.stringify(mod.inject) !== JSON.stringify(['slots', 'locale', 'inputTriggers', 'sessions'])) {
+  fail(`expected inject = ['slots','locale','inputTriggers','sessions'], got [${mod.inject.join(', ')}]`)
 } else {
-  pass('client inject = ["slots"]')
+  pass('client inject = ["slots","locale","inputTriggers","sessions"] (chat-plus + triad union)')
 }
 
 // ── run apply() against a stub client context ────────────────────────────
@@ -272,13 +274,33 @@ const slotsService = {
   },
   entries: (name) => [],
 }
+// 融合后的 client 需要四类 service（slots 之外）。原 dsh-chat-plus 只要 slots；
+// 原 dsh-triad 的四个工作台要 locale / inputTriggers / sessions / modelDirectories。
+// 缺了哪个，对应工作台的 try/catch 就吃掉它、座位少注册一个——所以这里必须
+// 给全，否则下面的座位数断言分不清「真没注册」与「stub 不够」。
+const sessionsStub = { list: { getSnapshot: () => ({ byId: {} }) } }
+const inputTriggersStub = { register: () => () => {} }
+const modelDirectoriesStub = { list: () => Promise.resolve([]) }
 const ctx = {
   effect: (fn) => { const stop = typeof fn === 'function' ? fn() : undefined; return stop ?? (() => {}) },
-  get: () => undefined,
+  locale: { register: () => () => {} },
+  get: (name) => {
+    if (name === 'sessions') return sessionsStub
+    if (name === 'inputTriggers') return inputTriggersStub
+    if (name === 'modelDirectories') return modelDirectoriesStub
+    return undefined
+  },
   slots: slotsService,
   inject: (names, fn) => {
     if (!Array.isArray(names)) throw new Error('ctx.inject expects a names array')
-    fn({ slots: slotsService })
+    const scope = { slots: slotsService }
+    for (const name of names) {
+      if (name === 'sessions') scope.sessions = sessionsStub
+      else if (name === 'inputTriggers') scope.inputTriggers = inputTriggersStub
+      else if (name === 'modelDirectories') scope.modelDirectories = modelDirectoriesStub
+      else scope[name] = ctx.get(name)
+    }
+    fn(scope)
   },
 }
 
@@ -294,8 +316,10 @@ const drawerHost = bodyItems.find((item) => item?.id === 'dsh-activity-drawer-ro
 if (drawerHost === undefined) fail('activity drawer host was not appended to document.body')
 else pass('activity drawer host mounted on document.body')
 
-// 八枚 <style> 注入 head。KR 对话总开关关闭时少注入一枚 dsh-kr-chat-styles
-// （只隐藏不删除，见 src/client/kr-chat/enabled.ts），因此这里与开关同源断言。
+// 九枚 <style> 注入 head：dsh-chat-plus 自带八枚 + 融合进来的 skill-source 一枚
+// （id 刻意带 dsh-triad 前缀，与其它样式表互不吞并）。KR 对话总开关关闭时少
+// 注入一枚 dsh-kr-chat-styles（只隐藏不删除，见 src/client/kr-chat/enabled.ts），
+// 因此这里与开关同源断言。
 const krEnabled = /export const KR_CHAT_ENABLED = (true|false)/.exec(
   readFileSync(resolve(ROOT, 'src/client/kr-chat/enabled.ts'), 'utf8'),
 )?.[1] === 'true'
@@ -305,6 +329,7 @@ const expectedStyles = [
   'dsh-chat-flow-shot-styles', 'dsh-modal-animation-styles',
   'dsh-chat-flow-proto-styles', 'dsh-chat-flow-diagram-styles',
   'dsh-chat-flow-download-styles',
+  'dsh-triad-skill-source-styles',
   ...(krEnabled ? ['dsh-kr-chat-styles'] : []),
 ]
 for (const expected of expectedStyles) {
@@ -319,17 +344,33 @@ if (styleIds.length === expectedStyles.length) {
   fail(`unexpected extra styles: ${styleIds.join(', ')}`)
 }
 
-// 1 个 keyed 槽位 assistant-step 注册 + 截图按钮注册 + download toolview + kr-todo-bridge。
+// 七枚槽位：对话增强四枚（assistant-step keyed / 截图按钮 / download toolview /
+// kr-todo-bridge）+ 融合工作台三枚（automation-notifier、dsh-memory-inject-toggle、
+// skill toolview）。座位 id/order/locale 全部原样保留（dsh-triad 退役零迁移）。
 const cell = (key) => registeredSlots.find((s) => s?.slot === 'conversation.chat.node' && s?.key === key)
-if (registeredSlots.length !== 4) {
-  fail(`expected 4 slot registrations, got ${registeredSlots.length}: ${JSON.stringify(registeredSlots)}`)
+if (registeredSlots.length !== 7) {
+  fail(`expected 7 slot registrations, got ${registeredSlots.length}: ${JSON.stringify(registeredSlots)}`)
 } else {
-  pass(`registered ${registeredSlots.length} seats (1 chat-node keyed + 1 actions + 1 download toolview + 1 input-dock bridge)`)
+  pass('registered 7 seats (4 chat-plus + 3 triad: automation-notifier / memory toggle / skill toolview)')
 }
 
 const downloadSeat = registeredSlots.find((s) => s?.slot === 'tool.call.toolview' && s?.key === 'download')
 if (downloadSeat === undefined) fail('missing keyed toolview seat tool.call.toolview / download')
 else pass('seat tool.call.toolview / download (keyed by wire tool name)')
+
+const skillSeat = registeredSlots.find((s) => s?.slot === 'tool.call.toolview' && s?.key === 'skill')
+if (skillSeat === undefined) fail('missing triad seat tool.call.toolview / skill')
+else pass('seat tool.call.toolview / skill (triad)')
+
+const memoryToggle = registeredSlots.find((s) => s?.slot === 'conversation.input.left' && s?.id === 'dsh-memory-inject-toggle')
+if (memoryToggle === undefined) fail('missing triad seat conversation.input.left / dsh-memory-inject-toggle')
+else if (memoryToggle.order !== 99) fail(`memory toggle order = ${memoryToggle.order}, expected 99`)
+else pass('seat conversation.input.left / dsh-memory-inject-toggle @ order 99 (triad)')
+
+const notifier = registeredSlots.find((s) => s?.slot === 'shell.overlay' && s?.id === 'automation-notifier')
+if (notifier === undefined) fail('missing triad seat shell.overlay / automation-notifier')
+else if (notifier.order !== 90) fail(`automation notifier order = ${notifier.order}, expected 90`)
+else pass('seat shell.overlay / automation-notifier @ order 90 (triad)')
 
 const todoDockSeat = registeredSlots.find((s) => s?.slot === 'conversation.input.dock' && s?.id === 'kr-todo-bridge')
 if (todoDockSeat === undefined) fail('missing input.dock seat conversation.input.dock / kr-todo-bridge')
@@ -345,6 +386,7 @@ if (asst === undefined) {
 } else {
   pass('seat conversation.chat.node / assistant-step @ priority -100')
 }
+
 const shot = registeredSlots.find((s) => s?.slot === 'conversation.chat.assistant-actions')
 if (shot === undefined) {
   fail('missing screenshot action registration for conversation.chat.assistant-actions')

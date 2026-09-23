@@ -112,7 +112,19 @@ const clientBundle = {
   },
 }
 
-/** Runtime-resolvable host packages. host 半身无任何运行时导入 → 空表。 */
+/**
+ * host 产物里允许留给运行时解析的裸包名：**空**。
+ *
+ * 融合进来的四工作台 host 需要的 DSH 叶子模块全部 vendor 化在
+ * `src/vendor/` 下（dsh-llm / dsh-tools / dsh-session / dsh-util-crypto /
+ * usage-skill），所以产物对 `@deepseek-ai/*` 零运行时依赖。
+ *
+ * 曾经 `@deepseek-ai/dsh-util-crypto` 是例外（它有 lib/index.js 且自身零导入），
+ * 实测证伪了：装进 profile 后裸 node 解析不到（profile 的 node_modules 里根本没
+ * 有这个包，DSH 靠 tsx 的 tsconfig paths 才跑得起来），于是 smoke 在源码目录
+ * 一 import 就 ERR_MODULE_NOT_FOUND。改 vendor 化后产物完全自包含。
+ * 详见 src/vendor/README.md。
+ */
 const HOST_RUNTIME_EXTERNAL_ALLOWLIST = new Set([
 ])
 

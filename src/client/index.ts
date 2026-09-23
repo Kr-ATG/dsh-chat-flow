@@ -39,9 +39,13 @@ import { injectKrStyles } from './kr-chat/styles.ts'
 import { mountKrChatController } from './kr-chat/kr-chat-controller.tsx'
 import { KrTodoBridge } from './kr-chat/kr-todo-bridge.ts'
 import { KR_CHAT_ENABLED } from './kr-chat/enabled.ts'
+import { applyTriadClient } from './triad/index.ts'
+import { buildActivityGrid, activityColor, ACTIVITY_COLUMNS } from './triad/usage/dashboard/ActivityGrid.js'
 
 /** 顶层服务依赖（client boot graph 用）。 */
-export const inject = ['slots']
+// 并集 = 原 dsh-chat-plus 的 slots + 原 dsh-triad 的 locale/inputTriggers/sessions
+// （四工作台融合后由本插件统一提供，少了哪个哪个工作台就不挂载）。
+export const inject = ['slots', 'locale', 'inputTriggers', 'sessions']
 
 /** 单个模块失败不拖垮插件整体。 */
 function guarded(ctx: ClientContext, label: string, mount: () => void): void {
@@ -149,4 +153,15 @@ export function apply(ctx: ClientContext): void {
       KrTodoBridge,
     ))
   })
+
+  // ── 融合的原 dsh-triad 四工作台（自动化 / 记忆 / 用量 / 技能与 MCP）────────
+  // 侧边栏导航行、面板、composer 记忆注入开关的座位 id / order / locale
+  // namespace 全部原样保留（dsh-triad 退役，用户侧零迁移）。内部每个工作台
+  // 各自 try/catch，一个挂载失败不影响其他三个，也不影响上面的对话增强。
+  guarded(ctx, 'triad (automation/memory/usage/skills)', () => {
+    applyTriadClient(ctx)
+  })
 }
+
+/** 纯逻辑再导出：smoke 断言「Token 活动」贡献热力模型（原 dsh-triad 同款导出）。 */
+export { buildActivityGrid, activityColor, ACTIVITY_COLUMNS }

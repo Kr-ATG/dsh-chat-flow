@@ -37,3 +37,19 @@ export const KR_CHAT_ENABLED = true
  *     与顶栏那枚按钮走同一个 ShotPanel。
  */
 export const KR_PANEL_HEADER_VISIBLE = false
+
+/**
+ * KR 右侧大盘「记忆」卡片显隐开关（位于工具调用卡片下方）。
+ *
+ * 卡片常驻右栏底部：工作区记忆 + 全局记忆两个分区，支持多选批量删除。
+ * 它一常驻就必然与其它卡片争高度，因此同时触发「思考卡行数挤压自适应」
+ * （见 use-adaptive-rows.ts）——空间不够时思考卡自动减小视口行数。
+ *
+ * ⚠ 同为**隐藏开关，不是删除**：KrMemoryCard 组件、memory-api.ts 客户端与
+ * 那一套 `.kr-card--memory` / `.kr-memory__*` 样式全部原样保留，改回 true
+ * 重新 build 即完整恢复。
+ *
+ * false 时右栏回到「任务 / 思考 / 工具调用」三张卡，思考卡固定默认行数
+ * （REASONING_MAX_ROWS），不再有挤压自适应。
+ */
+export const KR_MEMORY_CARD_VISIBLE = true

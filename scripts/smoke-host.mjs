@@ -35,15 +35,20 @@ const HOST = resolve(ROOT, 'lib/index.js')
 const fail = (msg) => { console.error(`FAIL  ${msg}`); process.exitCode = 1 }
 const pass = (msg) => console.log(`ok    ${msg}`)
 
-// 先做文本守卫：安装位置解析不了的 specifier 一个都不许出现。
+// 先做文本守卫：安装位置解析不了的 specifier 一个都不许出现——包括
+// `@deepseek-ai/*`。融合进来的四工作台把需要的 DSH 叶子模块全部 vendor 化在
+// src/vendor/ 下（含 dsh-util-crypto），所以产物对 @deepseek-ai/* 零运行时依赖；
+// `@deepseek-ai/cordis` 只会以 `import type` 出现，构建时擦除。
 const source = readFileSync(HOST, 'utf8')
+const HOST_EXTERNAL_ALLOWLIST = new Set([
+])
 const externalImports = [...source.matchAll(
   /(?:^|[;\n])\s*(?:import|export)[\s\S]*?from\s*["']([^"']+)["']/g,
-)].map(m => m[1]).filter(spec => !spec.startsWith('node:'))
+)].map(m => m[1]).filter(spec => !spec.startsWith('node:') && !HOST_EXTERNAL_ALLOWLIST.has(spec))
 if (externalImports.length > 0) {
   fail(`host bundle still imports non-node specifiers: ${externalImports.join(', ')}`)
 } else {
-  pass('host bundle has no non-node runtime imports')
+  pass('host bundle is fully self-contained (no @deepseek-ai/* runtime imports)')
 }
 
 const mod = await import(new URL(`file://${HOST.replace(/\\/g, '/')}`))

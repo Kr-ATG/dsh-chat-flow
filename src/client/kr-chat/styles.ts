@@ -1230,6 +1230,238 @@ body[data-ds-dark-theme] .kr-split__side {
   flex: none;
 }
 
+/* ══ 记忆卡片（常驻右栏底部）═══════════════════════════════════════════════
+   座位是 .kr-panel__scroll 的最后一个子节点。要求「永久显示、不被挤压」，
+   但右栏高度固定，所以做成 sticky bottom:0：往上滚动时它一直贴在视口底部，
+   而不是被滚出屏幕。注意 sticky 元素仍在文档流里占高度（它的高度照样参与
+   溢出计算），所以「常驻」与「挤压自适应让思考卡减行」是同一件事的两面。 */
+.kr-card--memory {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  /* 底衬必须不透明：滚动内容会从这张卡下面穿过去，半透明底会透出上一段文字。
+     这里显式重申 .kr-card 的 --kr-card-bg（layer-1，不随主题变透明）。 */
+  background: var(--kr-card-bg);
+  /* 上边发丝线：把「常驻区」与上面的滚动内容划开（描边比其余三面重一档）。 */
+  border-top-color: var(--kr-card-hover);
+}
+
+.kr-memory__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kr-memory__section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kr-memory__section + .kr-memory__section {
+  border-top: 1px solid var(--kr-hairline);
+  padding-top: 8px;
+}
+
+.kr-memory__section-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kr-memory__section-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kr-memory__count {
+  font-weight: 500;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 工作区别名的副标题（目录名/项目别名），超出省略 */
+.kr-memory__scope {
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 标题行内的文字按钮（选择 / 展开其余 / 删除 / 确认 / 取消） */
+.kr-memory__link {
+  flex: none;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.kr-memory__link:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12));
+}
+
+/* 删除/确认：主操作，但刻意不做成红色实心——大盘整体是中性灰，
+   破坏性操作靠「二次确认」而不是靠颜色吓人。 */
+.kr-memory__link--danger {
+  color: var(--dsw-alias-label-primary);
+  background: var(--kr-fill-bg);
+  border: 1px solid var(--kr-card-border);
+}
+
+.kr-memory__link:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.kr-memory__selected {
+  flex: none;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.kr-memory__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  /* 兜底封顶：展开「其余 N 条」后也不允许把右栏顶穿，超出在内部滚动。 */
+  max-height: 46vh;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--dsw-alias-scrollbar-bg-l2, rgba(127, 127, 127, 0.4)) transparent;
+}
+
+/* 挤压态：思考卡已被压到最小档、右栏仍然装不下时，记忆卡自己再让一档，
+   绝不上涨把思考卡彻底顶没（用户要的是「都能看见」而不是「记忆卡看全」）。 */
+.kr-card--memory[data-squeezed="true"] .kr-memory__list {
+  max-height: 30vh;
+}
+
+.kr-memory__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.kr-memory__row:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.07));
+}
+
+.kr-memory__row[data-selected="true"] {
+  background: var(--kr-fill-bg);
+}
+
+.kr-memory__check {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--kr-accent);
+  cursor: pointer;
+}
+
+/* 置顶图标占位：未置顶的行也留同一个 11px 槽，文本左边缘才对得齐 */
+.kr-memory__pin {
+  flex: none;
+  width: 11px;
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.kr-memory__pin[role="button"] {
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.kr-memory__pin[role="button"]:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12));
+}
+
+.kr-memory__body-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* 单条默认 1-2 行 + 省略号：默认全展开会把大盘撑爆，全文点条目再看 */
+.kr-memory__text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.kr-memory__text[data-open="true"] {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+.kr-memory__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.kr-memory__tag {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--kr-hover-bg);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.kr-memory__note {
+  padding: 4px 2px;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 删除失败等行内错误（不动用模态弹窗，也不打断多选态） */
+.kr-memory__err {
+  padding: 2px 6px 3px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-primary);
+}
+
 /* ══ 隐藏原生 DSH 任务列表/Plan卡片（KR模式下收敛至右侧大盘） ═══════════════ */
 body[data-dsh-kr-chat="true"] [data-testid="todo-panel"],
 body[data-dsh-kr-chat="true"] [data-plan-artifacts="true"],
