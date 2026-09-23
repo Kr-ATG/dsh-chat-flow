@@ -65,8 +65,73 @@ interface SectionState {
  * host 写 `createdAt` 用的是宿主 Node 进程的时钟，与浏览器时钟可能存在偏差
  * （时区、NTP 同步窗口）。少了这个冗余，刚提取出来的记忆会因几毫秒到几秒的差
  * 被判定为「早于基线」而漏显示——那正是用户最想看到的那几条。
+ *
+ * 放宽到 5 分钟而不是 60s：用户常见操作是「让模型记一条 → 顺手刷新页面」，
+ * 刷新前的写入要仍算本会话新增；5 分钟足够覆盖这类间隔，又不至于把半小时前
+ * 的历史混进来。
  */
-const BASELINE_CLOCK_SKEW_MS = 60_000
+const BASELINE_CLOCK_SKEW_MS = 5 * 60_000
+
+/**
+ * 基线持久化 key（localStorage）。
+ *
+ * 为什么必须持久化：基线原本存在 React state 里，F5 刷新就丢，重挂载时只能用
+ * `Date.now()` 重新取——于是「刷新前刚写的记忆」被判成历史，本会话新增变成 0
+ * （真机踩过：用户让加一条全局记忆，刷新后就看不见了）。
+ *
+ * 持久化后语义变成「这个会话我是从什么时候开始看的」：
+ *  - 刷新页面 → 读回同一个基线，刷新前写入的记忆照样算本会话新增；
+ *  - 切到另一会话 → 那个会话有自己的条目；没有就新建并写入；
+ *  - 切回老会话 → 读回它当时的基线，不会把之前的记忆算成新的。
+ */
+const BASELINE_STORAGE_KEY = 'dsh.kr_chat.memory_baseline'
+
+/** 只保留最近这么多会话的基线，避免 localStorage 无限增长。 */
+const BASELINE_KEEP_SESSIONS = 50
+
+interface BaselineStore {
+  readonly [sessionId: string]: number
+}
+
+/** 读某个会话的基线；没有（或存储不可用）返回 null。 */
+function readStoredBaseline(sessionId: string): number | null {
+  if (sessionId === '' || typeof localStorage === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(BASELINE_STORAGE_KEY)
+    if (raw === null) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return null
+    const value = (parsed as BaselineStore)[sessionId]
+    return typeof value === 'number' && Number.isFinite(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+/** 写某个会话的基线（顺带按 LRU 裁掉最老的会话）。 */
+function writeStoredBaseline(sessionId: string, at: number): void {
+  if (sessionId === '' || typeof localStorage === 'undefined') return
+  try {
+    const raw = localStorage.getItem(BASELINE_STORAGE_KEY)
+    const previous: BaselineStore = (() => {
+      if (raw === null) return {}
+      const parsed: unknown = JSON.parse(raw)
+      return typeof parsed === 'object' && parsed !== null ? (parsed as BaselineStore) : {}
+    })()
+    // 先删后插：让本条成为最新，裁剪时留最近的。
+    delete previous[sessionId]
+    previous[sessionId] = at
+    const keys = Object.keys(previous)
+    if (keys.length > BASELINE_KEEP_SESSIONS) {
+      for (const stale of keys.slice(0, keys.length - BASELINE_KEEP_SESSIONS)) {
+        delete previous[stale]
+      }
+    }
+    localStorage.setItem(BASELINE_STORAGE_KEY, JSON.stringify(previous))
+  } catch {
+    // 存储满 / 隐私模式：基线退回内存态，功能降级但不报错。
+  }
+}
 
 const EMPTY_SECTION: SectionState = {
   selecting: false,
@@ -208,13 +273,16 @@ export const KrMemoryCard = memo(function KrMemoryCard({
 }: KrMemoryCardProps) {
   const [sessionKey, setSessionKey] = useState<string>(() => getLatestChatSessionId() ?? '')
   /**
-   * 本会话基线时刻（ms）：进入这个会话的那一刻。
+   * 本会话基线时刻（ms）：这个会话「我是从什么时候开始看的」。
    *
-   * 只随 sessionKey 重置——会话中途不管过多久都不动，这样晚些时候才提取出来的
-   * 记忆照样算「本会话新增」。用 useState 的初始化函数 + 下面那个 effect 双保险：
-   * 函数式初始化只覆盖首次挂载，会话切换靠 effect 里的 reset。
+   * 首次进入某会话取 Date.now() 并写进 localStorage；刷新页面后从 localStorage
+   * 读回同一个值（不重置），所以刷新前写入的记忆仍算本会话新增。切到别的会话
+   * 再切回来也读回各自当时的值。
    */
-  const [baselineMs, setBaselineMs] = useState<number>(() => Date.now())
+  const [baselineMs, setBaselineMs] = useState<number>(() => {
+    const id = getLatestChatSessionId() ?? ''
+    return readStoredBaseline(id) ?? Date.now()
+  })
   const [reloadToken, setReloadToken] = useState(0)
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
   const [entries, setEntries] = useState<readonly MemoryEntryView[]>([])
@@ -236,10 +304,14 @@ export const KrMemoryCard = memo(function KrMemoryCard({
     })
   }, [])
 
-  // 会话切换：重置基线 + 立刻清掉上一个会话/工作区的记忆。绝不能等新数据到位
-  // 才换——那半秒里右栏挂的会是**别的项目**的记忆，还可能被误删。
+  // 会话切换：取该会话自己的基线（首次进入 = 现在，并落盘供刷新后读回），
+  // 同时清掉上一个会话/工作区的记忆。绝不能等新数据到位才换——那半秒里右栏
+  // 挂的会是**别的项目**的记忆，还可能被误删。
   useEffect(() => {
-    setBaselineMs(Date.now())
+    const stored = readStoredBaseline(sessionKey)
+    const next = stored ?? Date.now()
+    if (stored === null) writeStoredBaseline(sessionKey, next)
+    setBaselineMs(next)
     setEntries([])
     setProjects([])
     setWorkspaceHash(null)
