@@ -704,13 +704,15 @@ body[data-ds-dark-theme] .kr-split__side {
 }
 
 /*
- * 有界视口：最多 15 行（12px 字号 × 1.6 行高 = 19.2px/行 → 288px），
+ * 有界视口：行数上限由组件传入的 --kr-reasoning-rows 驱动
+ * （见 KrReasoningCard 的 REASONING_MAX_ROWS），行高 12px × 1.6 = 19.2px。
  * 超出部分在视口内滚动，卡片不再被思考内容撑成长条。
  * 上下缘按滚动位置渐隐，与左侧实时轨道同一套做法（data-edges）。
  */
 .kr-reasoning-view {
   --kr-reasoning-line: 19.2px;
-  max-height: calc(var(--kr-reasoning-line) * 15);
+  --kr-reasoning-rows: 25;
+  max-height: calc(var(--kr-reasoning-line) * var(--kr-reasoning-rows));
   overflow-y: auto;
   overscroll-behavior-y: contain;
   scroll-behavior: auto;

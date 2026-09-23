@@ -13,10 +13,11 @@
  * 有界视口内的完整文本流——内容不再被截断，滚动由用户掌控。
  */
 import { memo, useMemo, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { useMotionAllowed, useSteppedFollow } from '../motion-utils.ts'
 
 /** 视口最多显示的行数（超出在视口内滚动）。 */
-export const REASONING_MAX_ROWS = 15
+export const REASONING_MAX_ROWS = 25
 
 export interface ReasoningCardProps {
   readonly reasoningTexts: readonly string[]
@@ -88,6 +89,8 @@ export const KrReasoningCard = memo(function KrReasoningCard({
               aria-label={running ? '正在思考，可滚动阅读' : '已完成的思考，可滚动阅读'}
               tabIndex={overflow ? 0 : undefined}
               aria-live={running ? 'polite' : 'off'}
+              /* 行数上限由 JS 常量驱动，避免与 CSS 里的字面量各写一份而漂移 */
+              style={{ '--kr-reasoning-rows': REASONING_MAX_ROWS } as CSSProperties}
             >
               <div className="kr-reasoning-inner">
                 {points.map((item, idx) => (
