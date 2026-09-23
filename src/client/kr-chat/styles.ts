@@ -138,17 +138,15 @@ body[data-dsh-kr-chat="true"],
   --kr-warning: #f59e0b;
   --kr-error: #ef4444;
   /*
-   * 表面策略：**只让大盘这一层浮起来**，里面的卡片一律贴平。
+   * 表面策略：**整个右栏不投投影**，卡片也一律贴平。
    *
-   * 大盘（.kr-split__side）已经有往左投的 --kr-side-shadow 承担「浮在对话流
-   * 之上」；卡片若再自带外投影，两者同色底、各投一层，视觉上就成了
-   * 「悬浮了两层」（尤其卡片里还套着展开态的 kr-tool-card-item，是第三层）。
-   * 现在卡片的边界只靠发丝描边 + 圆角表达，投影留给 hover 做即时反馈。
+   * 大盘与左侧官方侧边栏同色（见下方 --kr-canvas-bg），两者是同一层 chrome，
+   * 靠一根发丝分隔线划界即可；曾经那层「只往左投」的悬浮投影是大盘还纯白、
+   * 与左栏一灰一白时的做法，同色之后不再成立。
    *
-   * 底板取**左侧官方侧边栏同一个 token**（--dsw-specific-sidebar-fill：
-   * 浅色 #f9fafb、深色走主题自身），让右栏与左栏同色、读起来是同一层 chrome；
-   * 卡片仍取 layer-1（浅色=白、深色=#232324），于是浅色下「灰底 + 白卡」
-   * 自带层次，不再依赖阴影区分。
+   * 卡片同理不投影：底板是浅灰 #f9fafb、卡片是白 layer-1，浅色下自带约 5 的
+   * 亮度差就够分层；再叠投影会变成「灰底上浮一层白卡又投一层影」。投影只留给
+   * hover 做瞬时反馈。
    */
   --kr-card-bg: var(--dsw-alias-bg-layer-1, #ffffff);
   --kr-surface-bg: var(--dsw-alias-bg-layer-1, #ffffff);
@@ -160,28 +158,18 @@ body[data-dsh-kr-chat="true"],
   --kr-hairline: var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
   --kr-hover-bg: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
   --kr-fill-bg: var(--dsw-alias-interactive-bg-active, rgba(38, 49, 72, 0.1));
-  /* 卡片常态不投影（贴在大盘上）；hover 才轻微浮起一档做反馈。
-     注意：这是「单张卡片」的瞬时反馈，不会与大盘的投影叠成两层常态观感。 */
+  /* 卡片常态不投影（贴在大盘上）；hover 才轻微浮起一档做反馈。 */
   --kr-card-shadow: none;
   --kr-card-shadow-hover: 0 1px 3px rgba(16, 24, 40, 0.08), 0 4px 12px rgba(16, 24, 40, 0.07);
-  /*
-   * 右栏「悬浮」投影：只往左投（负 X），让大盘看起来浮在对话流之上。
-   * 取向刻意克制——比卡片阴影更淡、更宽，只交代层次，不抢正文的注意力；
-   * 负 spread 把外扩收回来，避免在 440px 的栏宽旁糊出一大片灰。
-   * 注意：这里不用重投影，历史上那版 -4px/24px 在浅色下显脏且抢戏。
-   */
-  --kr-side-shadow: -1px 0 2px rgba(16, 24, 40, 0.04), -10px 0 28px -8px rgba(16, 24, 40, 0.10);
 }
 
-/* 深色主题：卡片(layer-1 #232324)本就比大盘底(#151517)亮，靠色差分层即可，
-   同样不给常态投影——避免与大盘投影叠成两层。 */
+/* 深色主题：卡片(layer-1 #232324)本就比大盘底亮，靠色差分层即可，
+   同样不给常态投影。 */
 body[data-ds-dark-theme],
 body[data-ds-dark-theme] .kr-split__side {
   --kr-card-border: rgba(255, 255, 255, 0.07);
   --kr-card-shadow: none;
   --kr-card-shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
-  /* 深色下纯黑才可见，同样只往左投、保持克制。 */
-  --kr-side-shadow: -1px 0 2px rgba(0, 0, 0, 0.32), -10px 0 28px -8px rgba(0, 0, 0, 0.45);
 }
 
 .kr-split {
@@ -214,11 +202,11 @@ body[data-ds-dark-theme] .kr-split__side {
   height: 100%;
   display: flex;
   flex-direction: column;
-  /* 分隔靠一根 hairline 即可；原来的 -4px/24px 重投影在浅色下脏且抢戏 */
+  /* 与左侧官方侧边栏同色（--kr-canvas-bg），两者是同一层 chrome，
+     因此**不投悬浮投影**——只留一根发丝分隔线划出边界。
+     （历史上加过「只往左投」的悬浮投影，那是大盘还是纯白底、与左栏一灰一白
+     时的做法；同色之后那层投影不再成立，反而像贴了张浮纸。） */
   border-left: 1px solid var(--kr-hairline);
-  /* 往左投的投影 → 大盘看起来浮在对话流之上（而非切下来的一块）。
-     阴影独立成层、不改栏宽，所以对话流的排版与滚动位置零位移。 */
-  box-shadow: var(--kr-side-shadow);
   background: var(--kr-canvas-bg);
   position: relative;
   z-index: 10;
@@ -226,8 +214,8 @@ body[data-ds-dark-theme] .kr-split__side {
   overflow: hidden;
 }
 
-/* 全屏态铺满整个 split：此时它不再「浮在旁边」，投影必须撤掉，
-   否则会在四边漏出一圈灰边。 */
+/* 全屏态铺满整个 split：无投影，此规则保留作显式声明，
+   防止将来有人给基础态加投影时漏掉这一态。 */
 .kr-split__side--fullscreen {
   position: absolute;
   top: 0;
