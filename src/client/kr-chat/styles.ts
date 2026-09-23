@@ -122,28 +122,32 @@ body[data-dsh-kr-chat="true"],
   --kr-warning: #f59e0b;
   --kr-error: #ef4444;
   /*
-   * 表面策略：底板就是应用本色（不额外染色），卡片靠「阴影」浮起来。
+   * 表面策略：**只让大盘这一层浮起来**，里面的卡片一律贴平。
+   *
+   * 大盘（.kr-split__side）已经有往左投的 --kr-side-shadow 承担「浮在对话流
+   * 之上」；卡片若再自带外投影，两者同是纯白底、各投一层，视觉上就成了
+   * 「悬浮了两层」（尤其卡片里还套着展开态的 kr-tool-card-item，是第三层）。
+   * 现在卡片的边界只靠发丝描边 + 圆角表达，投影留给 hover 做即时反馈。
    *
    * 曾试过把底板朝黑混 6% 造出「灰底 + 白卡」的层次，但浅色主题下那块
    * 浅灰面板观感很脏，而且与官方对话区（纯白）割裂。现在底板直接取
-   * --dsw-alias-bg-base：浅色=纯白、深色=#151517，卡片仍取 layer-1
-   * （浅色=白、深色=#232324），层次完全交给阴影 + 发丝描边。
-   * 深色下卡片本就比底板亮，阴影只做加强，不承担主要区分。
+   * --dsw-alias-bg-base：浅色=纯白、深色=#151517，卡片取 layer-1
+   * （浅色=白、深色=#232324）；深色下卡片本就比底板亮，靠色差即可分层。
    */
   --kr-card-bg: var(--dsw-alias-bg-layer-1, #ffffff);
   --kr-surface-bg: var(--dsw-alias-bg-layer-1, #ffffff);
   --kr-canvas-bg: var(--dsw-alias-bg-base, #ffffff);
-  /* 描边退到发丝级：浅色 4% 黑 / 深色 6% 白（l1 自带主题感知），
-     卡片的边界感主要来自阴影，不再用重描边「画框」。 */
+  /* 描边退到发丝级：浅色 4% 黑 / 深色 6% 白（l1 自带主题感知）。
+     卡片不再靠投影浮起，边界感全交给这根描边。 */
   --kr-card-border: var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
   --kr-card-hover: var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.16));
   --kr-hairline: var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
   --kr-hover-bg: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
   --kr-fill-bg: var(--dsw-alias-interactive-bg-active, rgba(38, 49, 72, 0.1));
-  /* 两层柔和投影：近处一层压实边缘，远处一层铺开浮起感。
-     阴影现在独自承担「卡片浮起」的表达（底板已不再染色），所以比纯装饰时更实一档。 */
-  --kr-card-shadow: 0 1px 3px rgba(16, 24, 40, 0.1), 0 4px 12px rgba(16, 24, 40, 0.08);
-  --kr-card-shadow-hover: 0 2px 5px rgba(16, 24, 40, 0.12), 0 8px 20px rgba(16, 24, 40, 0.12);
+  /* 卡片常态不投影（贴在大盘上）；hover 才轻微浮起一档做反馈。
+     注意：这是「单张卡片」的瞬时反馈，不会与大盘的投影叠成两层常态观感。 */
+  --kr-card-shadow: none;
+  --kr-card-shadow-hover: 0 1px 3px rgba(16, 24, 40, 0.08), 0 4px 12px rgba(16, 24, 40, 0.07);
   /*
    * 右栏「悬浮」投影：只往左投（负 X），让大盘看起来浮在对话流之上。
    * 取向刻意克制——比卡片阴影更淡、更宽，只交代层次，不抢正文的注意力；
@@ -153,12 +157,13 @@ body[data-dsh-kr-chat="true"],
   --kr-side-shadow: -1px 0 2px rgba(16, 24, 40, 0.04), -10px 0 28px -8px rgba(16, 24, 40, 0.10);
 }
 
-/* 深色主题：底色本身已分层，阴影改为加强纵深（纯黑在深底上才可见）。 */
+/* 深色主题：卡片(layer-1 #232324)本就比大盘底(#151517)亮，靠色差分层即可，
+   同样不给常态投影——避免与大盘投影叠成两层。 */
 body[data-ds-dark-theme],
 body[data-ds-dark-theme] .kr-split__side {
   --kr-card-border: rgba(255, 255, 255, 0.07);
-  --kr-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.36), 0 3px 10px rgba(0, 0, 0, 0.24);
-  --kr-card-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.44), 0 8px 20px rgba(0, 0, 0, 0.32);
+  --kr-card-shadow: none;
+  --kr-card-shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
   /* 深色下纯黑才可见，同样只往左投、保持克制。 */
   --kr-side-shadow: -1px 0 2px rgba(0, 0, 0, 0.32), -10px 0 28px -8px rgba(0, 0, 0, 0.45);
 }
@@ -743,7 +748,9 @@ body[data-ds-dark-theme] .kr-split__side {
 .kr-tool-card-item--expanded {
   background: var(--kr-surface-bg);
   border: 1px solid var(--kr-card-border);
-  box-shadow: var(--kr-card-shadow);
+  /* 展开态是卡片内部的一块高亮区，用描边区分即可；
+     再投一层阴影就会在卡片里叠出第三层「悬浮」。 */
+  box-shadow: none;
   margin: 2px 0;
   border-radius: 8px;
 }
