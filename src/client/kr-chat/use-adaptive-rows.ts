@@ -1,11 +1,13 @@
 /**
  * dsh-chat-plus — 右栏「挤压自适应」hook：空间不够时自动缩小思考卡行数。
  *
- * 背景：记忆卡要求**常驻右栏底部、不被挤压**（用户明确要求），而右栏高度是
- * 固定的（`.kr-panel__scroll` 是 `flex: 1 1 0; min-height: 0` 的滚动容器）。
- * 于是「任务 + 思考 + 工具 + 记忆」四张卡叠起来必然溢出，唯一可让的尺寸就是
- * 思考卡的视口行数（`--kr-reasoning-rows`，见 KrReasoningCard 与 styles.ts：
- * 行高 19.2px，max-height = 行数 × 19.2px）。本 hook 就负责按溢出程度选一档。
+ * 背景：记忆卡是滚动区之下的独立 flex footer（.kr-panel__memory-dock，永远
+ * 钉在右栏最下方），滚动区 .kr-panel__scroll（flex: 1 1 0; min-height: 0）
+ * 自动让出剩余高度。footer 占得越多、滚动区越矮，「任务 + 思考 + 工具」三张
+ * 卡叠起来越容易溢出，唯一可让的尺寸就是思考卡的视口行数
+ * （`--kr-reasoning-rows`，见 KrReasoningCard 与 styles.ts：行高 19.2px，
+ * max-height = 行数 × 19.2px）。本 hook 就负责按溢出程度选一档。
+ * 记忆卡高度变化经 onContentChange → memoryTick 进入 signature，会触发重测。
  *
  * 判定口径：容器 `scrollHeight > clientHeight + 1` 即视为挤压（1px 容差吸收
  * 亚像素缩放与滚动条出现带来的误差，否则会在临界点上反复跳档）。

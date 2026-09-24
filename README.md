@@ -14,8 +14,9 @@
   对话截图（无头浏览器出图，可内嵌本地 HTML）· download 下载工具（wire 工具 + 实时进度条）
 - **KR 对话双栏大盘**：右栏只保留**任务 / 思考 / 工具调用 / 记忆**四张卡。顶栏（机器人头像
   + 标题 + 统计副标题 + 截图 / 收起按钮）默认隐藏，由 `KR_PANEL_HEADER_VISIBLE` 单独门控；
-  工具调用默认整块折叠、一条不预展；记忆卡 sticky 常驻底部，工作区 / 全局两个分区都只列
-  **本会话新增**（基线按 sessionId 持久化，刷新不重置），带「全部 N」逃生口与多选批量删除；
+  工具调用默认整块折叠、一条不预展（展开入口在标题行右端）；记忆卡常驻 footer 钉在右栏最下方，
+  分区**有本会话新增才显示**（按条目溯源 `provenance.sessionId` 等值判定），无新增的分区整个不出现，
+  支持多选批量删除；
   右栏被挤压时思考卡视口行数逐档自动缩小（25→18→12→8→5）
 - **四工作台（原 dsh-triad，已融合）**：自动沉淀的长期记忆 · 定时自动化 · 用量与账号趋势 ·
   技能与 MCP Server 管理。`dsh-triad` 自此退役，其座位（slot id / order / locale namespace）、
@@ -35,7 +36,7 @@
 | **对话截图** | assistant 消息操作栏相机按钮 → 截图面板（范围本条回复/这一轮/整段会话 × 版式电脑/手机 × 画质 1080P/2K/4K × 画幅 × 五套主题（浅/深/玻璃/玻璃深/阅读版）；标题/徽章可编辑；预览后保存/复制/下载/打开目录；「元素删除」编辑模式点击页面删元素再重新生成）。正文里提到的本地 HTML 会自动内嵌进截图（走 file:// iframe，同目录样式图片照常加载，只嵌页面本身，最多 3 张）；host 端常驻无头浏览器渲染卡片（markdown-it + shiki + mermaid 真图），保存目录 `~/.dsh/storages/dsh-chat-flow-screenshot` |
 | **会话头部视图标签** | 官方把「对话 / 轨迹」两个视图标签独占标题下方一整行（header 76px）；本插件把 header 改成单行 flex，标签钉到右上角与标题同行（header 收回 45px，省下的 31px 还给正文），下划线贴字、hover 从中心展开、选中常驻蓝条。纯 CSS 注入，选择器只用 `header` / `role=tablist` / CSS Module 的 `_titleRow`、`_tab` 后缀，不依赖构建 hash 前缀；单视图（无 tablist）时 `:has` 不匹配，零影响。桌面壳（Electron 无边框窗口）右上角自绘 最小化/最大化·还原/关闭：与壳走 `dsh:shell-hello` → `dsh:shell-chrome` 能力握手，收到应答才给 `<html>` 挂 `dsh-in-shell`（旧壳不应答 = 行为不变，不留空档），header 右 padding 28px→128px，右侧控制簇（工作区按钮/更多/侧栏展开/对话·轨迹）整体左移 100px 留位；同时监听 `<body data-ds-dark-theme>` 把主题以 `dsh:theme` postMessage 给壳，壳按钮颜色随界面深浅同步。浏览器直开两者零影响 |
 | **KR 对话双栏大盘** | 左栏官方 ChatView 原样保留，右栏是全高执行大盘。四张卡自上而下：**任务**（来自本轮 `todo_write` / 官方 todos 实时投影，有真实任务才出现）→ **思考**（有界视口 + 实时跟随滚动，默认 25 行封顶）→ **工具调用**（**默认整块折叠、一条不预展**，标题行只留「展开 N 次调用」入口，展开后是全量台账与结果 / 输入 / 原始数据页签）→ **记忆**（sticky 常驻底部，见下条）。四个开关都在 `src/client/kr-chat/enabled.ts`：`KR_CHAT_ENABLED`（整套 KR 视图）、`KR_PANEL_HEADER_VISIBLE`（顶栏，默认 false）、`KR_MEMORY_CARD_VISIBLE`（记忆卡，默认 true）——全是**隐藏而非删除**，改回 true 即恢复。顶栏隐藏后能力不丢：收起 / 展开走标签行最右端的「Agent 轨迹大盘」开关（`#kr-panel-toggle-btn`），截图走 assistant 消息操作栏相机按钮。**挤压自适应**：`use-adaptive-rows.ts` 用 ResizeObserver 监视 `.kr-panel__scroll`，溢出时把思考卡视口行数逐档下调（25→18→12→8→5），空间恢复即回升，只在档位真正变化时 setState（不进 ResizeObserver 自激循环） |
-| **记忆卡（KR 右栏）** | 数据面走 host 的 `/api/dsh-memory/*`（纯 fetch，无 typert）。**口径 = 本会话新增**：两个分区（工作区 / 全局）都只列 `createdAt` 不早于「这个会话我是从什么时候开始看的」的条目——基线按 sessionId 存 localStorage（`dsh.kr_chat.memory_baseline`），**刷新页面不重置**，换会话正确切换，切回老会话读回原值；5 分钟时钟冗余吸收 host 与浏览器时钟差（覆盖「让模型记一条 → 顺手刷新」）。工作区分区再叠加当前 cwd → projectHash 限定（path 匹配，不自己复刻 sha1），匹配不到会明说。每分区一个「全部 N」逃生口点开看全量历史，默认永远收回本会话口径。**删除**：分区标题行「选择」进多选态 → 勾若干条 →「删除」→ 行内「确认删除 N 条？」→ `POST /delete-batch`，乐观摘除、失败整份回滚。记忆模块不可用时整卡降级成一行「记忆模块未就绪」，不崩其余卡片 |
+| **记忆卡（KR 右栏）** | 数据面走 host 的 `/api/dsh-memory/*`（纯 fetch，无 typert）。**口径 = 本会话新增，有新增才显示**：分区只列**这个会话写下 / 更新过**的条目——按条目溯源 `provenance.sessionId` 等值判定（host 在自动提取、memory_remember / memory_revise 写入时落盘），**不按时间**：时钟偏差、刷新、切会话都不影响结果；本会话更新过的记忆（upsert 撞已有条目）同样刷新溯源算本会话。没有新增的分区**整个不渲染**（无占位行），两个分区都无新增时卡体收成一行头部；不再提供「全部 N」历史逃生口（全量历史走侧边栏记忆工作台）。工作区分区再叠加当前 cwd → projectHash 限定（path 匹配，不自己复刻 sha1）。**删除**：分区标题行「选择」进多选态 → 勾若干条 →「删除」→ 行内「确认删除 N 条？」→ `POST /delete-batch`，乐观摘除、失败整份回滚。记忆模块不可用时整卡降级成一行「记忆模块未就绪」，不崩其余卡片 |
 | **四工作台（原 dsh-triad）** | 2026-09-24 融合：`dsh-triad` 的 host / client 两半身整体搬进 `src/triad/` 与 `src/client/triad/`（host 45 文件 + client 74 文件，SHA256 逐一比对零差异），`dsh-triad` 从 profile bundles 摘除。**侧边栏四入口**：自动化（首行）/ 记忆 / 能力 / 用量。**8 组路由前缀**与工具名一字未改：`/api/dsh-memory/*`（面板数据 + 裁决操作）、`/api/triad-automation/*`、`/api/usage-stats/*`、`/api/skill-manager/*`、`/api/skill-toggles/*`、`/api/skill-health`、`/api/mcp-recommended`、`/api/triad/mcp-status|mcp-config`；工具 `memory_search` / `memory_remember` / `memory_pin` / `memory_tag` / `memory_forget` / `memory_revise` / `memory_retire` / `memory_consolidate` 与 `automation` 照旧。**记忆引擎**仍挂 `agent/pre-step` 注入（prepend，绝不写 system prompt）与 `session/event` 的 turn/end 捕获 → LLM 提取 → ticker 增量编译。装配按「每模块一个 try/catch」，一个工作台挂不起来不影响其他三个，也不影响上面的对话增强 |
 
 **正文链路保持官方**：text 块用官方 `MarkdownText`（ui-primitives）、图片走官方
@@ -102,17 +103,17 @@ variant 可选 pill / expand / glow，缺省 pill（方案A）。未闭合围栏
 
 ### 记忆卡的本会话口径
 
-「本会话新增」的判定基准是**这个会话我是从什么时候开始看的**，而不是「我记得的那
-几条」。基线按 sessionId 存 localStorage：
+「本会话新增」的判定基准是**条目溯源**，不按时间：host 在写入/更新条目时把
+`provenance.sessionId` 一并落盘（自动提取、memory_remember / memory_revise 都填），
+前端拿当前 sessionId 做纯等值比较。
 
-- 刷新页面 → 读回同一个基线，刷新前写入的记忆照样算本会话新增（这是真实踩过的坑：
-  基线原本只在 React state 里，F5 即丢，重挂载只能用 `Date.now()` 重取，于是刚写的
-  记忆全被判成历史）
-- 切到另一会话 → 用该会话自己的基线，没有就新建并落盘；切回老会话读回原值
-- 5 分钟时钟冗余吸收 host 与浏览器时钟差，覆盖「让模型记一条 → 顺手刷新」这类间隔
-
-LRU 只保留最近 50 个会话的基线；localStorage 不可用（隐私模式 / 存满）时退回内存态，
-功能降级但不报错。
+- 与时间无关：时钟偏差、刷新时机、切会话都不影响结果；条目属于哪个会话由写它
+  的那次调用说了算，不再用「进入会话的时间基线」猜（旧实现的 localStorage 基线 +
+  5 分钟时钟冗余已移除）
+- 更新也算：upsert 撞上已有条目时同样刷新溯源，本会话更新过的记忆照样出现在
+  本会话口径里
+- 旧 host 过渡窗口：host 半身要重启 DSH 才生效，旧 host 不返回 provenance 时
+  本会话口径显示「暂无」——宁可少显示，也不把别的会话的记忆混进来
 
 ### 挤压自适应
 
@@ -338,7 +339,7 @@ src/
         ├── KrTaskOverviewCard.tsx   — 任务卡（todo_write / 官方 todos 投影）
         ├── KrReasoningCard.tsx      — 思考卡（有界视口 + 实时跟随滚动 + maxRows 自适应）
         ├── KrToolCallsCard.tsx      — 工具调用卡（默认折叠，展开后是全量台账）
-        ├── KrMemoryCard.tsx         — 记忆卡（本会话口径 + 全部 N 逃生口 + 批量删除）
+        ├── KrMemoryCard.tsx         — 记忆卡（本会话口径、无新增分区不显示、批量删除）
         ├── memory-api.ts            — /api/dsh-memory/* 最小 fetch 客户端（零依赖）
         ├── use-adaptive-rows.ts     — 挤压自适应 hook（ResizeObserver + 档位刹车）
         ├── kr-chat-store.ts         — panelOpen / selectedTurn 状态（含 localStorage）

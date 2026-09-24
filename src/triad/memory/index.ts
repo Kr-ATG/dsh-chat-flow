@@ -197,6 +197,9 @@ async function extractTurn(
       tags: candidate.tags,
       importance: candidate.importance,
       source: 'extract',
+      // 溯源：记下产生该条目的会话与轮次（KR 右栏记忆卡按 sessionId 判定
+      // 「本会话新增」，不再用浏览器时间基线猜）。
+      provenance: { sessionId: agent.session.id, turn: turnNumber },
     })
     existingEntries.push(entry)
     // 项目层首次落盘时确保 meta.json 存在（否则面板项目列表看不到该项目）。

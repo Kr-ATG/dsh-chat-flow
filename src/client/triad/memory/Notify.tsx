@@ -2,13 +2,17 @@
  * dsh-memory 变更通知：入口 badge 的未读计数。
  * 未读状态存 localStorage（已读 change id 集合），badge 显示当日未读数；
  * 打开面板（变更 Tab）时标记已读。
+ * badge 显隐偏好同样存 localStorage（设置 Tab「界面」分组里开关）。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChangeView, MemoryApi } from './api.js'
 
-/** localStorage key。 */
+/** localStorage key（未读集合）。 */
 const READ_KEY = 'dsh-memory:read'
+
+/** localStorage key（badge 显隐偏好；'off' = 隐藏角标，缺省/其它 = 显示）。 */
+export const BADGE_PREF_KEY = 'dsh-memory:unread-badge'
 
 /**
  * 已读 id 上限：change id 只增不减，无上限会让这条 localStorage 记录
@@ -86,6 +90,53 @@ export function useUnreadChanges(api: MemoryApi, pollMs = 60_000): {
   }, [])
 
   return { count, refresh, markRead }
+}
+
+/** badge 显隐偏好订阅（设置 Tab 开关 ↔ 入口 badge 双向联动）。 */
+const badgePrefListeners = new Set<() => void>()
+
+/** 读 badge 显隐偏好：缺省显示。 */
+export function readBadgePref(): boolean {
+  try {
+    return localStorage.getItem(BADGE_PREF_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
+
+/** 写 badge 显隐偏好并广播给所有订阅者（入口与设置 Tab 可能挂在不同 React 根上）。 */
+export function writeBadgePref(show: boolean): void {
+  try {
+    if (show) localStorage.removeItem(BADGE_PREF_KEY)
+    else localStorage.setItem(BADGE_PREF_KEY, 'off')
+  } catch {
+    // localStorage 不可用：偏好退回内存态，本次会话内仍生效。
+  }
+  for (const fn of badgePrefListeners) {
+    try { fn() } catch {}
+  }
+}
+
+/**
+ * 订阅 badge 显隐偏好（useSyncExternalStore 语义：返回当前值，变化触发重渲染）。
+ *
+ * 之所以不用 props/context 传递：入口导航行与设置 Tab 是两棵不相交的组件树
+ * （各自 createRoot/portal 挂载），没有公共祖先可放 context；localStorage +
+ * 显式订阅是最小实现。
+ */
+export function useBadgePref(): boolean {
+  const [show, setShow] = useState(readBadgePref)
+  useEffect(() => {
+    const sync = (): void => { setShow(readBadgePref()) }
+    badgePrefListeners.add(sync)
+    // 跨标签页 / 同页其它根改了偏好时也跟上。
+    window.addEventListener('storage', sync)
+    return () => {
+      badgePrefListeners.delete(sync)
+      window.removeEventListener('storage', sync)
+    }
+  }, [])
+  return show
 }
 
 /** 变更类型再导出（入口只需要类型，不再需要动作文案——已迁到 Panel 的 changeActionLabel）。 */

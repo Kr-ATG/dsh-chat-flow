@@ -2,16 +2,21 @@
  * dsh-chat-plus — KR 右栏「记忆」卡片。
  *
  * 用户要的三件事：
- *  1. **常驻**：卡片 sticky 贴在 `.kr-panel__scroll` 底部（见 styles.ts 的
- *     `.kr-card--memory`），滚动时一直看得见，随时可以删；
- *  2. **口径 = 本会话新增**（用户明确纠正过）：两个分区都只列 `createdAt` 不早于
- *     「进入本会话的时刻」的条目，为的是「一眼看清这次对话新记了哪些」，不是把
- *     记忆库全量铺开。工作区分区再叠加当前 cwd 对应 projectHash 的限定，全局
- *     分区即 scope=global。cwd→hash 不自己算 sha1（host 的 projectHashOf 是
- *     sha1(path).slice(0,12)，算法细节不该在前端复刻一遍），而是拿
- *     `/api/dsh-memory/list` 一起返回的 projects 注册表按 path 匹配；
- *     每个分区另有一个「全部 N」逃生口——点开才看该分区全量历史，默认永远收回
- *     本会话口径，免得用户以为记忆丢了；
+ *  1. **常驻底部**：卡片挂在滚动区之下的独立 flex footer（.kr-panel__memory-dock，
+ *     见 KrAgentPanel 与 styles.ts），永远钉在右栏最下方——无论内容多少、无论
+ *     滚动位置，随时可以删；
+ *  2. **口径 = 本会话新增，有新增才显示**：两个分区（工作区 / 全局）都只列
+ *     「这个会话写下 / 更新过」的条目，为的是「一眼看清这次对话新记了哪些」。
+ *     没有新增的分区**整个不出现**（连「暂无」占位行都不留），两个分区都无新增
+ *     时卡体收成一行头部。工作区分区再叠加当前 cwd 对应 projectHash 的限定
+ *     （path 匹配，不自己复刻 sha1 算法）。
+ *
+ *     「这个会话写下」按**条目溯源**判定：host 在写入/更新条目时把
+ *     `provenance.sessionId` 一并落盘（自动提取、memory_remember / memory_revise
+ *     都填），前端拿当前 sessionId 做纯等值比较——不掺任何时间口径。旧实现按
+ *     「进入会话的时间基线」猜（localStorage + 5 分钟时钟冗余），时钟偏差、刷新
+ *     时机、切会话都会把别的会话的记忆误判成本会话的，已被替换。
+ *
  *  3. **可批量删**：分区标题行「选择」进多选态，勾若干条一次删完，删除前有
  *     一次行内二次确认（不做模态弹窗，避免打断大盘阅读）。
  *
@@ -49,88 +54,7 @@ interface SectionState {
   error: string
   /** 是否展开全部条目（默认只 preview 前几条）。 */
   showAll: boolean
-  /**
-   * 口径：`session` = 只列本会话新增（默认），`all` = 该分区全量历史。
-   *
-   * 之所以默认 session：用户要的是「清晰看到这个会话增加了哪些记忆」；全量铺开
-   * 反而看不出这次记了什么。「全部 N」按钮才翻到 all，再点翻回来。
-   */
-  mode: 'session' | 'all'
   selected: ReadonlySet<string>
-}
-
-/**
- * 基线的时钟冗余（毫秒）。
- *
- * host 写 `createdAt` 用的是宿主 Node 进程的时钟，与浏览器时钟可能存在偏差
- * （时区、NTP 同步窗口）。少了这个冗余，刚提取出来的记忆会因几毫秒到几秒的差
- * 被判定为「早于基线」而漏显示——那正是用户最想看到的那几条。
- *
- * 放宽到 5 分钟而不是 60s：用户常见操作是「让模型记一条 → 顺手刷新页面」，
- * 刷新前的写入要仍算本会话新增；5 分钟足够覆盖这类间隔，又不至于把半小时前
- * 的历史混进来。
- */
-const BASELINE_CLOCK_SKEW_MS = 5 * 60_000
-
-/**
- * 基线持久化 key（localStorage）。
- *
- * 为什么必须持久化：基线原本存在 React state 里，F5 刷新就丢，重挂载时只能用
- * `Date.now()` 重新取——于是「刷新前刚写的记忆」被判成历史，本会话新增变成 0
- * （真机踩过：用户让加一条全局记忆，刷新后就看不见了）。
- *
- * 持久化后语义变成「这个会话我是从什么时候开始看的」：
- *  - 刷新页面 → 读回同一个基线，刷新前写入的记忆照样算本会话新增；
- *  - 切到另一会话 → 那个会话有自己的条目；没有就新建并写入；
- *  - 切回老会话 → 读回它当时的基线，不会把之前的记忆算成新的。
- */
-const BASELINE_STORAGE_KEY = 'dsh.kr_chat.memory_baseline'
-
-/** 只保留最近这么多会话的基线，避免 localStorage 无限增长。 */
-const BASELINE_KEEP_SESSIONS = 50
-
-interface BaselineStore {
-  readonly [sessionId: string]: number
-}
-
-/** 读某个会话的基线；没有（或存储不可用）返回 null。 */
-function readStoredBaseline(sessionId: string): number | null {
-  if (sessionId === '' || typeof localStorage === 'undefined') return null
-  try {
-    const raw = localStorage.getItem(BASELINE_STORAGE_KEY)
-    if (raw === null) return null
-    const parsed: unknown = JSON.parse(raw)
-    if (typeof parsed !== 'object' || parsed === null) return null
-    const value = (parsed as BaselineStore)[sessionId]
-    return typeof value === 'number' && Number.isFinite(value) ? value : null
-  } catch {
-    return null
-  }
-}
-
-/** 写某个会话的基线（顺带按 LRU 裁掉最老的会话）。 */
-function writeStoredBaseline(sessionId: string, at: number): void {
-  if (sessionId === '' || typeof localStorage === 'undefined') return
-  try {
-    const raw = localStorage.getItem(BASELINE_STORAGE_KEY)
-    const previous: BaselineStore = (() => {
-      if (raw === null) return {}
-      const parsed: unknown = JSON.parse(raw)
-      return typeof parsed === 'object' && parsed !== null ? (parsed as BaselineStore) : {}
-    })()
-    // 先删后插：让本条成为最新，裁剪时留最近的。
-    delete previous[sessionId]
-    previous[sessionId] = at
-    const keys = Object.keys(previous)
-    if (keys.length > BASELINE_KEEP_SESSIONS) {
-      for (const stale of keys.slice(0, keys.length - BASELINE_KEEP_SESSIONS)) {
-        delete previous[stale]
-      }
-    }
-    localStorage.setItem(BASELINE_STORAGE_KEY, JSON.stringify(previous))
-  } catch {
-    // 存储满 / 隐私模式：基线退回内存态，功能降级但不报错。
-  }
 }
 
 const EMPTY_SECTION: SectionState = {
@@ -139,7 +63,6 @@ const EMPTY_SECTION: SectionState = {
   busy: false,
   error: '',
   showAll: false,
-  mode: 'session',
   selected: new Set<string>(),
 }
 
@@ -272,17 +195,6 @@ export const KrMemoryCard = memo(function KrMemoryCard({
   squeezed = false,
 }: KrMemoryCardProps) {
   const [sessionKey, setSessionKey] = useState<string>(() => getLatestChatSessionId() ?? '')
-  /**
-   * 本会话基线时刻（ms）：这个会话「我是从什么时候开始看的」。
-   *
-   * 首次进入某会话取 Date.now() 并写进 localStorage；刷新页面后从 localStorage
-   * 读回同一个值（不重置），所以刷新前写入的记忆仍算本会话新增。切到别的会话
-   * 再切回来也读回各自当时的值。
-   */
-  const [baselineMs, setBaselineMs] = useState<number>(() => {
-    const id = getLatestChatSessionId() ?? ''
-    return readStoredBaseline(id) ?? Date.now()
-  })
   const [reloadToken, setReloadToken] = useState(0)
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
   const [entries, setEntries] = useState<readonly MemoryEntryView[]>([])
@@ -304,14 +216,9 @@ export const KrMemoryCard = memo(function KrMemoryCard({
     })
   }, [])
 
-  // 会话切换：取该会话自己的基线（首次进入 = 现在，并落盘供刷新后读回），
-  // 同时清掉上一个会话/工作区的记忆。绝不能等新数据到位才换——那半秒里右栏
-  // 挂的会是**别的项目**的记忆，还可能被误删。
+  // 会话切换：清掉上一个会话/工作区的记忆，等新数据到位再渲染。绝不能复用
+  // 旧 state——那半秒里右栏挂的会是别的项目的记忆，还可能被误删。
   useEffect(() => {
-    const stored = readStoredBaseline(sessionKey)
-    const next = stored ?? Date.now()
-    if (stored === null) writeStoredBaseline(sessionKey, next)
-    setBaselineMs(next)
     setEntries([])
     setProjects([])
     setWorkspaceHash(null)
@@ -377,22 +284,30 @@ export const KrMemoryCard = memo(function KrMemoryCard({
   )
 
   /**
-   * 「本会话新增」子集：createdAt 不早于基线（含时钟冗余）。
+   * 「本会话新增」子集：按条目溯源判定。
    *
-   * 时间解析失败的条目按「不算本会话」处理——宁可少显示一条，也不把几年历史的
-   * 旧记忆当成这次新记的混进来（那会让用户以为本次对话乱记东西）。
+   * host 在写入/更新条目时把 `provenance.sessionId` 一并落盘（自动提取、
+   * memory_remember / memory_revise 都填），这里与当前 sessionId 做纯等值
+   * 比较——不掺任何时间口径，时钟偏差 / 刷新时机 / 切会话都不再影响结果。
+   *
+   * 旧 host 还没重启（不返回 provenance）时该分区会一直显示「暂无」而不是
+   * 错误数据：宁可少显示，也不把别的会话的记忆混进来。挺过这个窗口只需重启
+   * DSH 让新 host 半身生效。
    */
   const sessionNewEntries = useMemo(() => {
-    const cutoff = baselineMs - BASELINE_CLOCK_SKEW_MS
-    const isNew = (entry: MemoryEntryView): boolean => {
-      const at = Date.parse(entry.createdAt)
-      return Number.isFinite(at) && at >= cutoff
+    if (sessionKey === '') {
+      return { workspace: [], global: [] } as {
+        workspace: readonly MemoryEntryView[]
+        global: readonly MemoryEntryView[]
+      }
     }
+    const isNew = (entry: MemoryEntryView): boolean =>
+      entry.provenance?.sessionId === sessionKey
     return {
       workspace: workspaceEntries.filter(isNew),
       global: globalEntries.filter(isNew),
     }
-  }, [workspaceEntries, globalEntries, baselineMs])
+  }, [workspaceEntries, globalEntries, sessionKey])
 
   // 内容量变化 → 通知大盘重测「是否需要挤压思考卡」。
   const contentSignature = [
@@ -401,8 +316,6 @@ export const KrMemoryCard = memo(function KrMemoryCard({
     sessionNewEntries.global.length,
     sections.workspace.showAll ? 1 : 0,
     sections.global.showAll ? 1 : 0,
-    sections.workspace.mode === 'all' ? 1 : 0,
-    sections.global.mode === 'all' ? 1 : 0,
     sections.workspace.selecting ? 1 : 0,
     sections.global.selecting ? 1 : 0,
     openedIds.size,
@@ -427,21 +340,6 @@ export const KrMemoryCard = memo(function KrMemoryCard({
 
   const toggleShowAll = useCallback((key: SectionKey) => {
     setSections((previous) => replaceSection(previous, key, { ...previous[key], showAll: !previous[key].showAll }))
-  }, [])
-
-  /** 「全部 N」/「回到本会话」：切换分区口径，同时清掉多选与展开态。 */
-  const toggleMode = useCallback((key: SectionKey) => {
-    setSections((previous) => {
-      const nextMode = previous[key].mode === 'session' ? 'all' : 'session'
-      return replaceSection(previous, key, {
-        ...previous[key],
-        mode: nextMode,
-        showAll: false,
-        selecting: false,
-        confirming: false,
-        selected: new Set<string>(),
-      })
-    })
   }, [])
 
   const toggleOpened = useCallback((id: string) => {
@@ -504,8 +402,6 @@ export const KrMemoryCard = memo(function KrMemoryCard({
     }
   }, [entries, patchSection, sections])
 
-  const totalCount = workspaceEntries.length + globalEntries.length
-
   // 首屏加载中（一条都还没拿到）时不给分区占位：否则会先闪一下
   // 「未取到当前工作区路径」，像出了错一样。
   const firstLoading = status === 'loading' && entries.length === 0 && projects.length === 0
@@ -532,32 +428,21 @@ export const KrMemoryCard = memo(function KrMemoryCard({
     )
   }
 
-  const renderSection = (key: SectionKey): JSX.Element => {
-    const all = key === 'workspace' ? workspaceEntries : globalEntries
+  const renderSection = (key: SectionKey): JSX.Element | null => {
     const sessionList = sessionNewEntries[key]
     const state = sections[key]
-    // 口径开关：默认只给本会话新增；「全部 N」点开才给该分区全量历史。
-    const list = state.mode === 'all' ? all : sessionList
     const title = key === 'workspace' ? '工作区记忆' : '全局记忆'
-    /** 当前口径下的条数（标题括号里的数字，跟着口径走）。 */
-    const count = list.length
+    /** 本会话新增条数（分区随它出现/消失）。 */
+    const count = sessionList.length
     const scopeLabel = key === 'workspace'
       ? (workspaceProject === null ? '' : (workspaceProject.alias ?? dirName(workspaceProject.path)))
       : ''
-    const visible = state.showAll ? list : list.slice(0, SECTION_PREVIEW_COUNT)
-    const hiddenCount = list.length - visible.length
+    const visible = state.showAll ? sessionList : sessionList.slice(0, SECTION_PREVIEW_COUNT)
+    const hiddenCount = sessionList.length - visible.length
 
-    const emptyHint = state.mode === 'all'
-      ? (key === 'workspace'
-        ? (workspaceHash === null
-          ? (cwd === '' ? '未取到当前工作区路径' : '未匹配到当前工作区的记忆项目')
-          : '当前工作区还没有任何项目记忆')
-        : '暂无全局记忆')
-      : (key === 'workspace'
-        ? (workspaceHash === null
-          ? (cwd === '' ? '本会话暂无新记忆' : '未匹配到当前工作区的记忆项目')
-          : '本会话暂无新记忆')
-        : '本会话暂无新记忆')
+    // 口径只有一种：本会话新增。分区**有新增才渲染，没有整个不出现**——
+    // 「本会话暂无新记忆」的占位行本身就是噪音，两张空分区把常驻 footer
+    // 撑得老高。两个分区都没新增时整个卡体收成一行头部。
 
     return (
       <section className="kr-memory__section">
@@ -565,7 +450,6 @@ export const KrMemoryCard = memo(function KrMemoryCard({
           <span className="kr-memory__section-title" title={scopeLabel !== '' ? `${title} · ${scopeLabel}` : title}>
             {title}
             <span className="kr-memory__count">({count})</span>
-            {state.mode === 'session' && <span className="kr-memory__scope">本会话新增</span>}
             {scopeLabel !== '' && <span className="kr-memory__scope">{scopeLabel}</span>}
           </span>
 
@@ -624,27 +508,7 @@ export const KrMemoryCard = memo(function KrMemoryCard({
                   {state.showAll ? '收起' : `展开其余 ${hiddenCount} 条`}
                 </button>
               )}
-              {state.mode === 'session' && all.length > sessionList.length && (
-                <button
-                  type="button"
-                  className="kr-memory__link"
-                  title="查看这个分区的全部历史记忆（含本会话之前）"
-                  onClick={(event) => { event.stopPropagation(); toggleMode(key) }}
-                >
-                  全部 {all.length}
-                </button>
-              )}
-              {state.mode === 'all' && (
-                <button
-                  type="button"
-                  className="kr-memory__link"
-                  title="回到「只显示本会话新增」"
-                  onClick={(event) => { event.stopPropagation(); toggleMode(key) }}
-                >
-                  回到本会话
-                </button>
-              )}
-              {list.length > 0 && (
+              {sessionList.length > 0 && (
                 <button
                   type="button"
                   className="kr-memory__link"
@@ -659,76 +523,73 @@ export const KrMemoryCard = memo(function KrMemoryCard({
 
         {state.error !== '' && <div className="kr-memory__err">{state.error}</div>}
 
-        {list.length === 0 ? (
-          <div className="kr-memory__note">{emptyHint}</div>
-        ) : (
-          <div className="kr-memory__list">
-            {visible.map((entry) => {
-              const opened = openedIds.has(entry.id)
-              const checked = state.selected.has(entry.id)
-              const kind = memoryKindLabel(entry.kind)
-              return (
-                <div
-                  className="kr-memory__row"
-                  key={entry.id}
-                  data-selected={checked ? 'true' : undefined}
-                  role="button"
-                  tabIndex={0}
-                  title={opened ? undefined : entry.content}
-                  onClick={() => { if (state.selecting) toggleSelected(key, entry.id); else toggleOpened(entry.id) }}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return
-                    event.preventDefault()
-                    if (state.selecting) toggleSelected(key, entry.id)
-                    else toggleOpened(entry.id)
-                  }}
+        <div className="kr-memory__list">
+          {visible.map((entry) => {
+            const opened = openedIds.has(entry.id)
+            const checked = state.selected.has(entry.id)
+            const kind = memoryKindLabel(entry.kind)
+            return (
+              <div
+                className="kr-memory__row"
+                key={entry.id}
+                data-selected={checked ? 'true' : undefined}
+                role="button"
+                tabIndex={0}
+                title={opened ? undefined : entry.content}
+                onClick={() => { if (state.selecting) toggleSelected(key, entry.id); else toggleOpened(entry.id) }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return
+                  event.preventDefault()
+                  if (state.selecting) toggleSelected(key, entry.id)
+                  else toggleOpened(entry.id)
+                }}
+              >
+                {state.selecting && (
+                  <input
+                    type="checkbox"
+                    className="kr-memory__check"
+                    checked={checked}
+                    aria-label="选择这条记忆"
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={() => toggleSelected(key, entry.id)}
+                  />
+                )}
+
+                {/* 置顶标记：点一下取消置顶（置顶入口在 triad 记忆面板，
+                    这里只做「看见 + 撤销」，不重复一套新增 pinned 的 UI） */}
+                <span
+                  className="kr-memory__pin"
+                  role={entry.pinned ? 'button' : undefined}
+                  title={entry.pinned ? '取消置顶' : undefined}
+                  aria-label={entry.pinned ? '取消置顶' : undefined}
+                  onClick={entry.pinned ? (event) => { event.stopPropagation(); void togglePin(entry) } : undefined}
                 >
-                  {state.selecting && (
-                    <input
-                      type="checkbox"
-                      className="kr-memory__check"
-                      checked={checked}
-                      aria-label="选择这条记忆"
-                      onClick={(event) => event.stopPropagation()}
-                      onChange={() => toggleSelected(key, entry.id)}
-                    />
+                  {entry.pinned && (
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9.6 1.8 14.2 6.4l-2.1.7-2.6 3.9.4 3.2-2.3-1.4-3 2.6.2-3.5-3.6-2.3 3.3-.4 1-3.5 3.1 1.1z" />
+                    </svg>
                   )}
+                </span>
 
-                  {/* 置顶标记：点一下取消置顶（置顶入口在 triad 记忆面板，
-                      这里只做「看见 + 撤销」，不重复一套新增 pinned 的 UI） */}
-                  <span
-                    className="kr-memory__pin"
-                    role={entry.pinned ? 'button' : undefined}
-                    title={entry.pinned ? '取消置顶' : undefined}
-                    aria-label={entry.pinned ? '取消置顶' : undefined}
-                    onClick={entry.pinned ? (event) => { event.stopPropagation(); void togglePin(entry) } : undefined}
-                  >
-                    {entry.pinned && (
-                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M9.6 1.8 14.2 6.4l-2.1.7-2.6 3.9.4 3.2-2.3-1.4-3 2.6.2-3.5-3.6-2.3 3.3-.4 1-3.5 3.1 1.1z" />
-                      </svg>
-                    )}
-                  </span>
-
-                  <div className="kr-memory__body-col">
-                    {/* 默认 1-2 行 + 省略号，点条目展开全文 */}
-                    <div className="kr-memory__text" data-open={opened ? 'true' : undefined}>
-                      {entry.content}
-                    </div>
-                    <div className="kr-memory__meta">
-                      {kind !== '' && <span className="kr-memory__tag">{kind}</span>}
-                      {entry.tags.slice(0, 2).map((tag) => (
-                        <span className="kr-memory__tag" key={tag}>#{tag}</span>
-                      ))}
-                      <span>{formatWhen(entry.updatedAt)}</span>
-                      {entry.version > 1 && <span>v{entry.version}</span>}
-                    </div>
+                <div className="kr-memory__body-col">
+                  {/* 默认 1-2 行 + 省略号，点条目展开全文 */}
+                  <div className="kr-memory__text" data-open={opened ? 'true' : undefined}>
+                    {entry.content}
+                  </div>
+                  <div className="kr-memory__meta">
+                    {/* 只留有信息量的部分：类型/标签徽章 + 相对时间。
+                        版本号 vN 在记忆工作台详情里看，右栏不堆。 */}
+                    {kind !== '' && <span className="kr-memory__tag">{kind}</span>}
+                    {entry.tags.slice(0, 2).map((tag) => (
+                      <span className="kr-memory__tag" key={tag}>#{tag}</span>
+                    ))}
+                    <span className="kr-memory__time">{formatWhen(entry.updatedAt)}</span>
                   </div>
                 </div>
-              )
-            })}
-          </div>
-        )}
+              </div>
+            )
+          })}
+        </div>
       </section>
     )
   }
@@ -744,9 +605,8 @@ export const KrMemoryCard = memo(function KrMemoryCard({
           </svg>
         </span>
         <span className="kr-card__title">记忆</span>
-        <span className="kr-card__badge kr-card__badge--done">
-          {firstLoading ? '加载中…' : `${totalCount} 条`}
-        </span>
+        {/* 头部不再放计数徽章：每个分区标题自带 (N)，头部再放一个「N 新增」
+            是同一数字说两遍。没新增时右栏安静，有新增直接看分区内容。 */}
         <span className="kr-card__chevron" data-collapsed={collapsed ? 'true' : 'false'}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6">
             <path d="M2.5 4.5 6 8 9.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -758,10 +618,16 @@ export const KrMemoryCard = memo(function KrMemoryCard({
         <div className="kr-memory__body">
           {firstLoading ? (
             <div className="kr-memory__note">加载中…</div>
+          ) : (sessionNewEntries.workspace.length + sessionNewEntries.global.length) === 0 ? (
+            /* 两个分区都没有本会话新增：不再渲染空分区占位，只留一行说明。
+               卡体收成一行头部 + 这行注，footer 高度降到最低。 */
+            <div className="kr-memory__note">本会话暂无新增记忆</div>
           ) : (
             <>
-              {renderSection('workspace')}
-              {renderSection('global')}
+              {/* 分区按「有新增才显示」渲染：没有新增的分区整个不出现，
+                  而不是占一行「本会话暂无新记忆」。 */}
+              {sessionNewEntries.workspace.length > 0 && renderSection('workspace')}
+              {sessionNewEntries.global.length > 0 && renderSection('global')}
             </>
           )}
         </div>

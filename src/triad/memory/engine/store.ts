@@ -252,6 +252,9 @@ export class MemoryStore {
           layer: next.layer ?? revived.layer,
           updatedAt: now,
           version: revived.version + 1,
+          // 更新分支同样刷新溯源：本会话既动了它，本会话就该看得见（KR 记忆卡
+          // 按 provenance.sessionId 判定「本会话新增/更新」）。
+          provenance: next.provenance ?? revived.provenance,
         }
         entries.splice(entries.indexOf(existing), 1, entry)
         return { created: false, entry }
@@ -380,6 +383,7 @@ export class MemoryStore {
     tags?: string[]
     importance?: number
     kind?: MemoryKind
+    provenance?: { sessionId?: string; turn?: number; snippet?: string }
   }): Promise<{ deprecatedId: string; newId: string; entry: MemoryEntry } | undefined> {
     const content = input.content.trim()
     if (content === '') throw new Error('content 不能为空')
@@ -408,6 +412,8 @@ export class MemoryStore {
     })
 
     // 后继条目：继承旧条目的归属/层/来源/置信度/置顶，内容与标签为新的。
+    // 溯源不继承：后继是本会话写下的新内容，记本会话（provenance 是「谁写的」，
+    // 不是「最初由谁产生」——后者在旧条目的废弃记录里）。
     const { entry } = await this.upsertEntry({
       content,
       scope: target.scope,
@@ -419,6 +425,7 @@ export class MemoryStore {
       source: target.source,
       kind: input.kind ?? target.kind,
       confidence: target.confidence,
+      provenance: input.provenance,
     })
     return { deprecatedId: input.id, newId: entry.id, entry }
   }

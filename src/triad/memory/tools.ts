@@ -123,6 +123,8 @@ export function registerMemoryTools(
         tags,
         importance,
         source: 'manual',
+        // 溯源：手动记忆也记下写入它的会话（KR 右栏记忆卡按 sessionId 判定本会话新增）。
+        provenance: agent !== undefined ? { sessionId: agent.session.id } : undefined,
       })
       // 项目层落盘时确保 meta.json 存在（面板项目列表可见）。
       if (scope === 'project' && hash !== null) {
@@ -248,6 +250,8 @@ export function registerMemoryTools(
           ? args.tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim() !== '').map(tag => tag.trim()).slice(0, 8)
           : undefined,
         importance: typeof args.importance === 'number' ? Math.max(1, Math.min(10, args.importance)) : undefined,
+        // 后继条目记本会话（新内容是本会话写的）。
+        provenance: agent !== undefined ? { sessionId: agent.session.id } : undefined,
       })
       if (result === undefined) {
         // 旧条目不存在/已废弃 → 无法修订；内容未变化 → 无修订空间。

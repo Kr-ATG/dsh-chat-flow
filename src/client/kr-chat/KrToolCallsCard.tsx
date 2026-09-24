@@ -41,13 +41,10 @@ export const KrToolCallsCard = memo(function KrToolCallsCard({
   tools,
   onInspectCall,
 }: ToolCallsCardProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [showAllTools, setShowAllTools] = useState(false)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [activeTabs, setActiveTabs] = useState<Record<string, 'result' | 'input' | 'raw'>>({})
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
-  /* 默认只列前 5 条：一轮跑十几二十次调用时，整列表会把右侧大盘拉得很长，
-     真正的详情（参数/结果）反而要滚很久才够到。需要时点「展开其余 N 次」看全。 */
-  const [showAllTools, setShowAllTools] = useState(false)
 
   if (tools.length === 0) return null
 
@@ -119,22 +116,27 @@ export const KrToolCallsCard = memo(function KrToolCallsCard({
 
   return (
     <div className="kr-card kr-card--tools">
-      {/* 卡片头部 */}
-      <div className="kr-card__header" onClick={() => setCollapsed(!collapsed)}>
+      {/* 卡片头部：标题与「展开 N 次调用」入口同在一行（用户要求文字不换行）。
+          点头部任意位置 = 展开/收起整个调用列表。 */}
+      <div className="kr-card__header" onClick={() => setShowAllTools(!showAllTools)}>
         <span className="kr-card__icon">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
             <path d="M14.7 10.8a2 2 0 0 0-2.8-2.8l-1.4 1.4-2.8-2.8 1.4-1.4a2 2 0 0 0-2.8-2.8L4.8 3.9a5 5 0 0 0-.9 5.3L1.2 12a1 1 0 0 0 1.4 1.4l2.8-2.7a5 5 0 0 0 5.3-.9l1.5-1.5z" />
           </svg>
         </span>
         <span className="kr-card__title">工具调用 ({tools.length})</span>
-        <span className="kr-card__chevron" data-collapsed={collapsed ? 'true' : 'false'}>
+        {/* 展开入口（同一行右端）：列表收起且还有未展示条目时才显示。 */}
+        {!showAllTools && tools.length > TOOL_LIST_PREVIEW_COUNT && (
+          <span className="kr-tools-expand-hint">展开 {tools.length} 次调用</span>
+        )}
+        <span className="kr-card__chevron" data-collapsed={!showAllTools ? 'true' : 'false'}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6">
             <path d="M2.5 4.5 6 8 9.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </span>
       </div>
 
-      {!collapsed && (
+      {showAllTools && (
         <div className="kr-tools-list">
           {visibleTools.map((tool) => {
             const isExpanded = expandedIds.has(tool.id)
@@ -484,36 +486,8 @@ export const KrToolCallsCard = memo(function KrToolCallsCard({
             )
           })}
 
-          {/* 展开入口：折叠态一条都不列，只留这个按钮（与思考卡「展开其余 N 项要点」同款） */}
-          {tools.length > TOOL_LIST_PREVIEW_COUNT && (
-            <button
-              type="button"
-              className="kr-expand-btn"
-              onClick={() => setShowAllTools(!showAllTools)}
-            >
-              <span>
-                {showAllTools
-                  ? '收起'
-                  : `展开 ${tools.length} 次调用`}
-              </span>
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 12 12"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{
-                  transform: showAllTools ? 'rotate(180deg)' : 'none',
-                  transition: 'transform 0.15s ease',
-                }}
-              >
-                <path d="M2.5 4.5 6 8 9.5 4.5" />
-              </svg>
-            </button>
-          )}
+          {/* 展开入口已上移到卡片头部（标题同一行右端），列表内不再重复放按钮。
+              收起入口 = 再点一次卡片头部。 */}
         </div>
       )}
     </div>

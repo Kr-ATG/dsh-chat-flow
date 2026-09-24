@@ -217,6 +217,46 @@ body[data-ds-dark-theme] .kr-split__side {
   overflow: hidden;
 }
 
+/* 拖拽中：关掉宽度过渡（过渡会跟手打架，拖起来一顿一顿的），全局换 col-resize。 */
+.kr-split__side[data-dragging="true"] {
+  transition: none;
+}
+body[data-kr-resizing="true"] {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+body[data-kr-resizing="true"] * {
+  cursor: col-resize !important;
+}
+
+/* 左边缘拖拽手柄：宽 7px 的命中区，视觉上只有 1px 发丝线加粗一下。
+   absolute 覆盖在容器左边缘上（容器 overflow:hidden 已裁剪），不参与 flex。 */
+.kr-panel__resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 60;
+  touch-action: none;
+}
+/* 悬停/拖拽时亮一条竖线，提示「这里可以拖」。 */
+.kr-panel__resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.kr-panel__resize-handle:hover::before,
+.kr-split__side[data-dragging="true"] .kr-panel__resize-handle::before {
+  background: var(--kr-accent);
+}
+
 /* 全屏态铺满整个 split：无投影，此规则保留作显式声明，
    防止将来有人给基础态加投影时漏掉这一态。 */
 .kr-split__side--fullscreen {
@@ -504,6 +544,15 @@ body[data-ds-dark-theme] .kr-split__side {
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
   flex: 1;
+}
+
+/* 工具调用卡标题行右端的「展开 N 次调用」提示：与标题同在一行，
+   次要色弱化（展开动作的主角是整行头部点击区）。 */
+.kr-tools-expand-hint {
+  flex: none;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
 }
 
 .kr-card__badge {
@@ -1230,18 +1279,20 @@ body[data-ds-dark-theme] .kr-split__side {
   flex: none;
 }
 
-/* ══ 记忆卡片（常驻右栏底部）═══════════════════════════════════════════════
-   座位是 .kr-panel__scroll 的最后一个子节点。要求「永久显示、不被挤压」，
-   但右栏高度固定，所以做成 sticky bottom:0：往上滚动时它一直贴在视口底部，
-   而不是被滚出屏幕。注意 sticky 元素仍在文档流里占高度（它的高度照样参与
-   溢出计算），所以「常驻」与「挤压自适应让思考卡减行」是同一件事的两面。 */
+/* ══ 记忆卡片停靠区（固定右栏底部）═══════════════════════════════════════
+   记忆卡不再是 .kr-panel__scroll 的子节点，而是滚动区之下的独立 flex footer：
+   滚动区（flex:1 1 0）高度自动让位，记忆卡永远钉在右栏最下方——无论内容
+   多少、无论滚动位置。旧方案是滚动区内的 sticky bottom:0，内容少时卡片
+   跟在三张卡后面悬在中间，做不到「永远在下方」，已废弃。 */
+.kr-panel__memory-dock {
+  flex: none;
+  padding: 0 12px 12px;
+  background: var(--kr-canvas-bg);
+  display: flex;
+  flex-direction: column;
+}
+
 .kr-card--memory {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  /* 底衬必须不透明：滚动内容会从这张卡下面穿过去，半透明底会透出上一段文字。
-     这里显式重申 .kr-card 的 --kr-card-bg（layer-1，不随主题变透明）。 */
-  background: var(--kr-card-bg);
   /* 上边发丝线：把「常驻区」与上面的滚动内容划开（描边比其余三面重一档）。 */
   border-top-color: var(--kr-card-hover);
 }
@@ -1362,7 +1413,7 @@ body[data-ds-dark-theme] .kr-split__side {
   display: flex;
   align-items: flex-start;
   gap: 7px;
-  padding: 5px 6px;
+  padding: 6px 6px 5px;
   border-radius: 6px;
   cursor: pointer;
   transition: background-color 0.12s ease;
@@ -1439,6 +1490,14 @@ body[data-ds-dark-theme] .kr-split__side {
   color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
   overflow: hidden;
+}
+
+/* 相对时间推到行尾：徽章（类型/标签）靠左，时间靠右，一行两端各有归属，
+   不再挤成一坨灰色小字。 */
+.kr-memory__time {
+  margin-left: auto;
+  flex: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .kr-memory__tag {

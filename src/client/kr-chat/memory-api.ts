@@ -49,6 +49,8 @@ export interface MemoryEntryView {
   kind: MemoryKind
   /** 上次注入命中时间（null=从未命中）。 */
   lastHitAt: string | null
+  /** 溯源：产生/最近更新该条目的会话（KR 卡「本会话新增」判定用；旧 host 缺省）。 */
+  provenance?: { sessionId?: string; turn?: number; snippet?: string }
 }
 
 /** 项目视图（hash + 路径是大盘把 cwd 映射到 projectHash 的唯一依据）。 */
@@ -131,6 +133,8 @@ export function normalizeEntry(entry: MemoryEntryView): MemoryEntryView {
     verified: raw.verified === true,
     kind: KIND_VALUES.includes(raw.kind as MemoryKind) ? (raw.kind as MemoryKind) : 'fact',
     lastHitAt: typeof raw.lastHitAt === 'string' ? raw.lastHitAt : null,
+    // 溯源整体透传：旧 host 不返回时保持 undefined，判定逻辑自行兜底。
+    provenance: raw.provenance !== null && typeof raw.provenance === 'object' ? raw.provenance : undefined,
   }
 }
 

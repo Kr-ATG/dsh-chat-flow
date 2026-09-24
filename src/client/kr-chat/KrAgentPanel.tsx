@@ -252,14 +252,12 @@ export const KrAgentPanel = memo(function KrAgentPanel({
   const { closing: shotClosing, requestClose: requestShotClose } = useModalClose(shotOpen, () => { setShotOpen(false) })
 
   /* ── 右栏挤压自适应 ─────────────────────────────────────────────────────
-     记忆卡要求常驻右栏底部（KR_MEMORY_CARD_VISIBLE），它就必然与任务/思考/
-     工具三张卡争高度。右栏高度是固定的（.kr-panel__scroll 是 flex:1 1 0 的
-     滚动容器），唯一可让的尺寸是思考卡的视口行数，于是：
+     记忆卡是滚动区之下的独立 flex footer（永远钉在右栏最下方，不可挤压），
+     滚动区 flex:1 1 0 自动让出剩余高度。footer 高度变化会压缩滚动区，使
+     「任务/思考/工具」三张卡溢出，唯一可让的尺寸是思考卡的视口行数：
        · 记忆卡条目变化 → KrMemoryCard 经 onContentChange 把 memoryTick +1；
        · 思考/工具内容变化 → 下面那份 fingerprint 跟着变；
-       · 两者任一变化都让 useAdaptiveReasoningRows 重测，按溢出程度定一档行数。
-     没有记忆卡（开关关闭）时 fingerprint 仍会随思考内容变化，只是永远测不出
-     溢出，行数固定停在默认档。 */
+       · 两者任一变化都让 useAdaptiveReasoningRows 重测，按溢出程度定一档行数。 */
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [memoryTick, setMemoryTick] = useState(0)
   const handleMemoryContentChange = useCallback(() => { setMemoryTick((tick) => tick + 1) }, [])
@@ -275,6 +273,52 @@ export const KrAgentPanel = memo(function KrAgentPanel({
   useEffect(() => {
     setShotOpen(false)
   }, [latestChatSessionId])
+
+  // ── 左边缘拖拽调宽 ────────────────────────────────────────────────────
+  // pointer events（不是 mouse events）：Pointer Capture 保证指针滑出手柄、
+  // 甚至滑出窗口后 move/up 依然派发给手柄，不丢拖拽；同时天然覆盖触屏。
+  // 拖拽方向：向左拖 = 变宽（width = 视口右边缘 - 指针 x）。
+  const width = krState.width
+  const [dragging, setDragging] = useState(false)
+  const dragStateRef = useRef<{ pointerId: number; handle: HTMLElement } | null>(null)
+
+  const handleDragStart = useCallback((e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0) return
+    const handle = e.currentTarget
+    dragStateRef.current = { pointerId: e.pointerId, handle }
+    // setPointerCapture 之后 move/up 事件始终派发给 handle，指针滑出也不断。
+    try { handle.setPointerCapture(e.pointerId) } catch {}
+    setDragging(true)
+    e.preventDefault()
+  }, [])
+
+  useEffect(() => {
+    if (!dragging) return
+    // 全局光标/选择锁定：拖拽滑过左栏文字时不再误选中文本。
+    document.body.setAttribute('data-kr-resizing', 'true')
+    const onMove = (e: PointerEvent): void => {
+      if (dragStateRef.current?.pointerId !== e.pointerId) return
+      // 向左拖 = 变宽（面板左边缘 = 视口宽 - 面板宽）。store 内部钳制取值域。
+      store.setPanelWidth(window.innerWidth - e.clientX)
+    }
+    const onUp = (e: PointerEvent): void => {
+      if (dragStateRef.current?.pointerId !== e.pointerId) return
+      const handle = dragStateRef.current.handle
+      try { handle.releasePointerCapture(e.pointerId) } catch {}
+      dragStateRef.current = null
+      setDragging(false)
+      store.commitPanelWidth()
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      document.body.removeAttribute('data-kr-resizing')
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+  }, [dragging, store])
 
   const collectForShot = useCallback((range: ShotRange): ShotMessage[] => {
     if (!latestChatSnapshot) return []
@@ -340,7 +384,20 @@ export const KrAgentPanel = memo(function KrAgentPanel({
   }, [dialogueTitle, currentRunning, validSelectedTurn, hasContent])
 
   return (
-    <div className={`kr-split__side ${krState.fullscreen ? 'kr-split__side--fullscreen' : ''}`}>
+    <div
+      className={`kr-split__side ${krState.fullscreen ? 'kr-split__side--fullscreen' : ''}`}
+      data-dragging={dragging ? 'true' : undefined}
+      style={krState.fullscreen ? undefined : { width, minWidth: width, maxWidth: width }}
+    >
+      {/* 左边缘拖拽手柄：按住向左拖 = 加宽，向右拖 = 收窄；宽度持久化。 */}
+      <div
+        className="kr-panel__resize-handle"
+        onPointerDown={handleDragStart}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="拖拽调整大盘宽度"
+        title="拖拽调整大盘宽度"
+      />
       {/* 顶部 Header：头像 + 标题（当前对话提问）+ 副标题（任务/工具统计行）
           + 右侧「生成对话截图」「收起大盘 ×」两枚按钮。
           整块由 KR_PANEL_HEADER_VISIBLE 门控（默认隐藏，只隐藏不删除）：
@@ -460,16 +517,20 @@ export const KrAgentPanel = memo(function KrAgentPanel({
             }
           }}
         />
-        {/* 记忆卡片：常驻右栏底部（sticky），不随滚动跑掉；分「工作区记忆 /
-            全局记忆」两个分区，支持多选批量删除。放在最后一张 = DOM 顺序即
-            视觉顺序，sticky bottom:0 保证滚动时一直贴在视口底部。 */}
-        {KR_MEMORY_CARD_VISIBLE && (
+      </div>
+
+      {/* 记忆卡停靠区：滚动区之下的独立 flex footer（.kr-panel__memory-dock）。
+          不再放滚动容器内部——sticky 只能在「内容溢出且滚动」时贴底，内容少时
+          卡片会悬在中间；独立 footer 才能做到「永远钉在右栏最下方」。分「工作区
+          记忆 / 全局记忆」两个分区，支持多选批量删除。 */}
+      {KR_MEMORY_CARD_VISIBLE && (
+        <div className="kr-panel__memory-dock">
           <KrMemoryCard
             squeezed={reasoningRows < REASONING_MAX_ROWS}
             onContentChange={handleMemoryContentChange}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       {shotOpen && (
         <ShotPanel

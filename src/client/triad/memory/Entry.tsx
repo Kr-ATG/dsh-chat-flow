@@ -8,7 +8,7 @@
 import { useMemo, useState } from 'react'
 import { createMemoryApi, type MemoryApi } from './api.js'
 import { MemoryPanel, BrainIcon, type MemoryTab } from './Panel.tsx'
-import { useUnreadChanges } from './Notify.tsx'
+import { useUnreadChanges, useBadgePref } from './Notify.tsx'
 import { makeT } from './locales.js'
 import { ensureNavStyles, NavButton, NavPortal, navAnchorFrom, usePanelAutoClose, useRail } from '../sidebar-nav.js'
 import { ensureModalAnimStyles, useModalClose } from '../triad-modal-animation.js'
@@ -28,6 +28,9 @@ export function MemoryNavApp(): JSX.Element | null {
   const t = useMemo(makeT, [])
   const rail = useRail()
   const unread = useUnreadChanges(api)
+  // badge 显隐偏好（设置 Tab「界面」分组开关）：关掉时未读计数照常累计，
+  // 只是不渲染角标——重新打开偏好后数字立即回来，不丢通知能力。
+  const badgeVisible = useBadgePref()
   const [open, setOpen] = useState(false)
   const [anchor, setAnchor] = useState<PopoverAnchor | null>(null)
   const [initialTab, setInitialTab] = useState<MemoryTab>('all')
@@ -40,6 +43,9 @@ export function MemoryNavApp(): JSX.Element | null {
     if (tab === 'changes') unread.markRead()
   }
 
+  /** 角标关掉时点击直达「全部」而不是「变更」（没有可见未读提示，直达变更反而突兀）。 */
+  const badgeCount = badgeVisible ? unread.count : 0
+
   return (
     <NavPortal name="memory">
       <NavButton
@@ -47,8 +53,8 @@ export function MemoryNavApp(): JSX.Element | null {
         label={t('entry')}
         rail={rail}
         expanded={open}
-        badge={unread.count}
-        badgeTitle={t('unreadChanges', { n: unread.count })}
+        badge={badgeCount}
+        badgeTitle={t('unreadChanges', { n: badgeCount })}
         onClick={e => {
           e.stopPropagation()
           setAnchor(navAnchorFrom(e.currentTarget))

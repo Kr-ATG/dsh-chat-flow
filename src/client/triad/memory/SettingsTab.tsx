@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MemoryConfigView, ModelCatalogView } from './api.js'
+import { readBadgePref, useBadgePref, writeBadgePref } from './Notify.js'
 import type { MemoryT } from './locales.js'
 import { css } from './styles.js'
 
@@ -205,6 +206,11 @@ export function SettingsTab({ config, busy = false, t, onPatch, onReset, listMod
   const setStr = (field: 'embeddingBaseUrl' | 'embeddingModel' | 'embeddingApiKey' | 'consolidateProvider' | 'consolidateModel') => (next: string): void => { onPatch({ [field]: next } as Partial<MemoryConfigView>) }
   const embeddingOn = config.embeddingProvider !== undefined && config.embeddingProvider !== 'off'
 
+  // 侧边栏「记忆」入口未读角标的显隐（界面偏好）。hook 必须无条件调用，
+  // 所以提前到这里而不是埋在「界面」分组的 JSX 里。
+  const useBadgePrefValue = useBadgePref()
+  const setBadgePref = (show: boolean): void => { writeBadgePref(show) }
+
   return (
     <div className={css.settingsBody}>
       <section className={css.settingsGroup}>
@@ -305,6 +311,17 @@ export function SettingsTab({ config, busy = false, t, onPatch, onReset, listMod
             )}
           </>
         )}
+      </section>
+
+      <section className={css.settingsGroup}>
+        <h4 className={css.settingsGroupTitle}>{t('settingsGroupUi')}</h4>
+        {/* 本地界面偏好（localStorage），不经 host config——所以不吃 busy 态。 */}
+        <SwitchRow
+          label={t('cfgUnreadBadge')}
+          hint={t('cfgUnreadBadgeHint')}
+          value={useBadgePrefValue}
+          onChange={setBadgePref}
+        />
       </section>
 
       <section className={css.settingsGroup}>

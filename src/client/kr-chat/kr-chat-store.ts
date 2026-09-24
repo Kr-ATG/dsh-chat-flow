@@ -14,6 +14,13 @@
 import { KR_CHAT_ENABLED } from './enabled.ts'
 
 const STORAGE_KEY_PANEL_OPEN = 'dsh.kr_chat.panel_open'
+const STORAGE_KEY_PANEL_WIDTH = 'dsh.kr_chat.panel_width'
+
+/** 大盘宽度取值域（px）。下限保证三张卡可读，上限不能把左栏对话挤没了。 */
+export const PANEL_WIDTH_MIN = 360
+export const PANEL_WIDTH_MAX = 720
+/** 默认宽度与 styles.ts 的 .kr-split__side width 保持一致。 */
+export const PANEL_WIDTH_DEFAULT = 440
 
 export type KrTabType = 'kr' | 'chat' | 'trajectory'
 
@@ -22,6 +29,8 @@ export interface KrChatState {
   readonly selectedTurn: number | null
   readonly fullscreen: boolean
   readonly activeTab: KrTabType
+  /** 大盘宽度（px，拖拽调整 + localStorage 持久化）。 */
+  readonly width: number
 }
 
 type Listener = () => void
@@ -33,6 +42,7 @@ class KrChatStore {
   // KR 关闭时初始即 'chat'：没有「KR对话」标签可点，绝不能停在 'kr' 上 ——
   // 那会让 isKrMode 为 true 却又不挂右侧大盘，左侧工具树被 CSS 隐藏后无处可看。
   private _activeTab: KrTabType = KR_CHAT_ENABLED ? 'kr' : 'chat'
+  private _width: number = PANEL_WIDTH_DEFAULT
   private _cachedSnapshot: KrChatState | null = null
   private readonly _listeners = new Set<Listener>()
 
@@ -42,6 +52,10 @@ class KrChatStore {
       try {
         const stored = localStorage.getItem(STORAGE_KEY_PANEL_OPEN)
         this._panelOpen = stored === null ? true : stored === 'true'
+        const storedWidth = Number(localStorage.getItem(STORAGE_KEY_PANEL_WIDTH))
+        if (Number.isFinite(storedWidth) && storedWidth > 0) {
+          this._width = clampPanelWidth(storedWidth)
+        }
       } catch {
         this._panelOpen = true
       }
@@ -66,6 +80,7 @@ class KrChatStore {
       selectedTurn: this._selectedTurn,
       fullscreen: this._fullscreen,
       activeTab: this._activeTab,
+      width: this._width,
     }
   }
 
@@ -106,6 +121,27 @@ class KrChatStore {
     } catch { /* ignore */ }
     this.updateSnapshot()
     this.notify()
+  }
+
+  /** 拖拽中连续调用：只更新内存态（不写 localStorage、节流由调用方控制）。 */
+  setPanelWidth(width: number): void {
+    const next = clampPanelWidth(width)
+    if (this._width === next) return
+    this._width = next
+    this.updateSnapshot()
+    this.notify()
+  }
+
+  /** 拖拽结束调用一次：把最终宽度落盘。 */
+  commitPanelWidth(): void {
+    try {
+      localStorage.setItem(STORAGE_KEY_PANEL_WIDTH, String(this._width))
+    } catch { /* ignore */ }
+  }
+
+  resetPanelWidth(): void {
+    this.setPanelWidth(PANEL_WIDTH_DEFAULT)
+    this.commitPanelWidth()
   }
 
   togglePanel(): void {
@@ -149,6 +185,11 @@ class KrChatStore {
 }
 
 let storeInstance: KrChatStore | null = null
+
+/** 宽度钳制（模块级函数，构造器里也能用）。 */
+export function clampPanelWidth(width: number): number {
+  return Math.min(PANEL_WIDTH_MAX, Math.max(PANEL_WIDTH_MIN, Math.round(width)))
+}
 
 export function getKrChatStore(): KrChatStore {
   if (!storeInstance) {

@@ -55,6 +55,8 @@ interface EntryView {
   kind: MemoryKind
   /** 上次注入命中时间（null=从未命中）。 */
   lastHitAt: string | null
+  /** 溯源：产生/最近更新该条目的会话（KR 记忆卡「本会话新增」判定用；旧 host 可能缺省）。 */
+  provenance?: { sessionId?: string; turn?: number; snippet?: string }
 }
 
 /** MemoryKind 取值校验（/update 的 kind 字段）。 */
@@ -83,6 +85,7 @@ function toView(entry: MemoryEntry): EntryView {
     verified: entry.verified,
     kind: entry.kind,
     lastHitAt: entry.lastHitAt,
+    provenance: entry.provenance,
   }
 }
 
