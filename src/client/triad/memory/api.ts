@@ -44,6 +44,8 @@ export interface ProjectView {
   alias: string | null
   locked: boolean
   autoMemory: boolean
+  /** 该项目是否被排除出记忆注入（旧 host 不回该字段 → undefined，按 false 处理）。 */
+  injectExcluded?: boolean
   entryCount: number
   pinnedCount: number
 }
@@ -274,7 +276,7 @@ export interface MemoryApi {
   deleteProject: (projectHash: string) => Promise<{ ok: boolean; deleted: number }>
   /** 一键删除今日记忆（更新/创建于本地今天；置顶与已废弃跳过）。 */
   deleteToday: (target?: { scope?: 'global' | 'project'; projectHash?: string }) => Promise<{ ok: boolean; deleted: number }>
-  meta: (projectHash: string, patch: { alias?: string; locked?: boolean; path?: string; autoMemory?: boolean }) => Promise<{ ok: boolean; meta: ProjectView }>
+  meta: (projectHash: string, patch: { alias?: string; locked?: boolean; path?: string; autoMemory?: boolean; injectExcluded?: boolean }) => Promise<{ ok: boolean; meta: ProjectView }>
   remember: (input: {
     content: string
     scope?: 'global' | 'project'

@@ -133,6 +133,15 @@ export function createMemoryInjector(
     }
     if (decision.kind !== 'enter' || payload.signal.aborted) return decision
     const sessionId = payload.agent.session.id
+    // 项目注入排除：被排除的工作区里，会话完全不注入记忆条目（用户在
+    // 面板项目上下文条里按项目关闭注入）。判定在会话级开关之前——排除是
+    // 项目级硬闸，会话级开关管不到它。cwd 取不到时不排除（无法判定归属
+    // 就不生效，与 autoMemory 的保守方向相反：注入是有益副产物，宁多勿漏）。
+    const hash = workspaceHashOf(payload.agent.session.header)
+    if (hash !== null && await store.isInjectExcluded(hash)) {
+      logger?.debug?.(`[dsh-memory] injection skipped (project excluded): ${hash}`)
+      return decision
+    }
     // 该会话的记忆注入开关（对话框旁开关控制）：会话里手动开/关优先，
     // 没单独设置过则跟随 config.injectDefaultEnabled（面板「默认开启」）。
     if (!(await store.isInjectEnabled(sessionId, config.injectDefaultEnabled !== false))) return decision

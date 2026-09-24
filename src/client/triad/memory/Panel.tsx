@@ -2139,6 +2139,19 @@ export function MemoryPanel({ open, closing = false, onClose, initialTab, anchor
                           />
                           <span className={css.switchText}>{t('autoMemory')}</span>
                         </span>
+                        <span className={css.switchLine}>
+                          <button
+                            type="button"
+                            className={css.switch}
+                            role="switch"
+                            aria-checked={selectedProject.injectExcluded === true}
+                            aria-label={t('injectExclude')}
+                            disabled={busy}
+                            title={t('injectExcludeHint')}
+                            onClick={() => { void run(() => apiRef.current.meta(selectedProject.hash, { injectExcluded: !(selectedProject.injectExcluded === true) })) }}
+                          />
+                          <span className={css.switchText}>{t('injectExclude')}</span>
+                        </span>
                         <Tooltip label={t('clearProject')} side="top" delayMs={500}>
                           <button type="button" className={`${css.iconAction} ${css.iconActionDanger}`} aria-label={t('clearProject')} disabled={busy} onClick={handleClearProject}>
                             <IconTrashOutlineRegular size={14} />

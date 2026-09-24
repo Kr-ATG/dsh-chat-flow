@@ -117,6 +117,12 @@ export interface ProjectMeta {
   locked: boolean
   /** 是否自动记忆（自动提取）。默认 true；false = 该工作区关闭自动提取。 */
   autoMemory?: boolean
+  /**
+   * 是否把该工作区排除出记忆注入。默认 false（不排除）；
+   * true = 在该工作区的会话里，agent/pre-step 不再注入记忆条目
+   * （自动提取、手动记忆、检索、面板展示都不受影响）。
+   */
+  injectExcluded?: boolean
 }
 
 /** 插件配置（cordis.patch.yml 可覆盖）。 */

@@ -651,6 +651,16 @@ export class MemoryStore {
   }
 
   /**
+   * 该工作区是否被排除出记忆注入（默认 false；meta 缺失或字段未写视为不排除）。
+   * 注入引擎在 pre-step 时用它跳过被排除项目的会话——自动提取、手动记忆、
+   * 检索与面板展示均不受影响。
+   */
+  async isInjectExcluded(hash: string): Promise<boolean> {
+    const meta = await this.readProjectMeta(hash)
+    return meta?.injectExcluded === true
+  }
+
+  /**
    * projects/ 下的全部目录名（hash），含 meta.json 缺失的裸目录。
    * 编译时用它找出「条目已被删光、md 产物却还留着旧内容」的项目。
    */
@@ -671,7 +681,7 @@ export class MemoryStore {
    * 早先这里把 deprecated 一并算进去，导致「全部记忆 5」与「某项目 8」
    * 自相矛盾——删掉的记忆在项目计数里阴魂不散。
    */
-  async listProjects(entries: MemoryEntry[]): Promise<Array<ProjectMeta & { hash: string; entryCount: number; pinnedCount: number; autoMemory: boolean }>> {
+  async listProjects(entries: MemoryEntry[]): Promise<Array<ProjectMeta & { hash: string; entryCount: number; pinnedCount: number; autoMemory: boolean; injectExcluded: boolean }>> {
     const dir = join(this.root, 'projects')
     let hashes: string[]
     try {
@@ -681,7 +691,7 @@ export class MemoryStore {
     } catch {
       hashes = []
     }
-    const projects: Array<ProjectMeta & { hash: string; entryCount: number; pinnedCount: number; autoMemory: boolean }> = []
+    const projects: Array<ProjectMeta & { hash: string; entryCount: number; pinnedCount: number; autoMemory: boolean; injectExcluded: boolean }> = []
     for (const hash of hashes) {
       const meta = await this.readProjectMeta(hash)
       if (meta === undefined) continue
@@ -693,6 +703,7 @@ export class MemoryStore {
         alias: meta.alias,
         locked: meta.locked,
         autoMemory: meta.autoMemory !== false,
+        injectExcluded: meta.injectExcluded === true,
         entryCount: owned.length,
         pinnedCount: owned.filter(entry => entry.pinned).length,
       })
