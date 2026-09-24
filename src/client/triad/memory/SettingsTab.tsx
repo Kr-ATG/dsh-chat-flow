@@ -187,6 +187,14 @@ export function SettingsTab({ config, busy = false, t, onPatch, onReset, listMod
     return () => { alive = false }
   }, [listModels])
 
+  // 侧边栏「记忆」入口未读角标的显隐（界面偏好）。
+  // ⚠ 必须留在所有早退（config === null 的 skeleton）之前：hook 调用次数在
+  // 同一组件的每次渲染里必须一致，否则触发 React #310（hooks 数量变化），
+  // 设置 Tab 整个崩溃、ErrorBoundary 把面板收掉——真机踩过：点「设置」面板
+  // 直接消失且无任何报错入口。
+  const badgeVisible = useBadgePref()
+  const setBadgePref = (show: boolean): void => { writeBadgePref(show) }
+
   if (config === null) {
     return (
       <div className={css.skeleton} aria-busy="true">
@@ -205,11 +213,6 @@ export function SettingsTab({ config, busy = false, t, onPatch, onReset, listMod
   const setBool = (field: BooleanKey) => (next: boolean): void => { onPatch({ [field]: next } as Partial<MemoryConfigView>) }
   const setStr = (field: 'embeddingBaseUrl' | 'embeddingModel' | 'embeddingApiKey' | 'consolidateProvider' | 'consolidateModel') => (next: string): void => { onPatch({ [field]: next } as Partial<MemoryConfigView>) }
   const embeddingOn = config.embeddingProvider !== undefined && config.embeddingProvider !== 'off'
-
-  // 侧边栏「记忆」入口未读角标的显隐（界面偏好）。hook 必须无条件调用，
-  // 所以提前到这里而不是埋在「界面」分组的 JSX 里。
-  const useBadgePrefValue = useBadgePref()
-  const setBadgePref = (show: boolean): void => { writeBadgePref(show) }
 
   return (
     <div className={css.settingsBody}>
@@ -319,7 +322,7 @@ export function SettingsTab({ config, busy = false, t, onPatch, onReset, listMod
         <SwitchRow
           label={t('cfgUnreadBadge')}
           hint={t('cfgUnreadBadgeHint')}
-          value={useBadgePrefValue}
+          value={badgeVisible}
           onChange={setBadgePref}
         />
       </section>
