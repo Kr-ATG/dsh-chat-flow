@@ -368,7 +368,7 @@ const MODES: Array<{ id: ActivityMode; index: number; label: string }> = [
 
 interface HoverState { cell: ActivityCell; left: number; top: number }
 
-export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect, metric = 'tokens', onMetricChange, metricPicker = false, title = 'Token 活动', subtitle = '52 周滚动热力图，点击格子查看当日模型明细', cellSize = CELL, gap = GAP }: {
+export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect, metric = 'tokens', onMetricChange, metricPicker = false, metrics, title = 'Token 活动', subtitle = '52 周滚动热力图，点击格子查看当日模型明细', cellSize = CELL, gap = GAP }: {
   days: UsageDay[] | null
   mode: ActivityMode
   onMode: (mode: ActivityMode) => void
@@ -378,6 +378,12 @@ export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect, metric
   /** 传入后在每周/累计左侧渲染指标下拉（明细 tab 用）。 */
   onMetricChange?: (metric: ActivityMetric) => void
   metricPicker?: boolean
+  /**
+   * 指标下拉里可选项，缺省为 {@link METRIC_OPTIONS} 全部。
+   * 按供应商/模型筛选时调用次数无法按模型拆分（host 的 models 项不带该计数），
+   * 此时由调用方摘掉 `requests`，免得切过去是一片全空的格子。
+   */
+  metrics?: ActivityMetric[]
   title?: string
   /** 副标题；传 null 则整块不渲染（窄卡片省位）。 */
   subtitle?: string | null
@@ -464,7 +470,7 @@ export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect, metric
                 <>
                   <button type="button" className={css.bulkOverlay} aria-label="关闭" onClick={() => { setMetricMenuOpen(false) }} />
                   <div className={css.dropMenu} role="menu" aria-label="活动指标口径" style={{ left: 'auto', right: 0 }}>
-                    {METRIC_OPTIONS.map(m => (
+                    {METRIC_OPTIONS.filter(m => metrics === undefined || metrics.includes(m.id)).map(m => (
                       <button
                         key={m.id}
                         type="button" role="menuitemradio" className={css.dropItem} aria-checked={m.id === metric}

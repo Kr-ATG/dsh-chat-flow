@@ -174,7 +174,7 @@ export interface PopoverShellProps {
 
 /** 渲染面板（compact 形态含透明遮罩）。内容自带头部时无需再用 PshHead。 */
 export function PopoverShell({
-  closing, onClose, width = 560, size, variant = 'drawer', onCardMouseEnter, onCardMouseLeave, ariaLabel, solid = false, children,
+  closing, onClose, anchor = null, width = 560, size, variant = 'drawer', onCardMouseEnter, onCardMouseLeave, ariaLabel, solid = false, children,
 }: PopoverShellProps): JSX.Element {
   // 视口宽高 + 会话主区左缘走 state：窗口缩放/侧栏折叠时实时跟随。
   const [vp, setVp] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }))

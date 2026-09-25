@@ -12,21 +12,30 @@
  * 尺寸：交给 PopoverShell 的 compact 形态（内联宽高 + 视口夹紧），窄屏回退全屏。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { usageApi } from './api'
-import { averageCacheHitRate, sumTokens, type UsageDay } from './aggregate'
+import { averageCacheHitRate, collectModels, collectProviders, filterDaysByScope, providerOfModel, sumTokens, type UsageDay } from './aggregate'
 import { filterDays, resolveRange, type DateRange, type RangePreset } from './range'
 import { formatExact, formatHitRate, formatUnits } from './format'
 import { ActivityGrid, type ActivityMetric, type ActivityMode } from './ActivityGrid'
 import { RangePicker } from './primitives/RangePicker'
+import { ScopeFilter } from './primitives/ScopeFilter'
 import { ErrorCard } from './primitives/ErrorCard'
 import { useIsMobile } from '../../responsive'
 import { PshBody, PopoverShell, type PopoverAnchor } from '../../popover-shell'
 import { modalStaggerClass } from '../../triad-modal-animation'
 import { ensureHubStyles, CloseIcon, tokensIcon, inputIcon, outputIcon, hitIcon } from './hub'
 
-/** 卡片理想尺寸（px）：比工作台小一个量级，仍能一行放下 52 周热力（9px 格）。 */
-const CARD_SIZE = { width: 648, height: 560 }
+/**
+ * 卡片尺寸（px）：比工作台小一个量级，仍能一行放下 52 周热力（9px 格）。
+ *
+ * 两档高度对应两种内容形态，各自刚好填满：默认「范围 + 供应商/模型 + 四格 +
+ * 热力」约 356px，选中某天后多出当日模型明细卡（约 530px）。沿用 560 会让默认
+ * 态在卡片下半截留两百多像素空白，而 compact 形态刻意关掉了 height transition
+ * （避免和入场 pop 动画抢 height），所以靠两档定值而不是动画过渡。
+ */
+const CARD_SIZE = { width: 648, height: 414 }
+const CARD_SIZE_WITH_DAY = { width: 648, height: 560 }
 
 const STYLE_ID = 'dsh-usage-compact-styles'
 
@@ -104,6 +113,8 @@ export function UsagePanel({ closing = false, onClose, anchor = null }: UsagePan
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [tick, setTick] = useState(0)
+  const [provider, setProvider] = useState<string | null>(null)
+  const [model, setModel] = useState<string | null>(null)
   const isMobile = useIsMobile()
 
   ensureHubStyles()
@@ -113,21 +124,34 @@ export function UsagePanel({ closing = false, onClose, anchor = null }: UsagePan
   useEffect(() => {
     let alive = true
     setError(null)
-    usageApi.usage().then((p) => {
+    usageApi.usage({ force: tick > 0 }).then((p) => {
       if (!alive) return
       if (p.ok !== true) throw new Error('用量数据加载失败')
       setDays(p.days)
-    }).catch((e: unknown) => { if (alive) setError(e instanceof Error ? e.message : String(e)) })
+      setRefreshing(false)
+    }).catch((e: unknown) => {
+      if (!alive) return
+      setRefreshing(false)
+      setError(e instanceof Error ? e.message : String(e))
+    })
     return () => { alive = false }
   }, [tick])
 
   const { range, label: rangeLabel } = resolveRange(preset, custom)
+  const inRangeDays = useMemo(() => filterDays(days ?? [], range), [days, range.start, range.end])
 
-  /** 头部刷新：重新拉一次数据，按钮短暂 spin。 */
+  // 换范围后当前选中的供应商/模型可能已不在范围内；留着会让下拉显示一个
+  // 查不到数据的选项，比自动回落更费解。数据回来时同理（刷新后模型下线了）。
+  useEffect(() => {
+    setModel((current) => current !== null && !inRangeDays.some((d) => (d.models ?? []).some((m) => m.model === current)) ? null : current)
+    setProvider((current) => current !== null && !inRangeDays.some((d) => (d.models ?? []).some((m) => providerOfModel(m.model) === current)) ? null : current)
+    setSelectedDay(null)
+  }, [inRangeDays])
+
+  /** 头部刷新：让 host 同步重算一轮，按钮转到数据回来为止。 */
   const doRefresh = (): void => {
     setRefreshing(true)
     setTick(t => t + 1)
-    window.setTimeout(() => setRefreshing(false), 900)
   }
 
   const head = ((): JSX.Element => {
@@ -143,6 +167,10 @@ export function UsagePanel({ closing = false, onClose, anchor = null }: UsagePan
       custom={custom}
       onChangePreset={setPreset}
       onChangeCustom={setCustom}
+      provider={provider}
+      model={model}
+      onChangeProvider={setProvider}
+      onChangeModel={setModel}
       metric={metric}
       onMetric={setMetric}
       mode={mode}
@@ -159,7 +187,7 @@ export function UsagePanel({ closing = false, onClose, anchor = null }: UsagePan
       closing={closing}
       onClose={onClose}
       anchor={anchor}
-      size={CARD_SIZE}
+      size={selectedDay === null ? CARD_SIZE : CARD_SIZE_WITH_DAY}
       variant="compact"
       ariaLabel="用量"
     >
@@ -182,7 +210,7 @@ export function UsagePanel({ closing = false, onClose, anchor = null }: UsagePan
 }
 
 /** 卡片主体：查询行 + 汇总四格 + 热力图 + 当日明细。 */
-function Body({ days, range, rangeLabel, preset, custom, onChangePreset, onChangeCustom, metric, onMetric, mode, onMode, selectedDay, onSelectDay, isMobile }: {
+function Body({ days, range, rangeLabel, preset, custom, onChangePreset, onChangeCustom, provider, model, onChangeProvider, onChangeModel, metric, onMetric, mode, onMode, selectedDay, onSelectDay, isMobile }: {
   days: UsageDay[]
   range: DateRange
   rangeLabel: string
@@ -190,6 +218,10 @@ function Body({ days, range, rangeLabel, preset, custom, onChangePreset, onChang
   custom: DateRange | null
   onChangePreset: (preset: RangePreset) => void
   onChangeCustom: (range: DateRange) => void
+  provider: string | null
+  model: string | null
+  onChangeProvider: (provider: string | null) => void
+  onChangeModel: (model: string | null) => void
   metric: ActivityMetric
   onMetric: (metric: ActivityMetric) => void
   mode: ActivityMode
@@ -199,19 +231,42 @@ function Body({ days, range, rangeLabel, preset, custom, onChangePreset, onChang
   isMobile: boolean
 }): JSX.Element {
   const inRange = filterDays(days, range)
-  const sum = sumTokens(inRange)
-  const hitRate = averageCacheHitRate(inRange)
-  const activeDays = inRange.filter(d => (d.tokens ?? 0) > 0).length
-  const models = new Set<string>()
-  for (const d of inRange) for (const m of d.models ?? []) models.add(m.model)
+  // 下拉选项来自「范围 ∩ 全量」：范围决定看哪几天，选项本身要能选到该范围内
+  // 真实出现过的供应商/模型，而不是历史全量里那些这周没用过的。
+  const options = useMemo(() => ({
+    providers: collectProviders(inRange),
+    models: collectModels(inRange, provider),
+  }), [inRange, provider])
+  const scoped = useMemo(() => filterDaysByScope(inRange, provider, model), [inRange, provider, model])
+  const sum = sumTokens(scoped)
+  const hitRate = averageCacheHitRate(scoped)
+  const activeDays = scoped.filter(d => (d.tokens ?? 0) > 0).length
+  const modelCount = new Set<string>()
+  for (const d of scoped) for (const m of d.models ?? []) modelCount.add(m.model)
   const share = (n: number): string => (sum.total > 0 ? `${Math.round((n / sum.total) * 100)}%` : '—')
-  const day = selectedDay === null ? undefined : days.find(d => d.date === selectedDay)
+  // 热力图与当日明细走「全历史 × 当前筛选」：范围胶囊管的是 token 消耗查询，
+  // 而活动是横跨 52 周的总览，不该被查询范围裁掉；筛选则要贯穿全局。
+  const filtering = provider !== null || model !== null
+  const scopedAll = useMemo(() => filterDaysByScope(days, provider, model), [days, provider, model])
+  const day = selectedDay === null ? undefined : scopedAll.find(d => d.date === selectedDay)
+  // 筛选态下调用次数按模型拆不出来（已归零），留在下拉里只会给出一片全空的格子。
+  const shownMetric: ActivityMetric = filtering && metric === 'requests' ? 'tokens' : metric
 
   return (
     <div className={`usm-uc ${modalStaggerClass}`}>
       <div className="usm-uc-top">
         <RangePicker compact preset={preset} custom={custom} onChangePreset={onChangePreset} onChangeCustom={onChangeCustom} />
-        <span className="usm-uc-meta">共 {inRange.length} 天 · 有量 {activeDays} 天 · {models.size} 个模型</span>
+      </div>
+      <div className="usm-uc-top">
+        <ScopeFilter
+          providers={options.providers}
+          models={options.models}
+          provider={provider}
+          model={model}
+          onChangeProvider={(next) => { onChangeProvider(next); onChangeModel(null) }}
+          onChangeModel={onChangeModel}
+        />
+        <span className="usm-uc-meta">共 {inRange.length} 天 · 有量 {activeDays} 天 · {modelCount.size} 个模型</span>
       </div>
       <div className="usm-uc-stats" role="group" aria-label={`${rangeLabel} token 消耗`} style={isMobile ? { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' } : undefined}>
         <Stat icon={tokensIcon(13)} label="合计" value={formatUnits(sum.total)} sub={`≈ ${formatExact(sum.total)}`} tone="var(--dsw-alias-state-business-primary, #4176e6)" />
@@ -221,12 +276,13 @@ function Body({ days, range, rangeLabel, preset, custom, onChangePreset, onChang
       </div>
       <div className="usm-uc-card">
         <ActivityGrid
-          days={days}
+          days={scopedAll}
           mode={mode}
           onMode={onMode}
-          metric={metric}
+          metric={shownMetric}
           onMetricChange={onMetric}
           metricPicker
+          metrics={filtering ? ['tokens', 'input', 'output', 'cache'] : undefined}
           title="Token 活动"
           subtitle="52 周"
           cellSize={9}

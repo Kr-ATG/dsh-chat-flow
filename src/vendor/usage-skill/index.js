@@ -435,131 +435,151 @@ export async function collectUsage(ctx, force = false) {
 	if (!force && cachedUsageResult !== null && Date.now() - lastCollectTime < USAGE_COLLECT_TTL_MS) {
 		return cachedUsageResult;
 	}
-	return withLock(async () => {
-		if (!force && cachedUsageResult !== null && Date.now() - lastCollectTime < USAGE_COLLECT_TTL_MS) {
-			return cachedUsageResult;
+	// 已经有旧快照时，调用方绝不排队等重算：先把旧值给出去，刷新丢后台。
+	// 聚合要遍历全部会话日志（上千会话时是分钟级），挂在请求路径上等于面板
+	// 「点了跟没点一样」。force（refresh=1）仍然同步等——那是用户主动要新数据。
+	if (!force && cachedUsageResult !== null) {
+		void withLock(() => collectUsageLocked(ctx)).catch((error) => {
+			ctx.logger.warn(`usage-stats: background usage collect failed: ${String(error)}`);
+		});
+		return cachedUsageResult;
+	}
+	return withLock(() => collectUsageLocked(ctx));
+}
+
+/**
+ * The aggregation itself. Always runs under {@link withLock}; callers must not
+ * invoke it directly. Re-checks the TTL so that a request queued behind an
+ * in-flight run returns that run's fresh result instead of recomputing.
+ */
+async function collectUsageLocked(ctx) {
+	if (cachedUsageResult !== null && Date.now() - lastCollectTime < USAGE_COLLECT_TTL_MS) {
+		return cachedUsageResult;
+	}
+	const cache = await loadCache();
+	const live = ctx.get("sessions");
+	const attached = new Set();
+	if (live !== void 0) {
+		for (const session of live.list()) {
+			attached.add(session.id);
+			const state = cache.sessions[session.id] ?? createUsageState();
+			if (state.kind !== "live") {
+				// Live/persisted transition: refold the whole in-memory log.
+				state.days = new Map();
+				state.hours = new Map();
+				state.openSteps = new Map();
+				state.lastSample = null;
+				state.currentModel = null;
+				state.consumed = 0;
+			}
+			// DSH 0.1.2-alpha.4 removed the public `Session#events` accessor
+			// (only snapshotEvents() remains). Read whichever the host
+			// exposes so the live fold works on older and current hosts.
+			const events = session.events !== void 0 ? session.events
+				: typeof session.snapshotEvents === "function" ? session.snapshotEvents()
+				: [];
+			const count = events.length;
+			if ((state.consumed ?? 0) < count) {
+				applyUsageDelta(state, events.slice(state.consumed ?? 0));
+				state.consumed = count;
+			}
+			state.kind = "live";
+			cache.sessions[session.id] = state;
 		}
-		const cache = await loadCache();
-		const live = ctx.get("sessions");
-		const attached = new Set();
-		if (live !== void 0) {
-			for (const session of live.list()) {
-				attached.add(session.id);
-				const state = cache.sessions[session.id] ?? createUsageState();
-				if (state.kind !== "live") {
-					// Live/persisted transition: refold the whole in-memory log.
+	}
+	const persistence = ctx.get("sessionPersistence");
+	const persistedIds = new Set();
+	if (persistence !== void 0) {
+		// Prefer the backend's opaque per-log revisions (no file I/O in the
+		// plugin, works for any backend that exposes listSnapshots).
+		let snapshots = null;
+		if (typeof persistence.listSnapshots === "function") {
+			try {
+				snapshots = await persistence.listSnapshots();
+			} catch (error) {
+				ctx.logger.warn(`usage-stats: listSnapshots failed, falling back to list(): ${String(error)}`);
+			}
+		}
+		// DSH 0.1.5 `list()` returns `{ header, revision, sizeBytes }`
+		// snapshots while older hosts returned bare headers; normalize both.
+		const listed = snapshots !== null ? snapshots : await persistence.list();
+		const entries = [];
+		for (const item of listed ?? []) {
+			if (item === null || typeof item !== "object") continue;
+			const header = item.header !== void 0 ? item.header : item;
+			const id = header?.id;
+			if (typeof id !== "string" || id.length === 0) continue;
+			entries.push({ id, revision: item.revision });
+		}
+		for (const { id, revision } of entries) {
+			persistedIds.add(id);
+			if (attached.has(id)) continue;
+			const previous = cache.sessions[id];
+			// Unchanged opaque revision: keep the folded state, no I/O.
+			if (previous !== void 0 && previous.kind === "persisted" && revision !== void 0 && sameFileRevision(previous.revision, revision)) {
+				if (previous.revision !== revision) previous.revision = revision;
+				continue;
+			}
+			try {
+				const state = previous ?? createUsageState();
+				const wasPersisted = state.kind === "persisted";
+				const fromSeq = wasPersisted ? state.consumed ?? 0 : 0;
+				const events = await readPersistedEvents(persistence, id, fromSeq);
+				if (!wasPersisted) {
 					state.days = new Map();
 					state.hours = new Map();
 					state.openSteps = new Map();
 					state.lastSample = null;
 					state.currentModel = null;
 					state.consumed = 0;
+					state.title = null;
 				}
-				// DSH 0.1.2-alpha.4 removed the public `Session#events` accessor
-				// (only snapshotEvents() remains). Read whichever the host
-				// exposes so the live fold works on older and current hosts.
-				const events = session.events !== void 0 ? session.events
-					: typeof session.snapshotEvents === "function" ? session.snapshotEvents()
-					: [];
-				const count = events.length;
-				if ((state.consumed ?? 0) < count) {
-					applyUsageDelta(state, events.slice(state.consumed ?? 0));
-					state.consumed = count;
+				const fresh = wasPersisted ? events.filter((event) => event.seq > (state.consumed ?? 0)) : events;
+				if (fresh.length === 0) {
+					// 没有新事件：绝大多数会话每轮聚合都落在这里。空 delta 不携带
+					// 「日志被截断」的信息——过去把它算成不连续，于是每个安静
+					// 会话每轮都从头重读自己的完整日志（上千会话时是分钟级的
+					// 墙钟，而数据一个字节都不会变）。折叠态保持不动。
+				} else if (state.consumed > 0 && fresh[0].seq !== state.consumed + 1) {
+					// 确实有新事件却接不上：日志被截断/重写，从头重折。
+					state.days = new Map();
+					state.hours = new Map();
+					state.openSteps = new Map();
+					state.lastSample = null;
+					state.currentModel = null;
+					state.consumed = 0;
+					state.title = null;
+					const allEvents = await readPersistedEvents(persistence, id, 0);
+					applyUsageDelta(state, allEvents);
+					state.consumed = allEvents.length > 0 ? allEvents[allEvents.length - 1].seq : 0;
+				} else {
+					applyUsageDelta(state, fresh);
+					state.consumed = fresh[fresh.length - 1].seq;
 				}
-				state.kind = "live";
-				cache.sessions[session.id] = state;
+				state.kind = "persisted";
+				if (revision !== void 0) state.revision = revision;
+				cache.sessions[id] = state;
+			} catch (error) {
+				ctx.logger.warn(`usage-stats: reading persisted session "${id}" failed: ${String(error)}`);
 			}
 		}
-		const persistence = ctx.get("sessionPersistence");
-		const persistedIds = new Set();
-		if (persistence !== void 0) {
-			// Prefer the backend's opaque per-log revisions (no file I/O in the
-			// plugin, works for any backend that exposes listSnapshots).
-			let snapshots = null;
-			if (typeof persistence.listSnapshots === "function") {
-				try {
-					snapshots = await persistence.listSnapshots();
-				} catch (error) {
-					ctx.logger.warn(`usage-stats: listSnapshots failed, falling back to list(): ${String(error)}`);
-				}
-			}
-			// DSH 0.1.5 `list()` returns `{ header, revision, sizeBytes }`
-			// snapshots while older hosts returned bare headers; normalize both.
-			const listed = snapshots !== null ? snapshots : await persistence.list();
-			const entries = [];
-			for (const item of listed ?? []) {
-				if (item === null || typeof item !== "object") continue;
-				const header = item.header !== void 0 ? item.header : item;
-				const id = header?.id;
-				if (typeof id !== "string" || id.length === 0) continue;
-				entries.push({ id, revision: item.revision });
-			}
-			for (const { id, revision } of entries) {
-				persistedIds.add(id);
-				if (attached.has(id)) continue;
-				const previous = cache.sessions[id];
-				// Unchanged opaque revision: keep the folded state, no I/O.
-				if (previous !== void 0 && previous.kind === "persisted" && revision !== void 0 && sameFileRevision(previous.revision, revision)) {
-					if (previous.revision !== revision) previous.revision = revision;
-					continue;
-				}
-				try {
-					const state = previous ?? createUsageState();
-					const wasPersisted = state.kind === "persisted";
-					const fromSeq = wasPersisted ? state.consumed ?? 0 : 0;
-					const events = await readPersistedEvents(persistence, id, fromSeq);
-					if (!wasPersisted) {
-						state.days = new Map();
-						state.hours = new Map();
-						state.openSteps = new Map();
-						state.lastSample = null;
-						state.currentModel = null;
-						state.consumed = 0;
-						state.title = null;
-					}
-					const fresh = wasPersisted ? events.filter((event) => event.seq > (state.consumed ?? 0)) : events;
-					const contiguous = fresh.length === 0 ? state.consumed === 0 : fresh[0].seq === state.consumed + 1;
-					if (!contiguous && state.consumed > 0) {
-						// Log truncated or rewritten: refold the whole log.
-						state.days = new Map();
-						state.hours = new Map();
-						state.openSteps = new Map();
-						state.lastSample = null;
-						state.currentModel = null;
-						state.consumed = 0;
-						state.title = null;
-						const allEvents = await readPersistedEvents(persistence, id, 0);
-						applyUsageDelta(state, allEvents);
-						state.consumed = allEvents.length > 0 ? allEvents[allEvents.length - 1].seq : 0;
-					} else if (fresh.length > 0) {
-						applyUsageDelta(state, fresh);
-						state.consumed = fresh[fresh.length - 1].seq;
-					}
-					state.kind = "persisted";
-					if (revision !== void 0) state.revision = revision;
-					cache.sessions[id] = state;
-				} catch (error) {
-					ctx.logger.warn(`usage-stats: reading persisted session "${id}" failed: ${String(error)}`);
-				}
-			}
-		}
-		for (const id of Object.keys(cache.sessions)) {
-			if (!attached.has(id) && !persistedIds.has(id)) delete cache.sessions[id];
-		}
-		const byDay = new Map();
-		const byHour = new Map();
-		for (const state of Object.values(cache.sessions)) {
-			mergeInto(byDay, state.days);
-			mergeHoursInto(byHour, state.hours);
-		}
-		// Keep the atomic cache write inside the single-flight section. Otherwise
-		// overlapping saves can race on the same temporary file.
-		await saveCache(ctx, cache);
-		const rendered = renderUsage(byDay, byHour, Date.now());
-		cachedUsageResult = rendered;
-		lastCollectTime = Date.now();
-		return rendered;
-	});
+	}
+	for (const id of Object.keys(cache.sessions)) {
+		if (!attached.has(id) && !persistedIds.has(id)) delete cache.sessions[id];
+	}
+	const byDay = new Map();
+	const byHour = new Map();
+	for (const state of Object.values(cache.sessions)) {
+		mergeInto(byDay, state.days);
+		mergeHoursInto(byHour, state.hours);
+	}
+	// Keep the atomic cache write inside the single-flight section. Otherwise
+	// overlapping saves can race on the same temporary file.
+	await saveCache(ctx, cache);
+	const rendered = renderUsage(byDay, byHour, Date.now());
+	cachedUsageResult = rendered;
+	lastCollectTime = Date.now();
+	return rendered;
 }
 
 async function handleUsage(ctx, req, res) {
@@ -943,6 +963,65 @@ export function startBackgroundRefresh(ctx, accounts, deps = {}) {
 	return stop;
 }
 
+/** Floor/ceiling for the self-paced usage aggregation loop. */
+const USAGE_REFRESH_MIN_MS = 30_000;
+const USAGE_REFRESH_MAX_MS = 300_000;
+
+/**
+ * Keep the usage snapshot warm so the panel never waits on an aggregation.
+ *
+ * Why its own loop instead of riding the account refresh: usage aggregation
+ * walks every persisted session log, so its cost is a property of the corpus
+ * (thousands of sessions ⇒ tens of seconds), not of the provider APIs. A fixed
+ * cadence either hammers a big corpus or leaves a long stale window, and any
+ * window the user happens to open the panel in is a minute of "nothing
+ * happened". So: warm once at startup, then self-schedule at
+ * `clamp(2 × last run, 30s, 5min)` — cheap corpora stay fresh, expensive ones
+ * back off instead of queueing behind themselves.
+ *
+ * @param ctx - plugin context carrying the session services.
+ * @param deps - `setTimeout`/`clearTimeout` overrides and `minMs`/`maxMs` for tests.
+ * @returns disposer that stops the loop after the in-flight run settles.
+ */
+export function startUsageRefresh(ctx, deps = {}) {
+	let stopped = false;
+	let timer = null;
+	let active = Promise.resolve();
+	let lastDurationMs = 0;
+	const setTimer = deps.setTimeout ?? setTimeout;
+	const clearTimer = deps.clearTimeout ?? clearTimeout;
+	const minMs = deps.minMs ?? USAGE_REFRESH_MIN_MS;
+	const maxMs = deps.maxMs ?? USAGE_REFRESH_MAX_MS;
+	const schedule = () => {
+		if (stopped) return;
+		const delay = Math.min(maxMs, Math.max(minMs, lastDurationMs * 2));
+		timer = setTimer(() => { void run(); }, delay);
+		timer?.unref?.();
+	};
+	const run = async () => {
+		if (stopped) return;
+		const startedAt = Date.now();
+		active = collectUsage(ctx).catch((error) => {
+			ctx.logger.warn(`usage-stats: usage refresh failed: ${String(error)}`);
+		}).finally(() => {
+			lastDurationMs = Date.now() - startedAt;
+			schedule();
+		});
+		return active;
+	};
+	void run();
+	const stop = async () => {
+		stopped = true;
+		if (timer !== null) clearTimer(timer);
+		await active;
+	};
+	stop.refreshNow = async () => {
+		await active;
+		return run();
+	};
+	return stop;
+}
+
 /**
  * Plugin body: register the five exact routes and start background refresh.
  * @param ctx - plugin context carrying webServer, credentials, sessions, sessionPersistence, settings, and llm.
@@ -1025,7 +1104,10 @@ async function apply(ctx, rawConfig = {}, deps = {}) {
 		path: BILLING_PATH,
 		handler: (req, res) => handleBilling(ctx, req, res)
 	}), "usage-stats: deepseek-billing route");
-	if (deps.disableBackgroundRefresh !== true) ctx.effect(() => startBackgroundRefresh(ctx, accounts), "usage-stats: background account refresh");
+	if (deps.disableBackgroundRefresh !== true) {
+		ctx.effect(() => startBackgroundRefresh(ctx, accounts), "usage-stats: background account refresh");
+		ctx.effect(() => startUsageRefresh(ctx), "usage-stats: background usage aggregation");
+	}
 	// Skill management (merged from dsh-skill-manager): bundle grouping, upload, loose skills.
 	// dsh-triad patch: `deps.disableSkills` lets the aggregator mount usage without skills.
 	if (deps.disableSkills !== true) await applySkills(ctx);

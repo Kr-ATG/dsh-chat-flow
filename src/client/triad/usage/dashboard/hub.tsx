@@ -78,6 +78,22 @@ const SHEET = `
 .usm-drop-item[aria-checked='true'] { color: var(--dsw-alias-label-primary, #0f1115); font-weight: 600; }
 .usm-drop-check { flex: none; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--dsw-alias-state-business-primary, #4176e6); opacity: 0; transform: scale(0.6); transition: opacity 140ms ease, transform 140ms ease; }
 .usm-drop-check[data-on] { opacity: 1; transform: scale(1); }
+/* ── 供应商 / 模型下拉（查询区，选项多一量级：搜索 + 滚动 + token 次要信息） ── */
+.usm-scope { flex: none; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.usm-tool-button[data-compact] { height: 24px; padding: 0 8px; font-size: 11px; line-height: 16px; gap: 4px; max-width: 190px; }
+.usm-scope-trigger-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usm-drop-menu[data-wide] { max-height: 292px; overflow-y: auto; overscroll-behavior: contain; }
+.usm-scope-search {
+  flex: none; width: 100%; height: 26px; box-sizing: border-box; margin: 2px 2px 4px; padding: 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1)); border-radius: 7px;
+  background: var(--dsw-alias-bg-base, #fff); font-size: 12px; line-height: 16px; font-family: inherit;
+  color: var(--dsw-alias-label-primary, #1f2430); outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.usm-scope-search:focus { border-color: var(--dsw-alias-state-business-primary, #4176e6); box-shadow: 0 0 0 2px color-mix(in srgb, #4176e6 18%, transparent); }
+.usm-scope-item-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.usm-scope-item-num { flex: none; margin-left: auto; padding-left: 10px; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-tertiary, #81858c); }
+.usm-scope-empty { padding: 8px 10px; font-size: 12px; color: var(--dsw-alias-label-tertiary, #81858c); }
 /* ── 头部刷新按钮（spin 态） ── */
 .usm-refresh { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 8px; padding: 0; background: transparent; cursor: pointer; color: var(--dsw-alias-label-secondary, #bbb); transition: background 140ms ease, color 140ms ease, transform 140ms ease; }
 .usm-refresh:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06)); color: var(--dsw-alias-label-primary, #eee); }
