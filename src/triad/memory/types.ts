@@ -95,6 +95,12 @@ export interface StoreState {
    * 两个列表都不含该会话 = 未单独设置 = 跟随 config.injectDefaultEnabled。
    */
   injectForced?: string[]
+  /**
+   * 中文记忆独立注入开关（全局单值，三态缺省）。
+   * 该能力内置于插件、无卸载路径：主注入开关关闭、或所在项目被设为「不注入」
+   * 时，中文偏好记忆仍会单独注入。缺省 = 跟随 config.zhInjectDefaultEnabled。
+   */
+  zhInjectEnabled?: boolean
 }
 
 /** 单个会话的 ticker 状态。 */
@@ -174,6 +180,14 @@ export interface MemoryConfig {
    * 覆盖优先于本默认值（见 store.isInjectEnabled）。
    */
   injectDefaultEnabled: boolean
+  /**
+   * 中文记忆独立注入默认开关（内置能力，默认开）。
+   *
+   * 与 injectDefaultEnabled 完全解耦：主注入整体关闭时，中文偏好记忆
+   * （kind=preference/identity 且正文含中文）仍单独注入一条独立 user
+   * message。该能力硬编码在插件内，不提供卸载/移除入口——只有这个开关。
+   */
+  zhInjectDefaultEnabled: boolean
   /** 注入检索 top-k（当前任务相关记忆注入条数；identity/pinned/长期常驻不占此预算）。 */
   injectTopK: number
   /** 全局条目数上限（超限按 importance + recency 淘汰低分条目）。 */
@@ -224,6 +238,7 @@ export const DEFAULT_CONFIG: MemoryConfig = {
   consolidateTimeoutMs: 300_000,
   logApiRequests: false,
   injectDefaultEnabled: true,
+  zhInjectDefaultEnabled: true,
   injectTopK: 8,
   entryLimit: 500,
   pruneNeverHitDays: 21,
@@ -315,7 +330,7 @@ export type ConfigNumberKey = keyof typeof CONFIG_NUMBER_BOUNDS
 
 const CONFIG_NUMBER_KEYS = Object.keys(CONFIG_NUMBER_BOUNDS) as ConfigNumberKey[]
 
-const CONFIG_BOOLEAN_KEYS = ['dailyCompileEnabled', 'consolidateEnabled', 'logApiRequests', 'injectDefaultEnabled'] as const
+const CONFIG_BOOLEAN_KEYS = ['dailyCompileEnabled', 'consolidateEnabled', 'logApiRequests', 'injectDefaultEnabled', 'zhInjectDefaultEnabled'] as const
 
 /** 可调布尔字段名。 */
 export type ConfigBooleanKey = (typeof CONFIG_BOOLEAN_KEYS)[number]

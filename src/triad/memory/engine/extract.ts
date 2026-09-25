@@ -115,7 +115,7 @@ export async function extractCandidates(
       model: route.model,
       messages: [createUserMessage({
         content: [{ type: 'text', text: extractUserPrompt(transcript.slice(0, config.extractMaxChars)) }],
-        source: { kind: 'plugin', plugin: 'dsh-memory' },
+        source: { kind: 'plugin:dsh-memory', plugin: 'dsh-memory' },
       })],
       system: extractSystemPrompt(),
       // 推理模型需要空间输出 JSON：text + reasoning 都会产生，上限调高。
@@ -196,7 +196,7 @@ export function transcriptFromEvents(events: Array<{ type: string; data: unknown
       // - skill-catalog：DSH 技能目录（可用技能列表）自动注入
       // - skill-invocation：用户触发加载的技能内容
       const injectedKinds = ['plugin', 'agent-instructions', 'skill-catalog', 'skill-invocation']
-      if (typeof message.source?.kind === 'string' && injectedKinds.includes(message.source.kind)) continue
+      if (typeof message.source?.kind === 'string' && (injectedKinds.includes(message.source.kind) || message.source.kind.startsWith('plugin:'))) continue
       lines.push(`User: ${textOfContent(message.content)}`)
     } else if (event.type === 'assistant/message') {
       const data = event.data as { message?: { content?: unknown } }

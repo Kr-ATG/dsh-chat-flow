@@ -8,7 +8,7 @@
 
 import { createUserMessage } from '../../../vendor/dsh-llm/index.js'
 import type { MemoryConfig } from '../types.js'
-import { buildInjectionText, selectInjectionEntries, workspaceHashOf } from './compile.js'
+import { buildChineseInjectionText, buildInjectionText, selectChineseEntries, selectInjectionEntries, workspaceHashOf } from './compile.js'
 import { searchEntries } from './retrieval.js'
 import { daysSince } from './scoring.js'
 import type { MemoryStore } from './store.js'
@@ -72,6 +72,24 @@ const SAFETY_RULE = [
   '并确保 .gitignore 排除含凭据的文件。',
 ].join('')
 
+/**
+ * 中文记忆内置通道的引导语。
+ *
+ * 单独成块而非并入主注入的理由：主注入整体可能处于关闭状态（用户显式关掉、
+ * 项目被标记为不注入），但语言契约必须仍然成立——否则同一个用户在不同会话
+ * 得到互相矛盾的回答语言。措辞里显式声明它与项目指令的优先关系，避免和
+ * AGENTS.md 打架。
+ */
+const ZH_INJECTION_RULE = [
+  '【中文偏好记忆 · 内置通道】以下为用户长期语言偏好，与上方记忆库开关无关，始终生效。',
+  '请始终遵循：内部分析/推理过程与对外输出默认使用简体中文。',
+  '代码、路径、命令、标识符、报错原文、API/协议名等技术内容保持原文不翻译。',
+  '（若与当前项目的 AGENTS.md / 项目指令或系统提示冲突，一律以项目指令为准。）',
+].join('\n')
+
+/** 中文通道的注入预算：只投 preference/identity 子集，给多了纯浪费。 */
+const ZH_INJECTION_BUDGET = 1500
+
 /** 创建注入器。 */
 export function createMemoryInjector(
   store: MemoryStore,
@@ -80,6 +98,14 @@ export function createMemoryInjector(
 ): MemoryInjector {
   /** 每会话 step 计数（仅内存）。 */
   const stepCounters = new Map<string, number>()
+  /**
+   * 中文通道的每会话 step 计数，**必须独立于 stepCounters**。
+   *
+   * 共用一个 Map 会互相抢占首步名额：主注入先跑就把 sessionId 记上，中文
+   * 通道随后的 has() 命中而静默跳过——而主注入恰恰在最常被关闭的那条路径上
+   * 提前 return，来不及置位，反而是中文通道把它占了。两边各记各的。
+   */
+  const zhStepCounters = new Map<string, number>()
 
   async function buildMemoryBlock(
     agent: PreStepAgent,
@@ -121,6 +147,23 @@ export function createMemoryInjector(
     return buildInjectionText(selected, config)
   }
 
+  /**
+   * 构建中文记忆块（内置通道）。
+   *
+   * 与 buildMemoryBlock 的三处刻意差异：
+   *  1. 不看 isInjectExcluded —— 项目级「不注入」管的是记忆库整体，不该
+   *     顺带掐掉语言契约；
+   *  2. 不做检索 top-k —— 中文偏好条目本来就少且全是高 importance，全量带上；
+   *  3. 不做命中刷新加分 —— 每会话每轮都注入同一批，刷新会把它顶到封顶，
+   *     反而污染主注入的 importance 排序。
+   */
+  async function buildChineseBlock(agent: PreStepAgent): Promise<string> {
+    const entries = await store.readEntries()
+    const selected = selectChineseEntries(entries, workspaceHashOf(agent.session.header))
+    if (selected.length === 0) return ''
+    return buildChineseInjectionText(selected, ZH_INJECTION_BUDGET)
+  }
+
   const preStepListener: MemoryInjector['preStepListener'] = async (payload, next) => {
     let decision: { kind: 'enter'; messages: unknown[] } | { kind: 'reject' }
     try {
@@ -133,26 +176,63 @@ export function createMemoryInjector(
     }
     if (decision.kind !== 'enter' || payload.signal.aborted) return decision
     const sessionId = payload.agent.session.id
-    // 项目注入排除：被排除的工作区里，会话完全不注入记忆条目（用户在
-    // 面板项目上下文条里按项目关闭注入）。判定在会话级开关之前——排除是
-    // 项目级硬闸，会话级开关管不到它。cwd 取不到时不排除（无法判定归属
-    // 就不生效，与 autoMemory 的保守方向相反：注入是有益副产物，宁多勿漏）。
     const hash = workspaceHashOf(payload.agent.session.header)
+
+    // ── 中文记忆内置通道 ──────────────────────────────────────────────
+    // 位置是刻意的：在下面两道闸门（项目排除 / 主开关）**之前**求值。这两道
+    // 闸门回答的是「记忆库整体要不要进上下文」，而中文通道回答的是「用户的
+    // 语言契约是否成立」，两者正交。放在闸门之后，就等于主开关一关中文记忆
+    // 跟着消失，那这条通道就没有存在意义了。
+    let messages = decision.messages
+    const zhEnabled = await store.isZhInjectEnabled(config.zhInjectDefaultEnabled !== false)
+    if (!zhEnabled) {
+      logger?.debug?.('[dsh-memory] zh injection off (switch disabled)')
+    } else if (!zhStepCounters.has(sessionId)) {
+      zhStepCounters.set(sessionId, 1)
+      try {
+        const zhText = await buildChineseBlock(payload.agent)
+        if (zhText !== '') {
+          messages = [...messages, createUserMessage({
+            content: [{ type: 'text', text: `${ZH_INJECTION_RULE}\n\n${zhText}` }],
+            source: {
+              kind: 'plugin:dsh-memory',
+              plugin: 'dsh-memory',
+              form: 'snapshot',
+              sections: [{ name: '中文偏好记忆', text: zhText }],
+            },
+          })]
+          logger?.debug?.(`[dsh-memory] zh injection ok (${zhText.length} chars)`)
+        } else {
+          logger?.debug?.('[dsh-memory] zh injection skipped (no chinese entries)')
+        }
+      } catch (error) {
+        // 中文通道失败绝不能影响主注入：记日志后继续往下走。
+        logger?.warn?.(`[dsh-memory] zh injection failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    // 项目注入排除：被排除的工作区里，会话不注入**记忆库条目**（用户在面板
+    // 项目上下文条里按项目关闭注入）。判定在会话级开关之前——排除是项目级
+    // 硬闸，会话级开关管不到它。注意这不再影响上面已产出的中文块。
     if (hash !== null && await store.isInjectExcluded(hash)) {
       logger?.debug?.(`[dsh-memory] injection skipped (project excluded): ${hash}`)
-      return decision
+      return { kind: 'enter', messages }
     }
     // 该会话的记忆注入开关（对话框旁开关控制）：会话里手动开/关优先，
     // 没单独设置过则跟随 config.injectDefaultEnabled（面板「默认开启」）。
-    if (!(await store.isInjectEnabled(sessionId, config.injectDefaultEnabled !== false))) return decision
+    if (!(await store.isInjectEnabled(sessionId, config.injectDefaultEnabled !== false))) {
+      return { kind: 'enter', messages }
+    }
     // 每个会话只在首步注入一次：后续轮次不再重复注入，
     // 避免置顶/记忆内容在多轮里反复出现（用户明确要求仅首轮注入）。
-    if (stepCounters.has(sessionId)) return decision
+    if (stepCounters.has(sessionId)) return { kind: 'enter', messages }
     stepCounters.set(sessionId, 1)
     try {
+      // 检索 query 刻意取 payload.messages（原始）而非已追加中文块的 messages：
+      // 否则中文偏好记忆会参与本次任务的相似度检索，等于自己检索自己。
       const query = extractQuery(payload.messages)
       const block = await buildMemoryBlock(payload.agent, query)
-      if (block === null || block.text === '') return decision
+      if (block === null || block.text === '') return { kind: 'enter', messages }
       // 注入引导：明确记忆属于用户指令/参考，模型应"该执行就执行"；
       // 同时声明优先级——与 AGENTS.md/项目指令/系统提示冲突时，以项目指令为准，
       // 记忆不覆盖项目级规范（避免与项目指令打架）。
@@ -165,17 +245,17 @@ export function createMemoryInjector(
       const memoryMessage = createUserMessage({
         content: [{ type: 'text', text: wrapped }],
         source: {
-          kind: 'plugin',
+          kind: 'plugin:dsh-memory',
           plugin: 'dsh-memory',
           form: 'snapshot',
           sections: [{ name: '安全规范', text: SAFETY_RULE }, ...block.sections],
         },
       })
-      return { kind: 'enter', messages: [...decision.messages, memoryMessage] }
+      return { kind: 'enter', messages: [...messages, memoryMessage] }
     } catch (error) {
       // 注入失败绝不阻塞对话。
       logger?.warn?.(`[dsh-memory] injection failed: ${error instanceof Error ? error.message : String(error)}`)
-      return decision
+      return { kind: 'enter', messages }
     }
   }
 
@@ -183,6 +263,7 @@ export function createMemoryInjector(
     preStepListener,
     disposeSession: (sessionId: string) => {
       stepCounters.delete(sessionId)
+      zhStepCounters.delete(sessionId)
     },
   }
 }

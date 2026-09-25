@@ -1,12 +1,15 @@
 /**
  * 用量查询范围：预设（今日/昨日/近7天/近30天/本月/上月/今年/全部/自定义区间）
- * + 区间过滤 + 粒度自适应聚合（≤31 天按日、≤120 天按周、更长按月）+ 环比。
+ * + 区间过滤。
  *
  * 日期一律 YYYY-MM-DD 字符串（与 UsageDay.date 同构），字典序即时间序。
+ *
+ * 历史版本的粒度自适应聚合（按日/周/月、按小时、环比）只服务趋势图，趋势页
+ * 已随「用量工作台」一起精简掉，这里不再保留——只留查询真正要用的四个件：
+ * 预设解析、区间过滤、日期互转。
  */
 
-import type { UsageDay, UsageHour } from './aggregate'
-import type { SeriesPoint } from './charts/AreaChart'
+import type { UsageDay } from './aggregate'
 
 /** 范围预设。 */
 export type RangePreset =
@@ -35,11 +38,6 @@ function addDays(d: Date, n: number): Date {
   const c = new Date(d)
   c.setDate(c.getDate() + n)
   return c
-}
-
-/** 范围天数（含端点）。 */
-export function rangeDays(r: DateRange): number {
-  return Math.round((fromDayStr(r.end).getTime() - fromDayStr(r.start).getTime()) / 86_400_000) + 1
 }
 
 /** 解析预设为具体区间与展示名。 */
@@ -74,99 +72,7 @@ export function resolveRange(preset: RangePreset, custom: DateRange | null, now 
   }
 }
 
-/** 等长上一周期（用于环比）：按天数向前平移。 */
-export function prevRange(r: DateRange): DateRange {
-  const n = rangeDays(r)
-  return {
-    start: toDayStr(addDays(fromDayStr(r.start), -n)),
-    end: toDayStr(addDays(fromDayStr(r.end), -n)),
-  }
-}
-
 /** 按区间过滤（字符串字典序比较，含端点）。 */
 export function filterDays(days: UsageDay[], r: DateRange): UsageDay[] {
   return days.filter(d => d.date >= r.start && d.date <= r.end)
-}
-
-/** 展示粒度：≤2 天按小时、≤31 天按日、≤120 天按周、更长按月。 */
-export type Grain = 'hour' | 'day' | 'week' | 'month'
-export function pickGrain(r: DateRange): Grain {
-  const n = rangeDays(r)
-  if (n <= 2) return 'hour'
-  if (n <= 31) return 'day'
-  if (n <= 120) return 'week'
-  return 'month'
-}
-
-/** ISO 周一为一周起点（YYYY-MM-DD → 所在周周一）。 */
-function weekStart(s: string): string {
-  const d = fromDayStr(s)
-  const dow = (d.getDay() + 6) % 7
-  return toDayStr(addDays(d, -dow))
-}
-
-/** 按粒度聚合为趋势序列（label：日=YYYY-MM-DD、周=周一日期、月=YYYY-MM）。 */
-export function aggregateSeries(days: UsageDay[], grain: Grain): SeriesPoint[] {
-  const buckets = new Map<string, UsageDay[]>()
-  for (const d of days) {
-    const key = grain === 'day' ? d.date : grain === 'week' ? weekStart(d.date) : d.date.slice(0, 7)
-    const arr = buckets.get(key)
-    if (arr) arr.push(d)
-    else buckets.set(key, [d])
-  }
-  return [...buckets.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([label, group]) => {
-      let input = 0, output = 0, cache = 0
-      for (const d of group) {
-        input += d.inputTokens ?? 0
-        output += d.outputTokens ?? 0
-        cache += (d.cacheReadTokens ?? 0) + (d.cacheWriteTokens ?? 0)
-      }
-      return { label, input, output, cache }
-    })
-}
-
-/** 小时标签：YYYY-MM-DD-HH → 单日 "HH:00" / 跨日 "MM-DD HH:00"。 */
-function hourLabel(hour: string, multiDay: boolean): string {
-  const hh = hour.slice(11, 13)
-  const mmdd = hour.slice(5, 10)
-  return multiDay ? `${mmdd} ${hh}:00` : `${hh}:00`
-}
-
-/** 按小时聚合（短范围趋势）：过滤区间内的小时数据。 */
-export function aggregateHourSeries(hours: UsageHour[], r: DateRange): SeriesPoint[] {
-  const multiDay = r.start !== r.end
-  const buckets = new Map<string, UsageHour[]>()
-  for (const h of hours) {
-    const day = h.hour.slice(0, 10)
-    if (day < r.start || day > r.end) continue
-    const arr = buckets.get(h.hour)
-    if (arr) arr.push(h)
-    else buckets.set(h.hour, [h])
-  }
-  return [...buckets.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([hour, group]) => {
-      let input = 0, output = 0, cache = 0
-      for (const h of group) {
-        input += h.inputTokens ?? 0
-        output += h.outputTokens ?? 0
-        cache += (h.cacheReadTokens ?? 0) + (h.cacheWriteTokens ?? 0)
-      }
-      return { label: hourLabel(hour, multiDay), input, output, cache }
-    })
-}
-
-/** 环比百分比：上一周期为 0 时返回 null（无法计算）。 */
-export function deltaPercent(current: number, previous: number): number | null {
-  if (previous <= 0) return current > 0 ? null : 0
-  return ((current - previous) / previous) * 100
-}
-
-/** 范围内日均 tokens。 */
-export function dailyAverage(days: UsageDay[]): number {
-  if (days.length === 0) return 0
-  const total = days.reduce((acc, d) => acc + (d.tokens ?? 0), 0)
-  return total / days.length
 }

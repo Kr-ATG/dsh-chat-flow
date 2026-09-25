@@ -1,8 +1,9 @@
 /**
- * RangePicker — 用量查询范围选择器（左栏平铺网格按钮形态）。
+ * RangePicker — 用量查询范围选择器。
  *
  * 预设直接平铺（今日 / 昨日 / 近7天 / 近30天 / 本月 / 上月 / 今年 / 全部 /
  * 自定义），选中蓝底胶囊；选「自定义」时下方展开起止日期输入。
+ * `compact` 走单行小胶囊（紧凑用量卡片用），默认走左栏两列网格。
  */
 
 import { resolveRange, type DateRange, type RangePreset } from '../range'
@@ -25,13 +26,15 @@ export interface RangePickerProps {
   custom: DateRange | null
   onChangePreset: (preset: RangePreset) => void
   onChangeCustom: (range: DateRange) => void
+  /** 单行小胶囊排布（窄卡片用）。 */
+  compact?: boolean
 }
 
-export function RangePicker({ preset, custom, onChangePreset, onChangeCustom }: RangePickerProps): JSX.Element {
+export function RangePicker({ preset, custom, onChangePreset, onChangeCustom, compact = false }: RangePickerProps): JSX.Element {
   const { range } = resolveRange(preset, custom)
   return (
     <>
-      <div className={css.rangeGrid} role="group" aria-label="查询范围">
+      <div className={css.rangeGrid} data-compact={compact || undefined} role="group" aria-label="查询范围">
         {PRESETS.map(p => (
           <button
             key={p.key}

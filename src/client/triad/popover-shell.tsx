@@ -1,11 +1,13 @@
 /**
- * popover-shell — 「覆盖会话主区」面板外壳（用量工作台/技能面板/记忆面板共用）。
+ * popover-shell — 面板外壳（用量卡片/技能面板/记忆面板共用）。
  *
- * 跟点会话一致的行为：
- *  - drawer 模式：直接盖住会话主区（侧栏右缘 → 视口右缘，全高，无遮罩），
+ * 两种形态：
+ *  - drawer（默认）：直接盖住会话主区（侧栏右缘 → 视口右缘，全高，无遮罩），
  *    自右向左滑入（translateX(56px)→0），关闭反向收回；侧栏保持可点，
  *    随时切会话（切会话自动收面板）；
- *  - 移动端回退全屏 sheet（translateY(24px) 上滑，同 auto-sheet-in，带遮罩）；
+ *  - compact：贴入口弹出的定尺寸小卡片（用量面板用），按 size 内联宽高并
+ *    夹紧在视口内，配一层透明遮罩吃掉卡片外的点击；
+ *  - 两者在窄屏都回退全屏 sheet（translateY(24px) 上滑，同 auto-sheet-in，带遮罩）；
  *  - Esc 关闭走 props.onClose（面板可自行拦截）。
  *
  * z 层级：mask 999 / card 1000——与 ui-primitives Modal 的 root(1000) 同层，
@@ -44,8 +46,9 @@ function readMainLeft(): number {
 }
 
 const SHEET = `
-/* ── 遮罩：淡入淡出 ── */
+/* ── 遮罩：淡入淡出（compact 卡片用透明遮罩，只吃点击不遮视野） ── */
 .psh-mask{position:fixed;inset:0;z-index:999;background:var(--dsw-alias-bg-mask-1,rgba(0,0,0,.45))}
+.psh-mask[data-plain]{background:transparent}
 .psh-mask[data-anim='in']{animation:dsh-modal-mask-in ${MODAL_ANIM_MS}ms ease both}
 .psh-mask[data-anim='out']{animation:dsh-modal-mask-out ${MODAL_ANIM_MS}ms ease both}
 /* ── 卡片：会话式右侧抽屉 / 底部 sheet 回退 ── */
@@ -57,6 +60,14 @@ const SHEET = `
    forwards 保持隐藏态直到卸载，此时无交互、无副作用。 */
 .psh-card[data-mode='drawer'][data-anim='in']{animation:dsh-modal-drawer-in ${MODAL_ANIM_MS}ms cubic-bezier(.2,.8,.2,1)}
 .psh-card[data-mode='drawer'][data-anim='out']{animation:dsh-modal-drawer-out ${MODAL_ANIM_MS}ms cubic-bezier(.4,0,.2,1) both}
+/* compact：贴入口弹出的小卡片。宽高与位置由组件内联给（已按视口夹紧），这里
+   只需撤掉抽屉的贴边/满高语义与尺寸过渡（改视口时即时跟随，别拖动画）。 */
+.psh-card[data-mode='compact']{right:auto;bottom:auto;max-height:none;transition:none}
+.psh-card[data-mode='compact'][data-anim='in']{animation:dsh-psh-pop-in 200ms cubic-bezier(.2,.8,.2,1)}
+.psh-card[data-mode='compact'][data-anim='out']{animation:dsh-psh-pop-out 180ms cubic-bezier(.4,0,.2,1) both}
+@keyframes dsh-psh-pop-in{from{opacity:0;transform:translateY(10px) scale(.975)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes dsh-psh-pop-out{from{opacity:1;transform:translateY(0) scale(1)}to{opacity:0;transform:translateY(6px) scale(.985)}}
+.psh-card[data-mode='compact'][data-anim='in'] .dsh-modal-stagger{animation:dsh-modal-rise-in ${MODAL_ANIM_MS}ms cubic-bezier(.2,.8,.2,1) backwards;animation-delay:60ms}
 .psh-card[data-mode='sheet']{left:12px !important;right:12px;bottom:12px;top:auto !important}
 /* 实底卡片（solid 模式）：玻璃质感开启时也保持不透明表面。
    两条必要条件——
@@ -126,10 +137,13 @@ export interface PopoverAnchor {
 /** 理想尺寸（px）：抽屉宽度随 tab 切换以 240ms 平滑过渡（automation 卡片同款曲线）。 */
 export interface PopoverSize {
   width: number
-  /** 兼容保留：抽屉一律全高，height/fill 不再生效。 */
+  /** compact 卡片的高度上限；抽屉模式下忽略（抽屉一律满高）。 */
   height?: number
   fill?: boolean
 }
+
+/** 面板形态：drawer = 盖住会话主区；compact = 贴入口的小卡片。 */
+export type PopoverVariant = 'drawer' | 'compact'
 
 /** PopoverShell 属性。 */
 export interface PopoverShellProps {
@@ -137,12 +151,14 @@ export interface PopoverShellProps {
   closing: boolean
   /** 请求关闭（遮罩点击 / Esc / 关闭钮统一走这里）。 */
   onClose: () => void
-  /** 入口锚点（兼容保留：抽屉不再跟随按钮定位，传不传都不影响布局）。 */
+  /** 入口锚点（compact 卡片据此定位；抽屉形态忽略）。 */
   anchor?: PopoverAnchor | null
   /** 兼容保留：面板直接铺满会话主区，理想宽度不再生效。 */
   width?: number
-  /** 兼容保留：铺满主区，动态尺寸不再生效。 */
+  /** 理想尺寸（compact 卡片按此内联宽高，drawer 模式仅取 width 做兼容）。 */
   size?: PopoverSize
+  /** 形态：默认 drawer 盖住会话主区；compact 为贴入口弹出的定尺寸小卡片。 */
+  variant?: PopoverVariant
   /** 鼠标进入卡片（hover 模式：取消自动收回）。 */
   onCardMouseEnter?: () => void
   /** 鼠标离开卡片（hover 模式：启动自动收回计时）。 */
@@ -156,16 +172,16 @@ export interface PopoverShellProps {
   children: ReactNode
 }
 
-/** 渲染「会话式右侧面板」（含遮罩）。内容自带头部时无需再用 PshHead。 */
+/** 渲染面板（compact 形态含透明遮罩）。内容自带头部时无需再用 PshHead。 */
 export function PopoverShell({
-  closing, onClose, width = 560, size, onCardMouseEnter, onCardMouseLeave, ariaLabel, solid = false, children,
+  closing, onClose, width = 560, size, variant = 'drawer', onCardMouseEnter, onCardMouseLeave, ariaLabel, solid = false, children,
 }: PopoverShellProps): JSX.Element {
-  // 视口宽度 + 会话主区左缘走 state：窗口缩放/侧栏折叠时实时跟随。
-  const [vw, setVw] = useState(window.innerWidth)
+  // 视口宽高 + 会话主区左缘走 state：窗口缩放/侧栏折叠时实时跟随。
+  const [vp, setVp] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }))
   const [mainLeft, setMainLeft] = useState(readMainLeft)
   useEffect(() => {
     const reread = (): void => {
-      setVw(window.innerWidth)
+      setVp({ w: window.innerWidth, h: window.innerHeight })
       setMainLeft(readMainLeft())
     }
     reread()
@@ -179,12 +195,28 @@ export function PopoverShell({
       window.clearInterval(timer)
     }
   }, [])
-  void (size?.width ?? width)
+  const vw = vp.w
   const anim = closing ? 'out' : 'in'
-  // 窄屏回退全屏 sheet；桌面端直接盖住会话主区（left=侧栏右缘，右拉满）。
+  // 窄屏回退全屏 sheet；桌面端 compact 走定尺寸小卡片，drawer 盖住会话主区。
   const narrow = vw < NARROW_VP
-  const mode = narrow ? 'sheet' : 'drawer'
-  const style: CSSProperties | undefined = narrow ? undefined : { left: mainLeft }
+  const compact = variant === 'compact' && !narrow
+  const mode = narrow ? 'sheet' : compact ? 'compact' : 'drawer'
+  const style: CSSProperties | undefined = compact
+    ? ((): CSSProperties => {
+      // 卡片贴着侧栏右缘 + 12px；宽高取理想值并夹在「主区宽 - 24」「视口高 - 24」内，
+      // 位置再夹一次，保证任何窗口尺寸下都不会溢出屏幕。
+      const w = Math.min(size?.width ?? width, Math.max(280, vw - mainLeft - 24))
+      const h = Math.min(size?.height ?? 560, Math.max(220, vp.h - 24))
+      const wantLeft = Math.max(mainLeft + 12, anchor?.left ?? mainLeft + 12)
+      const wantTop = anchor?.top ?? 12
+      return {
+        left: Math.min(wantLeft, Math.max(12, vw - w - 12)),
+        top: Math.min(Math.max(12, wantTop), Math.max(12, vp.h - h - 12)),
+        width: w,
+        height: h,
+      }
+    })()
+    : narrow ? undefined : { left: mainLeft }
 
   useEffect(() => {
     if (closing) return undefined
@@ -202,11 +234,11 @@ export function PopoverShell({
   // 挪到 body 后：不受侧边栏渲染影响、fixed 锚定视口、层级与 DOM 顺序可控。
   return createPortal(
     <>
-      {narrow && (
-        <div className="psh-mask" data-anim={anim} aria-hidden="true" onClick={onClose} />
+      {(narrow || compact) && (
+        <div className="psh-mask" data-plain={compact || undefined} data-anim={anim} aria-hidden="true" onClick={onClose} />
       )}
       <div
-        className={`psh-card ${modalDrawerAnimClass(closing)}`}
+        className={`psh-card ${compact ? '' : modalDrawerAnimClass(closing)}`}
         data-anim={anim}
         data-mode={mode}
         data-solid={solid ? '' : undefined}

@@ -100,7 +100,7 @@ export type ContextFormed =
  */
 export interface MessageSourceMap {
   user: { kind: 'user' }
-  plugin: { kind: 'plugin'; plugin: string } & ContextFormed
+  plugin: ({ kind: 'plugin'; plugin: string } | { kind: `plugin:${string}`; plugin?: string }) & ContextFormed
   model: ModelMessageSource
   tool: ToolMessageSource
 }

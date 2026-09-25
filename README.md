@@ -18,9 +18,9 @@
   分区**有本会话新增才显示**（按条目溯源 `provenance.sessionId` 等值判定），无新增的分区整个不出现，
   支持多选批量删除；
   右栏被挤压时思考卡视口行数逐档自动缩小（25→18→12→8→5）
-- **四工作台（原 dsh-triad，已融合）**：自动沉淀的长期记忆 · 定时自动化 · 用量与账号趋势 ·
-  技能与 MCP Server 管理。`dsh-triad` 自此退役，其座位（slot id / order / locale namespace）、
-  8 组 HTTP 路由前缀、数据与配置目录全部原样保留，用户零迁移
+- **四工作台（原 dsh-triad，已融合）**：自动沉淀的长期记忆 · 定时自动化 · 用量（52 周热力 +
+  token 消耗查询）· 技能与 MCP Server 管理。`dsh-triad` 自此退役，其座位（slot id / order /
+  locale namespace）、8 组 HTTP 路由前缀、数据与配置目录全部原样保留，用户零迁移
 
 产物约 **5.4 MB**（host 3.9 MB + 浏览器半身 448 KB + mermaid 资源 968 KB），浏览器侧只加载
 448 KB。
@@ -147,6 +147,26 @@ service 图上是一等公民。只调它的 API 会让两插件之间形成隐�
 3. **重名不覆盖** —— `modal-animation.ts` 两版内容不等价（triad 版多 drawer
    keyframes，且 STYLE_ID 刻意加 `dsh-triad-` 前缀防样式表互相吞并），改名
    `triad-modal-animation.ts`；`error-boundary.tsx` 经 diff 确认等价，直接共用
+
+### 用量入口瘦身（2026-09-25）
+
+侧边栏「用量」原本是**铺满会话主区的四 tab 工作台**（明细 / 趋势 / 信号 / 余额·配额），
+这一轮按「只要热力图 + token 消耗查询」的诉求砍到一张小卡片：
+
+- **形态**：从 drawer 变 compact —— 不再盖住整个主区，而是贴入口弹出 **648×560** 的浮层
+  （`PopoverShell` 新增 `variant="compact"`，宽高内联并按视口夹紧，窄屏仍回退全屏 sheet）。
+  技能面板 / 记忆面板继续走原 drawer 形态，行为不变。
+- **内容**：只留 52 周 Token 活动热力（每周 / 累计口径 + 指标下拉，点格子看当日模型明细）
+  与范围胶囊查询（今日 … 自定义）联动的四格汇总：合计 / 输入 / 输出 / 缓存。范围只作用于
+  汇总，热力图恒为全量 52 周总览。
+- **连带删除**（客户端 26 个文件）：`Workbench` / `UsageTab` / `TrendTab` / `SignalTab` /
+  `AccountsTab`、整套 `charts/*`（11）与 `primitives/*`（8）、`dash.tsx` / `theme.ts`；
+  `range.ts` 只留预设解析与区间过滤，`aggregate.ts` 只留 `sumTokens` 与
+  `averageCacheHitRate`，`api.ts` 只留 `usage()`。
+- **没动 host**：8 组路由前缀一字未改，`/api/usage-stats/*` 的 signal / providers /
+  account / subscriptions / budget / day-sessions 仍照常注册并对外可用（只是前端不再消费），
+  换回完整工作台不需要恢复任何服务端能力。
+- 热力图格子改为可配尺寸（紧凑档 9px + 单字星期标签），52 周正好一行放进 648px 卡片。
 
 ### 一个被实测证伪的假设
 
@@ -343,10 +363,10 @@ src/
         ├── index.ts                 — applyTriadClient（四模块各 try/catch）
         ├── memory/                  — 记忆面板 + composer 注入开关（纯 fetch）
         ├── automation/              — 定时任务面板 + notifier
-        ├── usage/                   — 用量工作台（dashboard/ charts/ primitives/）
+        ├── usage/                   — 用量卡片（热力图 + token 消耗查询）+ 技能面板
         ├── skill-source/            — 技能面板 + `/` slash source
         ├── sidebar-nav.tsx          — 侧边栏导航行（四入口）
-        ├── popover-shell.tsx        — 面板外壳
+        ├── popover-shell.tsx        — 面板外壳（drawer / compact 两种形态）
         ├── responsive.ts            — 响应式
         └── triad-modal-animation.ts —  triad 版弹窗动画（与主插件那版不等价，故改名）
 src/triad/                           — 原 dsh-triad 四工作台 host 半身

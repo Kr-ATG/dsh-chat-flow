@@ -164,6 +164,28 @@ export interface InjectStateView {
   defaultEnabled?: boolean
   /** 该会话是否单独设置过（false/null = 跟随默认）。 */
   explicit?: boolean | null
+  /**
+   * 中文记忆内置通道是否开启。
+   *
+   * 由 /inject-state 顺带回传而非另开 GET 端点：该接口在 composer 里被
+   * hover 反复触发，独立端点会成倍放大既有轮询量。旧 host 不回此字段时
+   * 按 true 兜底——能力内置，默认就该是开的。
+   */
+  zhEnabled?: boolean
+}
+
+/**
+ * 中文记忆独立注入开关状态（内置能力，全局单值）。
+ *
+ * 与 InjectStateView 刻意分开成两个接口：主开关是会话级三态（显式/跟随默认），
+ * 中文开关是全局两态。合成一个对象会逼调用方去处理"这个 enabled 到底受不受
+ * defaultEnabled 影响"这种本不该存在的问题。
+ */
+export interface ZhInjectStateView {
+  /** 中文偏好记忆是否独立注入。 */
+  enabled: boolean
+  /** 恒为 true：该能力内置于插件，无卸载入口。旧 host 缺字段时按 true 兜底。 */
+  builtin?: boolean
 }
 
 interface ApiError {
@@ -289,6 +311,9 @@ export interface MemoryApi {
   getInjectState: (sessionId: string) => Promise<InjectStateView>
   /** enabled=null → 清除本会话覆盖，回到默认值。 */
   setInjectState: (sessionId: string, enabled: boolean | null) => Promise<InjectStateView & { ok: boolean }>
+  /** 中文记忆内置通道开关（全局单值，与主开关无联动）。 */
+  getZhInjectState: () => Promise<ZhInjectStateView>
+  setZhInjectState: (enabled: boolean) => Promise<ZhInjectStateView & { ok: boolean }>
   consolidate: (scope?: 'all' | 'global' | 'project', projectHash?: string) => Promise<{ ok: boolean; results: ConsolidateResultView[] }>
   revisions: () => Promise<{ revisions: RevisionView[] }>
   rollback: (revisionId: string) => Promise<{ ok: boolean }>
@@ -342,6 +367,8 @@ export function createMemoryApi(): MemoryApi {
     remember: (input) => sendJson<{ ok: boolean; created: boolean; entry: MemoryEntryView }>('/remember', input).then(withEntry),
     getInjectState: (sessionId) => getJson<InjectStateView>(`/inject-state?sessionId=${encodeURIComponent(sessionId)}`),
     setInjectState: (sessionId, enabled) => sendJson<InjectStateView & { ok: boolean }>('/inject-state', { sessionId, enabled }),
+    getZhInjectState: () => getJson<ZhInjectStateView>('/zh-inject-state'),
+    setZhInjectState: (enabled) => sendJson<ZhInjectStateView & { ok: boolean }>('/zh-inject-state', { enabled }),
     consolidate: (scope = 'all', projectHash) => sendJson<{ ok: boolean; results: ConsolidateResultView[] }>('/consolidate', { scope, projectHash }),
     revisions: () => getJson<{ revisions: RevisionView[] }>('/revisions'),
     rollback: (revisionId) => sendJson<{ ok: boolean }>('/rollback', { revisionId }),

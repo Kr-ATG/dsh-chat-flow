@@ -57,6 +57,7 @@ export function metricValueOf(day: UsageDay | null | undefined, metric: Activity
 
 /** 列数固定为 52 周（GitHub 年视图惯例）；数据不足时左侧自然留空。 */
 export const ACTIVITY_COLUMNS = 52
+/** 默认格子尺寸（px）：宽面板用 14；窄卡片（compact 用量面板）传 9 缩一档。 */
 const CELL = 14
 const GAP = 2
 const RADIUS = 3
@@ -66,6 +67,8 @@ const BLUE = [31, 111, 235] as const
 const STYLE_ID = 'dsh-activity-styles'
 
 const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] as const
+/** 紧凑格子的星期标签：单字，否则两字会顶到网格上。 */
+const WEEKDAYS_SHORT = ['一', '二', '三', '四', '五', '六', '日'] as const
 
 /**
  * 贡献格子样式：入场回落 + 悬浮放大光晕 + 选中环 / 今日环 + 模式切换时的
@@ -79,9 +82,9 @@ const SHEET = `
 }
 .dsh-activity-cell {
   border: 0;
-  border-radius: ${RADIUS}px;
-  width: ${CELL}px;
-  height: ${CELL}px;
+  border-radius: var(--dsh-activity-radius, ${RADIUS}px);
+  width: var(--dsh-activity-cell, ${CELL}px);
+  height: var(--dsh-activity-cell, ${CELL}px);
   flex: none;
   padding: 0;
   cursor: default;
@@ -365,7 +368,7 @@ const MODES: Array<{ id: ActivityMode; index: number; label: string }> = [
 
 interface HoverState { cell: ActivityCell; left: number; top: number }
 
-export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect, metric = 'tokens', onMetricChange, metricPicker = false, title = 'Token 活动', subtitle = '52 周滚动热力图，点击格子查看当日模型明细' }: {
+export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect, metric = 'tokens', onMetricChange, metricPicker = false, title = 'Token 活动', subtitle = '52 周滚动热力图，点击格子查看当日模型明细', cellSize = CELL, gap = GAP }: {
   days: UsageDay[] | null
   mode: ActivityMode
   onMode: (mode: ActivityMode) => void
@@ -376,13 +379,27 @@ export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect, metric
   onMetricChange?: (metric: ActivityMetric) => void
   metricPicker?: boolean
   title?: string
-  subtitle?: string
+  /** 副标题；传 null 则整块不渲染（窄卡片省位）。 */
+  subtitle?: string | null
+  /** 格子边长（px）。窄卡片传 9 缩一档，52 周正好一行放下。 */
+  cellSize?: number
+  /** 格子间距（px），默认 2。 */
+  gap?: number
 }): JSX.Element {
   const [hover, setHover] = useState<HoverState | null>(null)
   const [metricMenuOpen, setMetricMenuOpen] = useState(false)
   const snapshot = useMemo(() => buildActivityGrid(days, mode, new Date(), metric), [days, mode, metric])
 
   useEffect(() => ensureActivityStyles(), [])
+
+  // 窄格子时（cellSize < 12）同步收窄圆角与星期标签列，否则留白比格子还抢眼。
+  const radius = Math.max(2, Math.round(cellSize * RADIUS / CELL))
+  const labelW = cellSize >= 12 ? 30 : 18
+  const weekLabel = cellSize >= 12 ? WEEKDAYS : WEEKDAYS_SHORT
+  const gridVars = {
+    '--dsh-activity-cell': `${cellSize}px`,
+    '--dsh-activity-radius': `${radius}px`,
+  } as CSSProperties
 
   const legendSteps = [0.3, 0.5, 0.68, 0.85, 1]
   const metricLabel = METRIC_LABELS[metric]
@@ -423,7 +440,9 @@ export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect, metric
       {/* 卡头：标题 + 副标题 + 分段控件（滑动指示器） */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 14, lineHeight: '22px', fontWeight: 600, color: 'var(--dsw-alias-label-primary)' }}>{title}</span>
-        <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</span>
+        {subtitle !== null && (
+          <span style={{ fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</span>
+        )}
         <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           {metricPicker && onMetricChange !== undefined && (
             <span className={css.dropWrap}>
@@ -484,17 +503,17 @@ export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect, metric
         </span>
       </div>
 
-      {/* 7 行 × 52 列贡献网格：正方形格子固定 14px，不拉伸；窄视口横向滚动兜底 */}
+      {/* 7 行 × 52 列贡献网格：正方形格子固定尺寸，不拉伸；窄视口横向滚动兜底 */}
       <div style={{ overflowX: 'auto', marginTop: 12, paddingBottom: 2 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', width: 'fit-content', margin: '0 auto' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', width: 'fit-content', margin: '0 auto', ...gridVars }}>
           {/* 月份标签行（GitHub 惯例：新月份第一周列首标注，跳过首列；按列比例定位，与拉伸后的列对齐） */}
-          <div style={{ position: 'relative', height: 16, marginLeft: 30 }}>
+          <div style={{ position: 'relative', height: 16, marginLeft: labelW }}>
             {snapshot.monthLabels.map(m => (
               <span
                 key={m.column}
                 style={{
                   position: 'absolute',
-                  left: `${m.column * (CELL + GAP)}px`,
+                  left: `${m.column * (cellSize + gap)}px`,
                   top: 0,
                   fontSize: 11,
                   lineHeight: '16px',
@@ -509,22 +528,22 @@ export function ActivityGrid({ days, mode, onMode, selectedKey, onSelect, metric
           </div>
           {/* 星期行：周一/周三/周五/周日（与参考稿一致，隔行标注） */}
           {snapshot.rows.map((row, rowIndex) => (
-            <div key={rowIndex} style={{ display: 'flex', alignItems: 'center', marginTop: rowIndex === 0 ? 0 : GAP }}>
+            <div key={rowIndex} style={{ display: 'flex', alignItems: 'center', marginTop: rowIndex === 0 ? 0 : gap }}>
               <span
                 style={{
                   flex: 'none',
-                  width: 30,
+                  width: labelW,
                   fontSize: 11,
-                  lineHeight: `${CELL}px`,
+                  lineHeight: `${cellSize}px`,
                   color: 'var(--dsw-alias-label-tertiary)',
                   textAlign: 'left',
                   paddingRight: 6,
                   boxSizing: 'border-box',
                 }}
               >
-                {rowIndex % 2 === 0 ? WEEKDAYS[rowIndex] : ''}
+                {rowIndex % 2 === 0 ? weekLabel[rowIndex] : ''}
               </span>
-              <span style={{ display: 'flex', gap: GAP, flex: 'none' }}>
+              <span style={{ display: 'flex', gap, flex: 'none' }}>
                 {row.map(cell => {
                   if (!cell.past) {
                     return (

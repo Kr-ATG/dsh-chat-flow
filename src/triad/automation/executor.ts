@@ -98,7 +98,7 @@ export async function executeJob(
 
   const messages = [createUserMessage({
     content: [{ type: 'text', text: prompt }],
-    source: { kind: 'plugin', plugin: 'dsh-triad' },
+    source: { kind: 'plugin:dsh-triad', plugin: 'dsh-triad' },
   })]
 
   for await (const chunk of llm.stream({

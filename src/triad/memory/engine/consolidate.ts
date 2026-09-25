@@ -116,7 +116,7 @@ export async function consolidateScope(
       model: route.model,
       messages: [createUserMessage({
         content: [{ type: 'text', text: consolidateUserPrompt(owned) }],
-        source: { kind: 'plugin', plugin: 'dsh-memory' },
+        source: { kind: 'plugin:dsh-memory', plugin: 'dsh-memory' },
       })],
       system: consolidateSystemPrompt(),
       maxTokens: 4096,

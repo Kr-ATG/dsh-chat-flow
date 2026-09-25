@@ -41,8 +41,10 @@ import { getLatestChatSessionId, subscribeLatestChatSnapshot } from '../tool-sum
 /** 两个分区的 key。 */
 type SectionKey = 'workspace' | 'global'
 
-/** 每个分区默认 preview 的条数（超出点「展开其余」，避免一屏全是记忆）。 */
-const SECTION_PREVIEW_COUNT = 8
+/** 每个分区默认 preview 的条数（超出点「展开其余」，避免一屏全是记忆）。
+ *  与 .kr-memory__list 的 max-height 成对维护：只抬条数会被封顶裁掉，只抬封顶
+ *  则条数不够撑不满，两边一起抬记忆卡的默认高度才真翻一倍。 */
+const SECTION_PREVIEW_COUNT = 16
 
 /** 单个分区的交互态（选择 / 二次确认 / 请求中 / 行内报错 / 展开 / 已选）。 */
 interface SectionState {

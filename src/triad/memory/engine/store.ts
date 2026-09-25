@@ -633,6 +633,27 @@ export class MemoryStore {
     await this.writeState(state)
   }
 
+  // ── 中文记忆独立注入开关（全局单值） ──────────────────────────────
+
+  /**
+   * 中文记忆注入是否开启（三态：state 显式值 ?? 调用方给的 fallback）。
+   *
+   * 刻意做成**全局单值**而不是会话级：主注入的会话级覆盖是为了让不同会话
+   * 临时收放上下文；中文偏好记忆是跨会话恒定的语言契约，逐会话开关只会
+   * 制造「这个会话说中文、下个会话说英文」的割裂。
+   */
+  async isZhInjectEnabled(fallback: boolean): Promise<boolean> {
+    const state = await this.readState()
+    return typeof state.zhInjectEnabled === 'boolean' ? state.zhInjectEnabled : fallback
+  }
+
+  /** 写中文记忆注入开关（全局单值；直接落盘，调用频率极低）。 */
+  async setZhInjectEnabled(enabled: boolean): Promise<void> {
+    const state = await this.readState()
+    state.zhInjectEnabled = enabled
+    await this.writeState(state)
+  }
+
   // ── 项目 meta ───────────────────────────────────────────────────────
 
   async readProjectMeta(hash: string): Promise<ProjectMeta | undefined> {

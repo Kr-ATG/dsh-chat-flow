@@ -261,6 +261,70 @@ export function projectMemoryText(entries: MemoryEntry[]): string {
   return renderTimeline(entries)
 }
 
+/**
+ * CJK 表意文字判定：基本区 + 扩展 A + 兼容表意文字。
+ * 只认汉字，不认假名/谚文——「中文记忆」要的是中文写的那条，不是「含任一
+ * 东亚文字就算数」。
+ */
+const CJK_RE = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/
+
+/**
+ * 该条目是否属于「中文记忆」。
+ *
+ * 判定＝**类型 + 文字**双条件：kind 必须是 preference/identity（用户偏好与
+ * 身份），且正文含汉字。只按文字判会把满库的 fact/gotcha（104 条里 97 条都是
+ * 中文）全捞进来，那就不是「只注入中文记忆」而是「全量注入」；只按 kind 判
+ * 又会漏掉用英文写的偏好条目。两者取交集才是「中文偏好记忆」这个语义。
+ *
+ * 纯函数，无 IO，面板与注入共用。
+ */
+export function isChineseMemoryEntry(entry: MemoryEntry): boolean {
+  if (entry.kind !== 'preference' && entry.kind !== 'identity') return false
+  return CJK_RE.test(entry.content)
+}
+
+/**
+ * 选出注入可见范围内的中文记忆条目（按 importance 降序）。
+ *
+ * 与主注入的可见性口径一致：disabled / deprecated 一律排除；scope 只取
+ * global 与当前工作区（别的项目的项目层记忆不该出现在这里）。唯一区别是
+ * **不看项目排除设置**——中文通道按设计就该无视它。
+ */
+export function selectChineseEntries(
+  entries: MemoryEntry[],
+  projectHash: string | null,
+): MemoryEntry[] {
+  return entries
+    .filter(entry => entry.disabled !== true && entry.deprecated !== true)
+    .filter(entry => entry.scope === 'global' || (entry.scope === 'project' && entry.projectHash === projectHash))
+    .filter(isChineseMemoryEntry)
+    .sort((a, b) => injectionRank(b) - injectionRank(a))
+}
+
+/**
+ * 渲染中文记忆注入文本。
+ *
+ * 不用 buildInjectionText：那一套按 identity/memory/pinned/facts 四段分桶，
+ * 段头是「记忆·身份偏好」这类通用措辞；中文通道要的是一眼可辨的独立区块，
+ * 混进主注入的四段里会让模型分不清哪块是强制中文偏好。故独立成段。
+ *
+ * 超预算时按 importance 降序**保留靠前的**（continue 而非 break，与主注入
+ * 同款：不因一条超长就丢掉后面所有条目）。
+ */
+export function buildChineseInjectionText(entries: MemoryEntry[], budget: number): string {
+  const head = '[中文偏好记忆 · 内置通道]'
+  let used = head.length + 1
+  const lines: string[] = []
+  for (const entry of entries) {
+    const line = `- ${entry.content.trim()}`
+    if (used + line.length + 1 > budget) continue
+    used += line.length + 1
+    lines.push(line)
+  }
+  if (lines.length === 0) return ''
+  return `${head}\n${lines.join('\n')}`
+}
+
 /** 当前工作区项目 hash（会话 cwd 判定；取不到返回 null → 调用方回退 global）。 */
 export function workspaceHashOf(header: { cwd?: string } | undefined): string | null {
   const cwd = header?.cwd

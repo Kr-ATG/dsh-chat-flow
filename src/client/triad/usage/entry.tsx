@@ -1,14 +1,15 @@
 /**
- * 用量工作台 + 技能面板入口：侧边栏导航行。
+ * 用量卡片 + 技能面板入口：侧边栏导航行。
  *
- * 「用量」「技能」「记忆」三个入口合并成一行、等分居中；点击任一按钮打开
- * 覆盖会话主区的面板（跟点会话一样占住主区，移动端回退底部 sheet）。
+ * 「用量」「能力」两个入口合并成一行；用量点开的是贴入口弹出的小卡片
+ * （热力图 + token 消耗查询），技能点开覆盖会话主区（跟点会话一样占住主区，
+ * 移动端回退底部 sheet）。
  */
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { IconDataOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import { Workbench } from './dashboard/Workbench'
+import { UsagePanel } from './dashboard/UsagePanel'
 import { SkillsPanel } from './dashboard/SkillsPanel'
 import { ensureModalAnimStyles, useModalClose } from '../triad-modal-animation'
 import { ErrorBoundary } from '../../error-boundary'
@@ -21,13 +22,13 @@ function anchorFromEvent(e: React.MouseEvent<HTMLButtonElement>): PopoverAnchor 
 }
 
 /**
- * 用量入口：导航行 + 点击打开完整工作台。
+ * 用量入口：导航行 + 点击打开用量卡片。
  *
- * 本行原先在行尾常驻「今日总用量」并每 60s 轮询一次。三个入口合并成一行后
- * 每格只有约 1/3 侧栏宽，放不下「文字 + 数字」（且行尾的 margin-left:auto
- * 会顶掉居中），故整块去掉——完整数据点开工作台卡片即可，顺带省掉轮询。
+ * 本行原先在行尾常驻「今日总用量」并每 60s 轮询一次。多个入口合并成一行后
+ * 每格只有约 1/2 侧栏宽，放不下「文字 + 数字」（且行尾的 margin-left:auto
+ * 会顶掉居中），故整块去掉——完整数据点开卡片即可，顺带省掉轮询。
  */
-function UsageWorkbenchEntry(): JSX.Element {
+function UsagePanelEntry(): JSX.Element {
   ensureModalAnimStyles()
   ensureShellStyles()
   const [open, setOpen] = useState(false)
@@ -52,8 +53,8 @@ function UsageWorkbenchEntry(): JSX.Element {
       {/* 面板单独包边界：面板内部崩了只收面板，导航行按钮留着（否则 React 18
           会卸载整个 root，侧边栏入口凭空消失且控制台无痕）。 */}
       {open && (
-        <ErrorBoundary label="用量工作台" fallback={null} onError={requestClose}>
-          <Workbench closing={closing} onClose={requestClose} anchor={anchor} />
+        <ErrorBoundary label="用量面板" fallback={null} onError={requestClose}>
+          <UsagePanel closing={closing} onClose={requestClose} anchor={anchor} />
         </ErrorBoundary>
       )}
     </>
@@ -103,7 +104,7 @@ function UsageSkillsNavApp(): JSX.Element | null {
   return (
     <>
       <NavPortal name="usage">
-        <UsageWorkbenchEntry />
+        <UsagePanelEntry />
       </NavPortal>
       <NavPortal name="skills">
         <SkillsEntry />

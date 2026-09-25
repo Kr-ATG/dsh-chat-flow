@@ -5,7 +5,10 @@
  *  - hover 进入立即展开，移出延迟 120ms 收起（跨按钮↔卡片间隙不闪）；
  *  - 悬停打开后点击 = 钉住（移开鼠标不收），再点或外点/Esc = 收起；
  *  - 卡片常驻 DOM，显隐走 CSS visibility 过渡（160ms 位移+淡入）。
- * 卡片里两个开关：
+ * 卡片里三行开关，上面一行是内置通道，与下面两行零联动：
+ *  - 中文记忆：内置能力，硬编码在插件内、无卸载入口（回包恒带 builtin）。
+ *    不受本会话注入 / 默认开启 / 项目排除任何一道闸门约束——语言契约必须
+ *    跨会话恒定，否则同一用户会得到互相矛盾的回答语言。全局单值，不做会话级。
  *  - 本会话注入：只影响当前会话（host state.json 里的显式覆盖）；
  *  - 默认开启：config.injectDefaultEnabled，决定新会话与未单独设置过的会话。
  * 会话单独设置过时显示「已单独设置」角标，并可一键「跟随默认」清除覆盖
@@ -34,6 +37,8 @@ function toState(res: InjectStateView): InjectStateView {
     enabled: res.enabled !== false,
     defaultEnabled: res.defaultEnabled !== false,
     explicit: res.explicit === true,
+    // 缺字段按 true 兜底：中文通道是内置能力，默认就该开着。
+    zhEnabled: res.zhEnabled !== false,
   }
 }
 
@@ -47,7 +52,7 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
   apiRef.current = api
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const hideTimer = useRef<number | null>(null)
-  const [state, setState] = useState<InjectStateView>({ enabled: true, defaultEnabled: true, explicit: false })
+  const [state, setState] = useState<InjectStateView>({ enabled: true, defaultEnabled: true, explicit: false, zhEnabled: true })
   const [open, setOpen] = useState(false)
   // 钉住（点击后悬停移出也不收）。pinnedRef 供 120ms 收起计时器闭包读取，
   // 避免计时器读到调度时的过期值。
@@ -59,7 +64,7 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
   const reload = useCallback((): void => {
     void apiRef.current.getInjectState(sessionId)
       .then(res => { setState(toState(res)) })
-      .catch(() => { setState({ enabled: true, defaultEnabled: true, explicit: false }) })
+      .catch(() => { setState({ enabled: true, defaultEnabled: true, explicit: false, zhEnabled: true }) })
   }, [sessionId])
 
   useEffect(() => { reload() }, [reload])
@@ -75,6 +80,8 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
           // 本地已知值，explicit 按本次动作推断，否则角标永远出不来。
           defaultEnabled: typeof res.defaultEnabled === 'boolean' ? res.defaultEnabled : prev.defaultEnabled,
           explicit: next === null ? false : (typeof res.explicit === 'boolean' ? res.explicit : true),
+          // 同样要透传：这两个 setter 只该动自己的字段，写整个对象会把它抹掉。
+          zhEnabled: typeof res.zhEnabled === 'boolean' ? res.zhEnabled : prev.zhEnabled,
         }))
       })
       .catch(reload)
@@ -98,11 +105,27 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
           enabled: res.enabled !== false,
           defaultEnabled: typeof res.defaultEnabled === 'boolean' ? res.defaultEnabled : prev.defaultEnabled,
           explicit: typeof res.explicit === 'boolean' ? res.explicit : prev.explicit,
+          zhEnabled: typeof res.zhEnabled === 'boolean' ? res.zhEnabled : prev.zhEnabled,
         }))
       })
       .catch(() => undefined)
       .finally(() => { setBusy(false) })
   }, [sessionId])
+
+  /**
+   * 写中文记忆内置通道开关（全局单值，与上面两个开关零联动）。
+   *
+   * 乐观更新 + 失败回读，与 pushDefault 同款：host 半数未重启时新路由不存在，
+   * 写入会失败，此时 UI 应当诚实地弹回真实状态，而不是显示一个假的「已开启」。
+   */
+  const pushZh = useCallback((next: boolean): void => {
+    setBusy(true)
+    setState(prev => ({ ...prev, zhEnabled: next }))
+    void apiRef.current.setZhInjectState(next)
+      .then(res => { setState(prev => ({ ...prev, zhEnabled: res.enabled !== false })) })
+      .catch(reload)
+      .finally(() => { setBusy(false) })
+  }, [reload])
 
   /** hover 进入按钮/卡片：立即展开并取消收起计时，顺带刷新最新开关状态。 */
   const showCard = useCallback((): void => {
@@ -160,6 +183,8 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
   const isOn = state.enabled !== false
   const isDefaultOn = state.defaultEnabled !== false
   const explicit = state.explicit === true
+  // 中文通道独立于上面三个，纯读自己的字段。
+  const zhOn = state.zhEnabled !== false
   const button = (
     <button
       type="button"
@@ -188,6 +213,24 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
             {isOn ? t('injectStateOn') : t('injectStateOff')}
           </span>
         </div>
+        <div className={zhOn ? `${css.zhRow} ${css.zhRowOn}` : css.zhRow}>
+          <span className={css.zhMain}>
+            <span className={css.zhLabel}>
+              {t('zhInjectLabel')}
+              <span className={css.zhBuiltin}>{t('zhInjectBuiltin')}</span>
+            </span>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={zhOn}
+            aria-label={t('zhInjectLabel')}
+            disabled={busy}
+            className={css.switch}
+            onClick={() => { pushZh(!zhOn) }}
+          />
+        </div>
+        <div className={css.injectDivider} />
         <div className={css.injectRow}>
           <span className={css.injectMain}>
             <span className={css.injectLabel}>
@@ -226,6 +269,7 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
           </button>
         )}
         <p className={css.injectFoot}>{t('injectCardFoot')}</p>
+        <p className={css.zhFoot}>{t('zhInjectHint')}</p>
       </div>
     </div>
   )

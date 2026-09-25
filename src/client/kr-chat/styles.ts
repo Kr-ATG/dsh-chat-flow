@@ -178,6 +178,9 @@ body[data-dsh-kr-chat="true"],
   /* 卡片常态不投影（贴在大盘上）；hover 才轻微浮起一档做反馈。 */
   --kr-card-shadow: none;
   --kr-card-shadow-hover: 0 1px 3px rgba(16, 24, 40, 0.08), 0 4px 12px rgba(16, 24, 40, 0.07);
+  /* 对话流里那张 Agent 状态卡是浮在消息底上的（不贴大盘），必须留投影；
+     深浅两套阴影都在 --kr-float-shadow 里给出，避免把 #FFFFFF 之类写死在规则里。 */
+  --kr-float-shadow: 0 1px 2px rgba(15, 17, 21, .04), 0 8px 24px -18px rgba(15, 17, 21, .28);
 }
 
 /* 深色主题：卡片(layer-1 #232324)本就比大盘底亮，靠色差分层即可，
@@ -187,6 +190,8 @@ body[data-ds-dark-theme] .kr-split__side {
   --kr-card-border: rgba(255, 255, 255, 0.07);
   --kr-card-shadow: none;
   --kr-card-shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+  /* 浮层卡在深色下靠描边 + 更黑的落影分层，不能沿用浅色的暖灰阴影。 */
+  --kr-float-shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px -18px rgba(0, 0, 0, .78);
 }
 
 .kr-split {
@@ -1326,8 +1331,9 @@ body[data-kr-resizing="true"] * {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  /* 兜底封顶：展开「其余 N 条」后也不允许把右栏顶穿，超出在内部滚动。 */
-  max-height: 46vh;
+  /* 兜底封顶：展开「其余 N 条」后也不允许把右栏顶穿，超出在内部滚动。
+     与 SECTION_PREVIEW_COUNT 成对抬到两倍 —— 默认 16 条正好填得满，再多才封顶。 */
+  max-height: 92vh;
   overflow-y: auto;
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
@@ -1337,7 +1343,7 @@ body[data-kr-resizing="true"] * {
 /* 挤压态：思考卡已被压到最小档、右栏仍然装不下时，记忆卡自己再让一档，
    绝不上涨把思考卡彻底顶没（用户要的是「都能看见」而不是「记忆卡看全」）。 */
 .kr-card--memory[data-squeezed="true"] .kr-memory__list {
-  max-height: 30vh;
+  max-height: 60vh;
 }
 
 .kr-memory__row {
@@ -1453,13 +1459,41 @@ body[data-kr-resizing="true"] * {
 }
 
 /* ══ KR 极简 Agent 状态卡：只显示一句当前动作 + 可配置头像 ═══════════════ */
+
+/*
+ * 这张卡整体浮在对话流里，不在右栏大盘的变量作用域内，所以变量要在壳子根上
+ * **重声明一次**，不能直接吃 :root 那套。
+ *
+ * 原因是一个很容易静默翻车的求值位置问题：:root 是 html，而 DSH 的设计 token
+ * （--dsw-alias-*）定义在 body 上。写在 :root 的 --kr-card-bg 引用
+ * --dsw-alias-bg-layer-1 时，在 html 上求值根本找不到那个 token，于是走 fallback
+ * —— 深色下卡片照样纯白，看不出任何报错，只是主题「没同步」。
+ * 壳子是 body 后代，body 上的 token 一律可见，在这里重声明才能拿到真值。
+ */
+.kr-agent-mini-shell {
+  --kr-accent: var(--dsw-alias-state-business-primary, #4176e6);
+  --kr-success: var(--dsw-alias-state-success-primary, #22c55e);
+  --kr-card-bg: var(--dsw-alias-bg-layer-1, #ffffff);
+  --kr-card-border: var(--dsw-alias-border-l1, rgba(0, 0, 0, .06));
+  --kr-hover-bg: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, .06));
+  --kr-float-shadow: 0 1px 2px rgba(15, 17, 21, .04), 0 8px 24px -18px rgba(15, 17, 21, .28);
+}
+
+body[data-ds-dark-theme] .kr-agent-mini-shell {
+  --kr-card-border: rgba(255, 255, 255, 0.07);
+  /* 浮层卡在深色下靠描边 + 更黑的落影分层，不能沿用浅色的暖灰阴影。 */
+  --kr-float-shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px -18px rgba(0, 0, 0, .78);
+}
+
 .kr-agent-mini-shell {
   position: relative;
   display: grid;
   grid-template-rows: 1fr;
   width: 100%;
   min-width: 0;
-  max-height: 260px;
+  /* 展开态 = 状态卡 50px + 间隔 7px + 进度卡（头 34 + 四步约 130 + 计数行 26），
+     给到 330px 让四行步骤完整可读，不必靠裁切收口。 */
+  max-height: 330px;
   margin: -4px 0;
   overflow: visible;
 }
@@ -1474,10 +1508,10 @@ body[data-kr-resizing="true"] * {
   width: min(440px, 100%);
   min-height: 50px;
   padding: 7px 14px 7px 7px;
-  border: 1px solid var(--dsw-alias-border-l3, rgba(127, 127, 127, .16));
+  border: 1px solid var(--kr-card-border);
   border-radius: 14px;
-  background: #FFFFFF;
-  box-shadow: 0 1px 2px rgba(15, 17, 21, .04), 0 8px 24px -18px rgba(15, 17, 21, .28);
+  background: var(--kr-card-bg);
+  box-shadow: var(--kr-float-shadow);
   cursor: pointer;
   transform-origin: 0 50%;
   animation: kr-agent-mini-in .38s cubic-bezier(.16, 1, .3, 1) both;
@@ -1548,151 +1582,237 @@ body[data-kr-resizing="true"] * {
   opacity: 0;
 }
 
-.kr-agent-mini-details__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 3px 6px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 10px;
-  line-height: 15px;
-}
-
-.kr-agent-mini-details__head span:first-child {
-  color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.kr-agent-mini-details__grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
-}
-
+/* ══ 执行进度：与上方状态卡同宽同语言的竖向时间线 ═══════════════════════ */
 .kr-agent-workflow-card {
   position: relative;
+  box-sizing: border-box;
+  width: min(440px, 100%);
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--dsw-alias-border-l3, rgba(127, 127, 127, .16));
+  border: 1px solid var(--kr-card-border);
   border-radius: 14px;
-  background: #FFFFFF;
-  box-shadow: 0 1px 2px rgba(15, 17, 21, .04), 0 8px 24px -18px rgba(15, 17, 21, .28);
+  background: var(--kr-card-bg);
+  box-shadow: var(--kr-float-shadow);
 }
 
+/* 头部一行两端：左标题、右「模型任务 · 2/6」。不再单开一条分隔带压出报表感。 */
 .kr-agent-workflow-card__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  border-bottom: 1px solid var(--dsw-alias-border-l3, rgba(127, 127, 127, .12));
-  padding: 10px 14px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 10px;
-  line-height: 15px;
-}
-
-.kr-agent-workflow-card__head span:first-child {
-  color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.kr-agent-workflow-card__current {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 12px 14px 11px;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
+  padding: 10px 13px 6px;
+  font-size: 10.5px;
   line-height: 16px;
 }
 
-.kr-agent-workflow-card__current-label {
-  flex: none;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 10px;
-}
-
-.kr-agent-workflow-card__current strong {
-  color: var(--dsw-alias-label-primary);
-  font-size: 12px;
+.kr-agent-workflow-card__head > span:first-child {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
   font-weight: 600;
 }
 
-.kr-agent-workflow-card__current > span:last-child {
+.kr-agent-workflow-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
   white-space: nowrap;
 }
 
+.kr-agent-workflow-card__count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 步骤：单列竖排轨道，每条独占一整行宽度，任务名最多两行完整可读。
+   原来是 auto-fit 横排网格，440px 只塞得下两列，六个任务被挤成三行、
+   每个任务名截断成半句，这里改回它本来该有的线性节奏。 */
 .kr-agent-workflow-card__steps {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  border-top: 1px solid var(--dsw-alias-border-l3, rgba(127, 127, 127, .12));
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 8px 9px;
 }
 
 .kr-agent-workflow-step {
+  position: relative;
   display: flex;
   align-items: flex-start;
-  gap: 7px;
+  gap: 9px;
   min-width: 0;
-  border-right: 1px solid var(--dsw-alias-border-l3, rgba(127, 127, 127, .10));
-  padding: 10px 12px;
+  border-radius: 8px;
+  padding: 6px 5px;
 }
 
-.kr-agent-workflow-step:last-child {
-  border-right: 0;
-}
-
+/*
+ * 节点记号：不去掉边框改用「点 + 光晕」的无边框记号。
+ * 16px 圆圈里塞 9px 序号在深色下是个发灰的小铁环，视觉噪声大于信息量；
+ * 竖向顺序本身就表达了位次，位次由头部计数与底部汇总承担，点只负责三态。
+ *
+ * 容器保持 14px 不透明圆底，作用是给轨道线断点 —— 线在 ::before（更底层），
+ * 每个节点把它切断，读起来就是一条串起节点的时间轴。
+ */
 .kr-agent-workflow-step__index {
+  position: relative;
+  z-index: 1;
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
   flex: none;
-  border: 1px solid var(--dsw-alias-border-l3, rgba(127, 127, 127, .22));
   border-radius: 50%;
+  background: var(--kr-card-bg);
   color: var(--dsw-alias-label-tertiary);
-  font-size: 9px;
-  line-height: 18px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
 }
 
+/* 轨道竖线：贴边拉伸而非写死 height —— 任务名一行或两行时步高不同，
+   固定长度必然断线或穿到下一步节点上方。起止都落在节点圆心，线画在 ::before
+   （更底层），被节点那圈不透明圆底盖断 —— 读起来是一条串起节点的时间轴。 */
+.kr-agent-workflow-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  bottom: -15px;
+  left: 13px;
+  width: 1px;
+  background: color-mix(in srgb, var(--dsw-alias-label-tertiary) 24%, transparent);
+  transform: translateX(-.5px);
+}
+
+/* 待处理：一颗哑光灰点，不描边不填色。 */
+.kr-agent-workflow-step[data-status="pending"] .kr-agent-workflow-step__index {
+  font-size: 0;
+}
+
+.kr-agent-workflow-step[data-status="pending"] .kr-agent-workflow-step__index::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--dsw-alias-label-tertiary) 55%, transparent);
+}
+
+/* 已完成：一枚绿色对勾，和左侧状态卡头像状态点同一套语义色。 */
 .kr-agent-workflow-step[data-status="done"] .kr-agent-workflow-step__index {
-  border-color: color-mix(in srgb, var(--dsw-alias-state-success-primary, #2f9e44) 36%, transparent);
-  background: color-mix(in srgb, var(--dsw-alias-state-success-primary, #2f9e44) 10%, #FFFFFF);
-  color: var(--dsw-alias-state-success-primary, #2f9e44);
+  color: var(--dsw-alias-state-success-primary, var(--kr-success, #10b981));
+}
+
+/*
+ * 进行中（选定方案）：节点本身变成一枚 0.85s 的转圈。
+ *
+ * 全卡唯一在动的就是这个节点 —— 「正在跑」这件事直接由它自己表演，不需要再
+ * 叠光晕、竖条或呼吸点去重复提示。
+ *
+ * 整张进度卡走纯中性灰阶：当前行不再染 accent 蓝，改用灰阶里最亮的一档
+ * （label-primary / secondary）来表达层级。转圈本身就是明确的动态信号，不需要
+ * 再靠颜色喊一遍「这里是当前」。全卡仅剩「已完成」的绿色对勾保留语义色。
+ */
+.kr-agent-workflow-step[data-status="current"] {
+  z-index: 2;
 }
 
 .kr-agent-workflow-step[data-status="current"] .kr-agent-workflow-step__index {
-  border-color: color-mix(in srgb, var(--kr-accent) 45%, transparent);
-  background: color-mix(in srgb, var(--kr-accent) 10%, #FFFFFF);
-  color: var(--kr-accent);
+  width: 16px;
+  height: 16px;
+  margin-top: 0;
+  font-size: 0;
+}
+
+/* 转圈就是节点本身，内点与外圈都不再另起一层。 */
+.kr-agent-workflow-step[data-status="current"] .kr-agent-workflow-step__index::before {
+  display: none;
+}
+
+.kr-agent-workflow-step[data-status="current"] .kr-agent-workflow-step__index::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  width: auto;
+  height: auto;
+  /* 伪元素不继承父元素的圆角，漏了这行就是一个方角在转。 */
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  border-top-color: var(--dsw-alias-label-secondary);
+  border-right-color: color-mix(in srgb, var(--dsw-alias-label-tertiary) 45%, transparent);
+  background: none;
+  animation: kr-agent-step-spin .85s linear infinite;
 }
 
 .kr-agent-workflow-step__copy {
   display: flex;
+  flex: 1 1 auto;
   min-width: 0;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .kr-agent-workflow-step__label {
+  display: -webkit-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   color: var(--dsw-alias-label-secondary);
-  font-size: 10.5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.kr-agent-workflow-step[data-status="current"] .kr-agent-workflow-step__label {
+  color: var(--dsw-alias-label-primary);
   font-weight: 600;
-  line-height: 14px;
+}
+
+.kr-agent-workflow-step[data-status="done"] .kr-agent-workflow-step__label {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 单行判断（无任务列表时的退化形态）整行就是一整句话，右侧没有状态词并排，
+   放开两行截断让它自然铺满 —— 那条文本就是这一格的全部内容。 */
+.kr-agent-workflow-step__copy[data-solo] {
+  align-items: flex-start;
+}
+
+.kr-agent-workflow-step__copy[data-solo] .kr-agent-workflow-step__label {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
 }
 
 .kr-agent-workflow-step__detail {
-  overflow: hidden;
+  flex: none;
+  align-self: flex-start;
+  margin-top: 1px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 10px;
-  line-height: 14px;
-  text-overflow: ellipsis;
+  line-height: 16px;
   white-space: nowrap;
+}
+
+.kr-agent-workflow-step[data-status="done"] .kr-agent-workflow-step__detail {
+  color: var(--dsw-alias-state-success-primary, var(--kr-success, #10b981));
+}
+
+.kr-agent-workflow-step[data-status="current"] .kr-agent-workflow-step__detail {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 超出可视窗口的步骤不铺开，收成右对齐一行计数。 */
+.kr-agent-workflow-card__more {
+  padding: 0 13px 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 15px;
+  text-align: right;
 }
 
 .kr-agent-mini-avatar {
@@ -1805,13 +1925,19 @@ body[data-kr-resizing="true"] * {
   max-height: calc(100vh - 16px);
   overflow-y: auto;
   box-sizing: border-box;
-  border: 1px solid var(--kr-card-border);
+  /* 菜单 portal 到 body，不在 .kr-agent-mini-shell 里，拿不到壳子上那套 --kr-*，
+     所以直接引 DSH 的语义 token（body 作用域，两套主题都拿得到真值）。 */
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, .06));
   border-radius: 9px;
   padding: 8px;
   background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base));
   box-shadow: 0 10px 28px rgba(15, 17, 21, .10);
   transform-origin: 0 0;
   animation: kr-agent-avatar-menu-in .14s cubic-bezier(.2, .8, .2, 1);
+}
+
+body[data-ds-dark-theme] .kr-agent-avatar-menu {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .55);
 }
 
 .kr-agent-avatar-menu__title {
@@ -1911,8 +2037,8 @@ body[data-kr-resizing="true"] * {
 }
 
 @keyframes kr-agent-mini-exit {
-  0% { max-height: 260px; margin-top: -4px; margin-bottom: -4px; opacity: 1; transform: translateY(0) scale(1); }
-  65% { max-height: 220px; margin-top: -2px; margin-bottom: -2px; opacity: .92; transform: translateY(-12px) scale(.992); }
+  0% { max-height: 330px; margin-top: -4px; margin-bottom: -4px; opacity: 1; transform: translateY(0) scale(1); }
+  65% { max-height: 280px; margin-top: -2px; margin-bottom: -2px; opacity: .92; transform: translateY(-12px) scale(.992); }
   100% { max-height: 0; margin-top: 0; margin-bottom: 0; opacity: 0; transform: translateY(-28px) scale(.985); }
 }
 
@@ -1921,13 +2047,14 @@ body[data-kr-resizing="true"] * {
   50% { opacity: 1; }
 }
 
+/* 当前节点的转圈：0.85s 一圈，匀速，读作「在跑」。 */
+@keyframes kr-agent-step-spin {
+  to { transform: rotate(360deg); }
+}
+
 @media (max-width: 520px) {
   .kr-agent-mini-shell {
     width: 100%;
-  }
-
-  .kr-agent-mini-details__grid {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -1936,10 +2063,10 @@ body[data-kr-resizing="true"] * {
   .kr-agent-mini-char,
   .kr-agent-mini-shell[data-closing="true"][data-committed="true"],
   .kr-agent-avatar-menu,
-  .kr-agent-mini-avatar__status {
+  .kr-agent-mini-avatar__status,
+  .kr-agent-workflow-step[data-status="current"] .kr-agent-workflow-step__index::after {
     animation: none !important;
-  }
-}
+  }}
 
 /* ══ 隐藏原生 DSH 任务列表/Plan卡片（KR模式下收敛至右侧大盘） ═══════════════ */
 body[data-dsh-kr-chat="true"] [data-testid="todo-panel"],

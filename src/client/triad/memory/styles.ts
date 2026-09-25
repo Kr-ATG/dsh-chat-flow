@@ -225,6 +225,13 @@ export const css = {
   injectBadge: 'dsh-memory-inject-badge',
   injectFollow: 'dsh-memory-inject-follow',
   injectFoot: 'dsh-memory-inject-foot',
+  injectDivider: 'dsh-memory-inject-divider',
+  zhRow: 'dsh-memory-zh-row',
+  zhRowOn: 'dsh-memory-zh-row-on',
+  zhMain: 'dsh-memory-zh-main',
+  zhLabel: 'dsh-memory-zh-label',
+  zhBuiltin: 'dsh-memory-zh-builtin',
+  zhFoot: 'dsh-memory-zh-foot',
 } as const
 
 const STYLE_ID = 'dsh-memory-styles'
@@ -630,6 +637,20 @@ body[data-ds-dark-theme] .dsh-memory-inject-card{background:var(--dsw-static-neu
 .dsh-memory-inject-follow{display:block;width:100%;margin:2px 0 4px;padding:5px 8px;box-sizing:border-box;border:1px dashed var(--m-border);border-radius:8px;background:transparent;color:var(--m-text-2);font-family:inherit;font-size:11.5px;line-height:16px;cursor:pointer;transition:border-color .15s ease,color .15s ease,background .15s ease}
 .dsh-memory-inject-follow:hover{border-color:var(--m-primary);color:var(--m-primary);background:color-mix(in srgb,var(--m-primary) 7%,transparent)}
 .dsh-memory-inject-foot{margin:2px 0 0;font-size:11px;line-height:15px;color:var(--m-text-3)}
+.dsh-memory-inject-divider{height:1px;margin:2px 0;background:linear-gradient(90deg,transparent,var(--m-border) 12%,var(--m-border) 88%,transparent)}
+
+/* ── 中文优先（内置通道） ────────────────────────────────────────────
+   不给它图标。文字模拟图标（「文」字方块）在 272px 卡片里既抢戏又土，
+   而这一行的表意完全由「中文优先 + 内置」承载，左侧一根主色竖条做锚点
+   就够——状态变化由竖条的亮度与辉光说清，不靠额外图形。 */
+.dsh-memory-zh-row{position:relative;display:flex;align-items:center;gap:10px;margin:3px 0 1px;padding:8px 9px 8px 12px;border:1px solid var(--m-border);border-radius:9px;background:var(--dsw-alias-bg-layer-1,transparent);transition:border-color .2s cubic-bezier(.2,.8,.2,1),background .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s cubic-bezier(.2,.8,.2,1)}
+.dsh-memory-zh-row::before{content:'';position:absolute;left:4px;top:9px;bottom:9px;width:2px;border-radius:1px;background:var(--m-primary);opacity:.22;transition:opacity .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s cubic-bezier(.2,.8,.2,1),transform .22s cubic-bezier(.2,.8,.2,1)}
+.dsh-memory-zh-row-on{border-color:color-mix(in srgb,var(--m-primary) 34%,transparent);background:color-mix(in srgb,var(--m-primary) 6%,transparent)}
+.dsh-memory-zh-row-on::before{opacity:1;box-shadow:0 0 7px color-mix(in srgb,var(--m-primary) 45%,transparent)}
+.dsh-memory-zh-main{flex:1;min-width:0;display:flex;align-items:center}
+.dsh-memory-zh-label{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px;font-weight:500;line-height:19px;color:var(--m-text)}
+.dsh-memory-zh-builtin{flex:none;padding:0 5px;border-radius:4px;background:color-mix(in srgb,var(--m-primary) 14%,transparent);color:var(--m-primary);font-size:10px;font-weight:500;line-height:15px;letter-spacing:.02em}
+.dsh-memory-zh-foot{margin:6px 0 0;font-size:11px;line-height:15px;color:var(--m-text-3)}
 @media (prefers-reduced-motion:reduce){.dsh-memory-inject-card,.dsh-memory-inject-card-on{transition:none}}
 .dsh-memory-switch:focus-visible,.dsh-memory-toggle:focus-visible{outline:none;box-shadow:0 0 0 2px rgba(65,118,230,.35)}
 
@@ -724,7 +745,15 @@ body[data-ds-dark-theme] .dsh-memory-inject-card{background:var(--dsw-static-neu
 /** 注入样式表（幂等；loader 卸载插件时会移除其 style 标签）。 */
 export function ensureStyles(): void {
   if (typeof document === 'undefined') return
-  if (document.getElementById(STYLE_ID) !== null) return
+  const existing = document.getElementById(STYLE_ID) as HTMLStyleElement | null
+  // 内容比对，**不能只按 id 判重**。只判 id 时，插件升级后已打开的页面里那份
+  // 旧 <style> 会一直命中早退分支：JSX 能拿到新 class 名、却永远匹配不到新
+  // 规则，UI 裸奔（本仓新增中文记忆通道时踩过：开关正常、新排版全散架）。
+  // 代价是一次字符串比较，换来热更新后样式必定收敛。
+  if (existing !== null) {
+    if (existing.textContent !== SHEET) existing.textContent = SHEET
+    return
+  }
   const tag = document.createElement('style')
   tag.id = STYLE_ID
   tag.dataset.plugin = 'dsh-triad'

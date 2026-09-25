@@ -1,0 +1,279 @@
+/**
+ * UsagePanel — 用量面板（贴入口弹出的定尺寸小卡片）。
+ *
+ * 只保留两件事：
+ *  1. 热力图：52 周 Token 活动贡献图（每周/累计口径 + 指标下拉，点格子看当日明细）；
+ *  2. token 消耗查询：顶部范围胶囊（今日/昨日/近 7 天/…/自定义）联动四格汇总
+ *     （合计 / 输入 / 输出 / 缓存），下方一行元信息（天数 / 有量天数 / 模型数）。
+ *
+ * 范围只作用于第 2 项（所选区间的消耗）；热力图是横跨历史的总览，恒为全量 52 周，
+ * 与 range.ts 的注释口径一致。
+ *
+ * 尺寸：交给 PopoverShell 的 compact 形态（内联宽高 + 视口夹紧），窄屏回退全屏。
+ */
+
+import { useEffect, useState } from 'react'
+import { usageApi } from './api'
+import { averageCacheHitRate, sumTokens, type UsageDay } from './aggregate'
+import { filterDays, resolveRange, type DateRange, type RangePreset } from './range'
+import { formatExact, formatHitRate, formatUnits } from './format'
+import { ActivityGrid, type ActivityMetric, type ActivityMode } from './ActivityGrid'
+import { RangePicker } from './primitives/RangePicker'
+import { ErrorCard } from './primitives/ErrorCard'
+import { useIsMobile } from '../../responsive'
+import { PshBody, PopoverShell, type PopoverAnchor } from '../../popover-shell'
+import { modalStaggerClass } from '../../triad-modal-animation'
+import { ensureHubStyles, CloseIcon, tokensIcon, inputIcon, outputIcon, hitIcon } from './hub'
+
+/** 卡片理想尺寸（px）：比工作台小一个量级，仍能一行放下 52 周热力（9px 格）。 */
+const CARD_SIZE = { width: 648, height: 560 }
+
+const STYLE_ID = 'dsh-usage-compact-styles'
+
+/**
+ * 紧凑用量卡样式。刻意局部注入而不进 hub.tsx：这份语言只服务这一个卡片，
+ * 与工作台共享层解耦，未来再加卡片也不会把样式表撑成大杂烩。
+ * 注释里不出现会提前闭合注释块的字符序列。
+ */
+const SHEET = `
+.usm-uc { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; overflow-y: auto; }
+.usm-uc-top { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.usm-uc-meta { flex: 1 1 auto; min-width: 0; text-align: right; font-size: 11px; line-height: 16px; color: var(--dsw-alias-label-tertiary, #81858c); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.usm-uc-stats { flex: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.usm-uc-stat { min-width: 0; display: flex; flex-direction: column; gap: 1px; box-sizing: border-box; border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06)); border-radius: 10px; background: var(--dsw-alias-bg-base, #fff); padding: 7px 9px; }
+.usm-uc-stat-head { display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--dsw-alias-label-secondary, #8f96a3); }
+.usm-uc-label { font-size: 11px; line-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.usm-uc-value { font-size: 17px; font-weight: 700; line-height: 22px; letter-spacing: -0.2px; color: var(--dsw-alias-label-primary, #0f1115); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.usm-uc-sub { font-size: 10.5px; line-height: 14px; color: var(--dsw-alias-label-tertiary, #81858c); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.usm-uc-card { flex: none; box-sizing: border-box; border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06)); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.usm-uc-day-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.usm-uc-day-title { font-size: 12px; font-weight: 600; line-height: 18px; color: var(--dsw-alias-label-primary, #0f1115); white-space: nowrap; }
+.usm-uc-day-sum { font-size: 11px; line-height: 18px; color: var(--dsw-alias-label-tertiary, #81858c); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usm-uc-close { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-left: auto; border: none; border-radius: 6px; padding: 0; background: transparent; cursor: pointer; color: var(--dsw-alias-label-tertiary, #81858c); }
+.usm-uc-close:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06)); color: var(--dsw-alias-label-primary, #0f1115); }
+.usm-uc-model { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 3px 0; font-size: 12px; line-height: 17px; }
+.usm-uc-model + .usm-uc-model { border-top: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.05)); }
+.usm-uc-model-name { flex: 1 1 auto; min-width: 0; color: var(--dsw-alias-label-primary, #0f1115); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usm-uc-model-num { flex: none; color: var(--dsw-alias-label-secondary, #61666b); font-variant-numeric: tabular-nums; }
+@media (max-width: 767.98px) {
+  .usm-uc { padding: 10px 10px 12px; }
+  .usm-uc-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .usm-uc-meta { text-align: left; flex-basis: 100%; }
+}
+`
+
+/** 幂等注入紧凑卡样式；返回移除函数。 */
+function ensureCompactStyles(): () => void {
+  if (typeof document === 'undefined') return () => {}
+  let tag = document.getElementById(STYLE_ID) as HTMLStyleElement | null
+  if (tag === null) {
+    tag = document.createElement('style')
+    tag.id = STYLE_ID
+    tag.dataset.plugin = 'dsh-triad'
+    tag.dataset.pluginCss = 'triad/usage-compact'
+    tag.textContent = SHEET
+    document.head.appendChild(tag)
+  }
+  return () => { tag?.remove() }
+}
+
+const WEEK = ['日', '一', '二', '三', '四', '五', '六'] as const
+
+/** YYYY-MM-DD → 「08-23 周日」。 */
+function dayLabel(date: string): string {
+  const [y, m, d] = date.split('-').map(Number)
+  const wd = new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1).getDay()
+  return `${date.slice(5)} 周${WEEK[wd]}`
+}
+
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace'
+
+export interface UsagePanelProps {
+  closing?: boolean
+  onClose: () => void
+  anchor?: PopoverAnchor | null
+}
+
+export function UsagePanel({ closing = false, onClose, anchor = null }: UsagePanelProps): JSX.Element {
+  const [preset, setPreset] = useState<RangePreset>('7d')
+  const [custom, setCustom] = useState<DateRange | null>(null)
+  const [days, setDays] = useState<UsageDay[] | null>(null)
+  const [metric, setMetric] = useState<ActivityMetric>('tokens')
+  const [mode, setMode] = useState<ActivityMode>('day')
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [tick, setTick] = useState(0)
+  const isMobile = useIsMobile()
+
+  ensureHubStyles()
+
+  useEffect(() => ensureCompactStyles(), [])
+
+  useEffect(() => {
+    let alive = true
+    setError(null)
+    usageApi.usage().then((p) => {
+      if (!alive) return
+      if (p.ok !== true) throw new Error('用量数据加载失败')
+      setDays(p.days)
+    }).catch((e: unknown) => { if (alive) setError(e instanceof Error ? e.message : String(e)) })
+    return () => { alive = false }
+  }, [tick])
+
+  const { range, label: rangeLabel } = resolveRange(preset, custom)
+
+  /** 头部刷新：重新拉一次数据，按钮短暂 spin。 */
+  const doRefresh = (): void => {
+    setRefreshing(true)
+    setTick(t => t + 1)
+    window.setTimeout(() => setRefreshing(false), 900)
+  }
+
+  const head = ((): JSX.Element => {
+    if (error) return <ErrorCard message={error} onRetry={doRefresh} />
+    if (days === null) {
+      return <div style={{ padding: '20px 0', textAlign: 'center', fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>加载中…</div>
+    }
+    return <Body
+      days={days}
+      range={range}
+      rangeLabel={rangeLabel}
+      preset={preset}
+      custom={custom}
+      onChangePreset={setPreset}
+      onChangeCustom={setCustom}
+      metric={metric}
+      onMetric={setMetric}
+      mode={mode}
+      onMode={setMode}
+      selectedDay={selectedDay}
+      onSelectDay={setSelectedDay}
+      isMobile={isMobile}
+    />
+  })()
+
+  return (
+    <PopoverShell
+      solid
+      closing={closing}
+      onClose={onClose}
+      anchor={anchor}
+      size={CARD_SIZE}
+      variant="compact"
+      ariaLabel="用量"
+    >
+      <div className="psh-head">
+        <span className="psh-title" style={{ flex: 'none' }}>用量</span>
+        <span style={{ flex: 1, minWidth: 0 }} />
+        <button type="button" className="usm-refresh" data-spin={refreshing || undefined} aria-label="刷新用量数据" onClick={doRefresh}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 12a9 9 0 0 1-15.9 5.7M3 12a9 9 0 0 1 15.9-5.7" />
+            <path d="M21 3v6h-6M3 21v-6h6" />
+          </svg>
+        </button>
+        <button type="button" className="psh-close" aria-label="关闭用量面板" onClick={onClose}>
+          <CloseIcon size={13} />
+        </button>
+      </div>
+      <PshBody>{head}</PshBody>
+    </PopoverShell>
+  )
+}
+
+/** 卡片主体：查询行 + 汇总四格 + 热力图 + 当日明细。 */
+function Body({ days, range, rangeLabel, preset, custom, onChangePreset, onChangeCustom, metric, onMetric, mode, onMode, selectedDay, onSelectDay, isMobile }: {
+  days: UsageDay[]
+  range: DateRange
+  rangeLabel: string
+  preset: RangePreset
+  custom: DateRange | null
+  onChangePreset: (preset: RangePreset) => void
+  onChangeCustom: (range: DateRange) => void
+  metric: ActivityMetric
+  onMetric: (metric: ActivityMetric) => void
+  mode: ActivityMode
+  onMode: (mode: ActivityMode) => void
+  selectedDay: string | null
+  onSelectDay: (date: string | null) => void
+  isMobile: boolean
+}): JSX.Element {
+  const inRange = filterDays(days, range)
+  const sum = sumTokens(inRange)
+  const hitRate = averageCacheHitRate(inRange)
+  const activeDays = inRange.filter(d => (d.tokens ?? 0) > 0).length
+  const models = new Set<string>()
+  for (const d of inRange) for (const m of d.models ?? []) models.add(m.model)
+  const share = (n: number): string => (sum.total > 0 ? `${Math.round((n / sum.total) * 100)}%` : '—')
+  const day = selectedDay === null ? undefined : days.find(d => d.date === selectedDay)
+
+  return (
+    <div className={`usm-uc ${modalStaggerClass}`}>
+      <div className="usm-uc-top">
+        <RangePicker compact preset={preset} custom={custom} onChangePreset={onChangePreset} onChangeCustom={onChangeCustom} />
+        <span className="usm-uc-meta">共 {inRange.length} 天 · 有量 {activeDays} 天 · {models.size} 个模型</span>
+      </div>
+      <div className="usm-uc-stats" role="group" aria-label={`${rangeLabel} token 消耗`} style={isMobile ? { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' } : undefined}>
+        <Stat icon={tokensIcon(13)} label="合计" value={formatUnits(sum.total)} sub={`≈ ${formatExact(sum.total)}`} tone="var(--dsw-alias-state-business-primary, #4176e6)" />
+        <Stat icon={inputIcon(13)} label="输入" value={formatUnits(sum.input)} sub={`占 ${share(sum.input)}`} tone="var(--dsw-alias-state-business-primary, #4176e6)" />
+        <Stat icon={outputIcon(13)} label="输出" value={formatUnits(sum.output)} sub={`占 ${share(sum.output)}`} tone="var(--dsw-alias-state-warn-primary, #f59e0b)" />
+        <Stat icon={hitIcon(13)} label="缓存" value={formatUnits(sum.cache)} sub={`命中 ${formatHitRate(hitRate)}`} tone="var(--dsw-alias-state-success-primary, #22c55e)" />
+      </div>
+      <div className="usm-uc-card">
+        <ActivityGrid
+          days={days}
+          mode={mode}
+          onMode={onMode}
+          metric={metric}
+          onMetricChange={onMetric}
+          metricPicker
+          title="Token 活动"
+          subtitle="52 周"
+          cellSize={9}
+          selectedKey={selectedDay}
+          onSelect={onSelectDay}
+        />
+      </div>
+      {day !== undefined && (
+        <div className="usm-uc-card">
+          <div className="usm-uc-day-head">
+            <span className="usm-uc-day-title">{dayLabel(day.date)}</span>
+            <span className="usm-uc-day-sum">
+              合计 {formatUnits(day.tokens ?? 0)} · 输入 {formatUnits(day.inputTokens ?? 0)} · 输出 {formatUnits(day.outputTokens ?? 0)} · 命中 {formatHitRate(day.cacheHitRate)}
+            </span>
+            <button type="button" className="usm-uc-close" aria-label="关闭当日明细" onClick={() => { onSelectDay(null) }}>
+              <CloseIcon size={11} />
+            </button>
+          </div>
+          <div style={{ maxHeight: 132, overflowY: 'auto' }}>
+            {[...(day.models ?? [])].sort((a, b) => b.tokens - a.tokens).map(m => (
+              <div key={m.model} className="usm-uc-model">
+                <span className="usm-uc-model-name" title={m.model}>{m.model}</span>
+                <span className="usm-uc-model-num" style={{ fontFamily: MONO }}>{formatUnits(m.tokens)}</span>
+              </div>
+            ))}
+            {(day.models?.length ?? 0) === 0 && <div className="usm-uc-sub">当日无模型明细</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 汇总格：色点 + 标签 + 主值 + 副行。 */
+function Stat({ icon, label, value, sub, tone }: { icon: JSX.Element; label: string; value: string; sub: string; tone: string }): JSX.Element {
+  return (
+    <div className="usm-uc-stat">
+      <span className="usm-uc-stat-head">
+        <svg width="9" height="9" viewBox="0 0 9 9" aria-hidden="true" style={{ flex: 'none' }}>
+          <rect width="9" height="9" rx="2.5" fill={tone} opacity={0.9} />
+        </svg>
+        <span className="usm-uc-label">{label}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', color: tone, opacity: 0.85, marginLeft: 'auto' }}>{icon}</span>
+      </span>
+      <span className="usm-uc-value">{value}</span>
+      <span className="usm-uc-sub">{sub}</span>
+    </div>
+  )
+}
+

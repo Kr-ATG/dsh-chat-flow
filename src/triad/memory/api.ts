@@ -259,7 +259,11 @@ async function handle(
       const sessionId = url.searchParams.get('sessionId') ?? ''
       const defaultEnabled = config.injectDefaultEnabled !== false
       const explicit = await store.injectStateOf(sessionId)
-      json(res, 200, { enabled: explicit ?? defaultEnabled, defaultEnabled, explicit })
+      // 中文开关状态顺带回传：composer 那个开关每 hover 一次就重发一次
+      // /inject-state（历史上打过一分钟 498 次的请求风暴），再加一个独立
+      // GET 端点等于把翻倍的轮询量固化下来。合并回包，零新增请求。
+      const zhEnabled = await store.isZhInjectEnabled(config.zhInjectDefaultEnabled !== false)
+      json(res, 200, { enabled: explicit ?? defaultEnabled, defaultEnabled, explicit, zhEnabled })
       return
     }
     if (method === 'POST' && rest === '/inject-state') {
@@ -270,6 +274,22 @@ async function handle(
       await store.setInjectEnabled(sessionId, enabled)
       const defaultEnabled = config.injectDefaultEnabled !== false
       json(res, 200, { ok: true, enabled: enabled ?? defaultEnabled, defaultEnabled, explicit: enabled !== null })
+      return
+    }
+
+    // ── 中文记忆独立注入开关（内置能力，全局单值） ─────────────────────
+    // builtin:true 恒定回传——这个能力硬编码在插件里，没有卸载/移除入口，
+    // 前端据此显示「内置」标记，且不提供任何删除该能力的操作。
+    if (method === 'GET' && rest === '/zh-inject-state') {
+      const enabled = await store.isZhInjectEnabled(config.zhInjectDefaultEnabled !== false)
+      json(res, 200, { enabled, builtin: true })
+      return
+    }
+    if (method === 'POST' && rest === '/zh-inject-state') {
+      const body = await readBody(req) as Record<string, unknown>
+      const enabled = body.enabled !== false
+      await store.setZhInjectEnabled(enabled)
+      json(res, 200, { ok: true, enabled, builtin: true })
       return
     }
 
