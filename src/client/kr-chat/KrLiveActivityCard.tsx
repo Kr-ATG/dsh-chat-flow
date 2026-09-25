@@ -89,103 +89,58 @@ interface WorkflowView {
   readonly stages: readonly WorkflowStage[]
 }
 
-function toolNames(tools: readonly ChatNode<'tool-call'>[]): string[] {
-  return tools.flatMap((node) => {
-    try { return [callName(node.data.root).toLowerCase()] } catch { return [] }
-  })
+export interface KrActivityTask {
+  readonly id: string
+  readonly content: string
+  readonly status: 'pending' | 'in_progress' | 'completed'
 }
 
-function makeWorkflow(
-  title: string,
-  labels: readonly string[],
-  details: readonly string[],
-  currentIndex: number,
-): WorkflowView {
-  const safeIndex = Math.max(0, Math.min(currentIndex, labels.length - 1))
+function compactText(text: string, limit = 140): string {
+  const value = text.replace(/\s+/g, ' ').trim()
+  return value.length > limit ? `${value.slice(0, limit - 1)}…` : value
+}
+
+function taskStatusLabel(status: KrActivityTask['status']): string {
+  return status === 'completed' ? '已完成' : status === 'in_progress' ? '进行中' : '待处理'
+}
+
+function buildTaskWorkflow(tasks: readonly KrActivityTask[], closing: boolean): WorkflowView {
+  const visible = tasks.slice(0, 6)
+  const current = visible.find((task) => task.status === 'in_progress')
+    ?? visible.find((task) => task.status === 'pending')
+    ?? visible.at(-1)
+  const currentId = current?.id
   return {
-    title,
-    current: labels[safeIndex],
-    stages: labels.map((label, index) => ({
-      label,
-      detail: details[index] ?? '',
-      status: index < safeIndex ? 'done' : index === safeIndex ? 'current' : 'pending',
+    title: '模型任务',
+    current: current?.content ?? (closing ? '全部完成' : '整理结果'),
+    stages: visible.map((task) => ({
+      label: task.content,
+      detail: taskStatusLabel(task.status),
+      status: task.id === currentId ? 'current' : task.status === 'completed' ? 'done' : 'pending',
     })),
   }
 }
 
 function buildWorkflow(
   reasoning: readonly KrActivityReasoningItem[],
-  tools: readonly ChatNode<'tool-call'>[],
+  tasks: readonly KrActivityTask[],
   active: boolean,
   closing: boolean,
 ): WorkflowView {
-  const names = toolNames(tools)
-  const text = reasoning.map((item) => item.text).join(' ').toLowerCase()
-  const hasResearch = names.some((name) => /search|web|grep|glob|find|browse|fetch|github/.test(name))
-    || /搜索|查找|检索|最新|热门|趋势|机票|航班|flight|github|trending/.test(text)
-  const hasMutation = names.some((name) => /write|edit|patch|bash|pwsh|shell|terminal|run_code/.test(name))
-  const hasCompare = /比较|对比|筛选|评估|推荐|候选|方案|整理|总结|汇总/.test(text)
-  const runningSearch = names.some((name) => /search|web|grep|glob|find|browse|fetch/.test(name))
-    && tools.some((node) => { try { return isRunning(node.data.root) } catch { return false } })
-  const runningMutation = names.some((name) => /write|edit|patch|bash|pwsh|shell|terminal|run_code/.test(name))
-    && tools.some((node) => { try { return isRunning(node.data.root) } catch { return false } })
-
-  let title = '本轮任务'
-  if (/机票|航班|flight|航空/.test(text)) title = '机票任务'
-  else if (/github|git.*热门|git.*趋势|trending|仓库|项目/.test(text)) title = 'Git 项目调研'
-  else if (/修复|bug|测试|代码/.test(text)) title = '代码任务'
-  else if (/构建|部署|发布/.test(text)) title = '项目构建'
-
-  if (hasMutation) {
-    const locateDone = names.some((name) => /read|grep|glob|find|search/.test(name))
-    const verifyDone = names.some((name) => /read|bash|pwsh|shell|terminal|run_code/.test(name)) && !runningMutation
-    const currentIndex = closing ? 3 : runningMutation ? 2 : verifyDone ? 3 : locateDone ? 2 : 1
-    return makeWorkflow(title, ['明确目标', '定位内容', '执行修改', '检查结果'], [
-      reasoning.length > 0 ? '目标已明确' : '正在理解目标',
-      locateDone ? '已定位相关文件' : '准备定位内容',
-      runningMutation ? '正在执行修改' : '准备执行修改',
-      verifyDone ? '结果已检查' : '等待检查结果',
-    ], currentIndex)
+  if (tasks.length > 0) return buildTaskWorkflow(tasks, closing)
+  const latest = [...reasoning].reverse().find((item) => item.text.trim() !== '')
+  const semantic = latest === undefined
+    ? (active ? '模型正在处理当前请求' : '模型已整理当前结果')
+    : compactText(latest.text)
+  return {
+    title: '模型进度',
+    current: semantic,
+    stages: [{
+      label: '模型当前判断',
+      detail: semantic,
+      status: closing ? 'done' : 'current',
+    }],
   }
-
-  if (hasResearch) {
-    const currentIndex = closing ? 3 : runningSearch ? 1 : hasSearch ? 2 : hasCompare ? 2 : active ? 0 : 3
-    const isFlight = /机票|航班|flight|航空/.test(text)
-    const isGit = /github|git.*热门|git.*趋势|trending/.test(text)
-    const labels = isFlight
-      ? ['确认行程', '搜索航班', '比较方案', '整理推荐']
-      : isGit
-        ? ['确认条件', '搜索项目', '筛选热门', '整理结论']
-        : ['明确需求', '查找信息', '比较筛选', '整理结果']
-    const details = isFlight
-      ? [
-          reasoning.length > 0 ? '行程需求已明确' : '正在确认行程需求',
-          runningSearch ? '正在搜索航班' : '已整理航班信息',
-          hasCompare ? '已比较价格与时间' : '准备比较方案',
-          closing ? '正在整理推荐' : '准备整理推荐',
-        ]
-      : isGit
-        ? [
-            reasoning.length > 0 ? '筛选条件已明确' : '正在确认筛选条件',
-            runningSearch ? '正在搜索 GitHub 项目' : '已整理项目信息',
-            hasCompare ? '已按热门程度筛选' : '准备筛选热门项目',
-            closing ? '正在整理结论' : '准备整理结论',
-          ]
-        : [
-            reasoning.length > 0 ? '目标已明确' : '正在理解需求',
-            runningSearch ? '正在查找信息' : `${tools.length > 0 ? '已整理' : '等待'}信息来源`,
-            hasCompare ? '已整理候选方案' : '准备比较筛选',
-            closing ? '正在生成最终结果' : '准备交付结果',
-          ]
-    return makeWorkflow(title, labels, details, currentIndex)
-  }
-
-  const currentIndex = closing ? 2 : active ? 1 : 2
-  return makeWorkflow(title, ['明确需求', '执行任务', '整理结果'], [
-    reasoning.length > 0 ? '目标已明确' : '正在理解需求',
-    active ? '正在推进任务' : '任务已推进',
-    closing ? '正在生成最终结果' : '准备交付结果',
-  ], currentIndex)
 }
 
 function defaultAvatar() {
@@ -203,6 +158,7 @@ export const KrLiveActivityCard = memo(function KrLiveActivityCard({
   turn,
   reasoning,
   tools,
+  tasks,
   active,
   closing,
   committed,
@@ -211,6 +167,7 @@ export const KrLiveActivityCard = memo(function KrLiveActivityCard({
   readonly turn: number
   readonly reasoning: readonly KrActivityReasoningItem[]
   readonly tools: readonly ChatNode<'tool-call'>[]
+  readonly tasks: readonly KrActivityTask[]
   readonly active: boolean
   readonly closing: boolean
   readonly committed: boolean
@@ -237,8 +194,8 @@ export const KrLiveActivityCard = memo(function KrLiveActivityCard({
     return null
   }, [tools])
   const workflow = useMemo(
-    () => buildWorkflow(reasoning, tools, active, closing),
-    [active, closing, reasoning, tools],
+    () => buildWorkflow(reasoning, tasks, active, closing),
+    [active, closing, reasoning, tasks],
   )
   const thinking = reasoning.some((item) => item.running)
   const action = closing
@@ -368,7 +325,7 @@ export const KrLiveActivityCard = memo(function KrLiveActivityCard({
           <span className="kr-agent-mini-avatar__status" aria-hidden />
         </button>
 
-        <div className="kr-agent-mini-copy">
+        <div className="kr-agent-mini-copy" data-running={active && !closing ? 'true' : undefined}>
           <span key={action} className="kr-agent-mini-action">{action}</span>
         </div>
 
@@ -446,6 +403,7 @@ interface KrActivityCardGateProps {
   readonly turn: number
   readonly reasoning: readonly KrActivityReasoningItem[]
   readonly tools: readonly ChatNode<'tool-call'>[]
+  readonly tasks: readonly KrActivityTask[]
   readonly active: boolean
   readonly closing: boolean
   readonly committed: boolean
@@ -456,6 +414,7 @@ export const KrActivityCardGate = memo(function KrActivityCardGate({
   turn,
   reasoning,
   tools,
+  tasks,
   active,
   closing,
   committed,
@@ -483,6 +442,7 @@ export const KrActivityCardGate = memo(function KrActivityCardGate({
       turn={turn}
       reasoning={reasoning}
       tools={tools}
+      tasks={tasks}
       active={active}
       closing={closing}
       committed={committed}

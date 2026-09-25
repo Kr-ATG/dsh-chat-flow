@@ -1773,9 +1773,26 @@ body[data-kr-resizing="true"] * {
   font-size: 13px;
   font-weight: 550;
   line-height: 20px;
-  text-overflow: ellipsis;
   white-space: nowrap;
   animation: kr-agent-mini-action-in .36s cubic-bezier(.16, 1, .3, 1) both;
+}
+
+.kr-agent-mini-copy[data-running="true"] .kr-agent-mini-action {
+  color: transparent;
+  background: linear-gradient(
+    90deg,
+    var(--dsw-alias-label-tertiary) 0%,
+    var(--dsw-alias-label-secondary) 42%,
+    var(--dsw-alias-label-tertiary) 58%,
+    var(--dsw-alias-label-tertiary) 100%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation:
+    kr-agent-mini-action-in .36s cubic-bezier(.16, 1, .3, 1) both,
+    kr-agent-mini-color-flow 3.2s linear .36s infinite;
 }
 
 .kr-agent-avatar-menu {
@@ -1867,6 +1884,11 @@ body[data-kr-resizing="true"] * {
 @keyframes kr-agent-mini-action-in {
   from { opacity: 0; transform: translateY(9px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes kr-agent-mini-color-flow {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
 }
 
 @keyframes kr-agent-mini-exit {

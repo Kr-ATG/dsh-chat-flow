@@ -26,7 +26,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { activityStore, type ActivityReasoningItem, type ViewMode } from './activity-drawer.tsx'
-import { isRunning } from './tool-stats.ts'
+import { callName, isRunning } from './tool-stats.ts'
+import { argFields, toolArgsRaw } from './activity-view-model.ts'
 import { getKrChatStore } from '../kr-chat/kr-chat-store.ts'
 import { KrActivityCardGate, type KrActivityReasoningItem } from '../kr-chat/KrLiveActivityCard.tsx'
 import { clearLiveDshTodos } from '../kr-chat/kr-todo-bridge.ts'
@@ -381,12 +382,14 @@ interface KrActivityStepState {
 interface KrActivityProjection {
   readonly reasoning: readonly KrActivityReasoningItem[]
   readonly tools: readonly ChatNode<'tool-call'>[]
+  readonly tasks: readonly TurnTaskItem[]
   readonly steps: readonly KrActivityStepState[]
 }
 
 const EMPTY_KR_ACTIVITY_PROJECTION: KrActivityProjection = {
   reasoning: [],
   tools: [],
+  tasks: [],
   steps: [],
 }
 
@@ -398,11 +401,52 @@ const EMPTY_KR_ACTIVITY_PROJECTION: KrActivityProjection = {
 function collectKrActivityProjection(snapshot: any, turn: number, includeHidden = false): KrActivityProjection {
   const tools = new Map<string, ChatNode<'tool-call'>>()
   const steps = new Map<string, ChatNode<'assistant-step'>>()
+  const tasks = new Map<string, TurnTaskItem>()
+  let hasTodoTasks = false
+
+  const addTodoTasks = (value: unknown): void => {
+    if (!Array.isArray(value)) return
+    tasks.clear()
+    value.forEach((item: any, index: number) => {
+      const content = String(item?.content ?? '').trim()
+      if (content === '') return
+      const status = item?.status === 'completed' || item?.status === 'in_progress' || item?.status === 'pending'
+        ? item.status
+        : 'pending'
+      tasks.set(`todo-${turn}-${index}`, { id: `todo-${turn}-${index}`, content, status })
+    })
+    hasTodoTasks = tasks.size > 0
+  }
 
   const addNode = (candidate: any): void => {
     if (candidate === undefined || candidate === null) return
     if (candidate.kind === 'tool-call' && candidate.key !== undefined) {
-      tools.set(candidate.key, candidate as ChatNode<'tool-call'>)
+      const toolNode = candidate as ChatNode<'tool-call'>
+      tools.set(candidate.key, toolNode)
+      try {
+        const root = (toolNode as any).data?.root
+        if (callName(root) === 'todo_write') addTodoTasks(argFields(toolArgsRaw(root)).todos)
+      } catch { /* 未知 todo 形状不影响其它活动 */ }
+      return
+    }
+    if (candidate.kind === 'submitted-plan' && !hasTodoTasks) {
+      try {
+        const plan = candidate.data
+        const markdown = String(plan?.markdown ?? '')
+        const parsed = markdown.split('\n').flatMap((line: string, index: number) => {
+          const match = line.match(/^[\s\*\-]*\[([ xX])\]\s*(.+)/)
+          if (match === null) return []
+          return [{
+            id: `plan-${turn}-${index}`,
+            content: match[2].trim(),
+            status: match[1].toLowerCase() === 'x' ? 'completed' as const : 'pending' as const,
+          }]
+        })
+        if (parsed.length > 0) parsed.forEach((task) => { tasks.set(task.id, task) })
+        else if (typeof plan?.title === 'string' && plan.title.trim() !== '') {
+          tasks.set(`plan-${turn}-title`, { id: `plan-${turn}-title`, content: plan.title.trim(), status: 'completed' })
+        }
+      } catch { /* 忽略未知 plan 形状 */ }
       return
     }
     if (candidate.kind === 'assistant-step' && candidate.key !== undefined) {
@@ -470,6 +514,7 @@ function collectKrActivityProjection(snapshot: any, turn: number, includeHidden 
   return {
     reasoning,
     tools: [...tools.values()].sort((a, b) => a.anchorSeq - b.anchorSeq),
+    tasks: [...tasks.values()],
     steps: stepStates,
   }
 }
@@ -479,6 +524,7 @@ function sameKrActivityProjection(left: KrActivityProjection, right: KrActivityP
   if (
     left.reasoning.length !== right.reasoning.length
     || left.tools.length !== right.tools.length
+    || left.tasks.length !== right.tasks.length
     || left.steps.length !== right.steps.length
   ) return false
   for (let index = 0; index < left.reasoning.length; index += 1) {
@@ -503,6 +549,11 @@ function sameKrActivityProjection(left: KrActivityProjection, right: KrActivityP
       || a.hasToolCall !== b.hasToolCall
       || a.answerProbe !== b.answerProbe
     ) return false
+  }
+  for (let index = 0; index < left.tasks.length; index += 1) {
+    const a = left.tasks[index]
+    const b = right.tasks[index]
+    if (a.id !== b.id || a.content !== b.content || a.status !== b.status) return false
   }
   return true
 }
@@ -630,6 +681,7 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
         turn={turn}
         reasoning={krProjection.reasoning}
         tools={krProjection.tools}
+        tasks={krProjection.tasks}
         active={krActive}
         closing={krClosing}
         committed={krCommitted}
