@@ -341,6 +341,12 @@ if (!code.includes('kr-agent-mini-card') || !code.includes('kr-agent-mini-exit')
 } else {
   pass('client bundle contains KR minimal activity card and exit motion')
 }
+// 头像菜单不能留在 turn-process 固定高度 / overflow:hidden 的子树里；必须 portal 到 body。
+if (!code.includes('avatarMenuPosition') || !code.includes('.kr-agent-avatar-menu {\n  position: fixed;')) {
+  fail('client bundle is missing the body-portaled Agent avatar menu')
+} else {
+  pass('Agent avatar menu is body-portaled with fixed positioning')
+}
 
 if (styleIds.length === expectedStyles.length) {
   pass(`injected ${styleIds.length} <style> sheets (dtt__ + dts__ + tsh__ + modal + proto + diagram + download${krEnabled ? ' + kr' : ''})`)

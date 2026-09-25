@@ -1795,20 +1795,27 @@ body[data-kr-resizing="true"] * {
     kr-agent-mini-color-flow 3.2s linear .36s infinite;
 }
 
+/* 官方 turn-process 行是固定高度且 overflow:hidden；菜单必须 portal 到 body，
+   再用 fixed + 动态 left/top 定位，否则整块菜单会被对话行裁掉。 */
 .kr-agent-avatar-menu {
-  position: absolute;
-  top: calc(100% + 7px);
+  position: fixed;
+  top: 0;
   left: 0;
-  z-index: 40;
+  z-index: 1300;
   display: grid;
   gap: 3px;
   width: 188px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   box-sizing: border-box;
   border: 1px solid var(--kr-card-border);
   border-radius: 9px;
   padding: 8px;
   background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base));
   box-shadow: 0 10px 28px rgba(15, 17, 21, .10);
+  transform-origin: 0 0;
+  animation: kr-agent-avatar-menu-in .14s cubic-bezier(.2, .8, .2, 1);
 }
 
 .kr-agent-avatar-menu__title {
@@ -1876,6 +1883,11 @@ body[data-kr-resizing="true"] * {
   to { transform: rotate(360deg); }
 }
 
+@keyframes kr-agent-avatar-menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+
 @keyframes kr-agent-mini-in {
   from { opacity: 0; transform: translateY(7px) scale(.99); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -1916,6 +1928,7 @@ body[data-kr-resizing="true"] * {
   .kr-agent-mini-card,
   .kr-agent-mini-action,
   .kr-agent-mini-shell[data-closing="true"][data-committed="true"],
+  .kr-agent-avatar-menu,
   .kr-agent-mini-avatar__status {
     animation: none !important;
   }

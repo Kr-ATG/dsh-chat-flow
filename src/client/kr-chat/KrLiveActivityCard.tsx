@@ -5,7 +5,8 @@
  * 头像可点击上传并持久化到 localStorage；图片会裁切为 128×128。
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
+import type { ChangeEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -14,6 +15,34 @@ import { useMotionAllowed } from '../motion-utils.ts'
 
 const EXIT_MS = 980
 const AVATAR_STORAGE_KEY = 'dsh.kr_chat.agent_avatar.v1'
+const AVATAR_MENU_WIDTH = 188
+const AVATAR_MENU_ESTIMATED_HEIGHT = 132
+const AVATAR_MENU_GAP = 7
+const AVATAR_MENU_VIEWPORT_GAP = 8
+
+interface AvatarMenuPosition {
+  readonly left: number
+  readonly top: number
+}
+
+/**
+ * 头像菜单挂到 body 后按触发按钮定位；优先向下，空间不足时改向上。
+ * turn-process 官方行有固定高度 + overflow:hidden，菜单留在卡片子树里会被整段裁掉。
+ */
+function positionAvatarMenu(anchor: DOMRect): AvatarMenuPosition {
+  const maxLeft = Math.max(AVATAR_MENU_VIEWPORT_GAP, window.innerWidth - AVATAR_MENU_WIDTH - AVATAR_MENU_VIEWPORT_GAP)
+  const left = Math.min(maxLeft, Math.max(AVATAR_MENU_VIEWPORT_GAP, anchor.left))
+  const roomBelow = window.innerHeight - anchor.bottom - AVATAR_MENU_GAP - AVATAR_MENU_VIEWPORT_GAP
+  const roomAbove = anchor.top - AVATAR_MENU_GAP - AVATAR_MENU_VIEWPORT_GAP
+  const placeAbove = roomAbove >= AVATAR_MENU_ESTIMATED_HEIGHT || roomAbove > roomBelow
+  const top = placeAbove
+    ? Math.max(AVATAR_MENU_VIEWPORT_GAP, anchor.top - AVATAR_MENU_GAP - AVATAR_MENU_ESTIMATED_HEIGHT)
+    : Math.max(
+        AVATAR_MENU_VIEWPORT_GAP,
+        Math.min(anchor.bottom + AVATAR_MENU_GAP, window.innerHeight - AVATAR_MENU_ESTIMATED_HEIGHT - AVATAR_MENU_VIEWPORT_GAP),
+      )
+  return { left, top }
+}
 
 export interface KrActivityReasoningItem {
   readonly text: string
@@ -175,12 +204,15 @@ export const KrLiveActivityCard = memo(function KrLiveActivityCard({
 }) {
   const motion = useMotionAllowed(true)
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const avatarButtonRef = useRef<HTMLButtonElement | null>(null)
+  const avatarMenuRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const onExitedRef = useRef(onExited)
   onExitedRef.current = onExited
   const [present, setPresent] = useState(active)
   const [avatar, setAvatar] = useState<string | null>(readStoredAvatar)
   const [avatarMenu, setAvatarMenu] = useState(false)
+  const [avatarMenuPosition, setAvatarMenuPosition] = useState<AvatarMenuPosition | null>(null)
   const [avatarError, setAvatarError] = useState(false)
   const [expanded, setExpanded] = useState(true)
 
@@ -217,21 +249,41 @@ export const KrLiveActivityCard = memo(function KrLiveActivityCard({
   useEffect(() => {
     if (!avatarMenu) return undefined
     const onPointerDown = (event: PointerEvent): void => {
-      if (rootRef.current?.contains(event.target as Node) !== true) setAvatarMenu(false)
+      const target = event.target as Node | null
+      if (target === null) return
+      if (rootRef.current?.contains(target) === true) return
+      if (avatarMenuRef.current?.contains(target) === true) return
+      setAvatarMenu(false)
     }
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') setAvatarMenu(false)
     }
+    const syncPosition = (): void => {
+      const button = avatarButtonRef.current
+      if (button === null || button.isConnected === false) {
+        setAvatarMenu(false)
+        return
+      }
+      setAvatarMenuPosition(positionAvatarMenu(button.getBoundingClientRect()))
+    }
     document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('resize', syncPosition)
+    window.addEventListener('scroll', syncPosition, true)
+    syncPosition()
     return () => {
       document.removeEventListener('pointerdown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('resize', syncPosition)
+      window.removeEventListener('scroll', syncPosition, true)
     }
   }, [avatarMenu])
 
   useEffect(() => {
-    if (closing) setAvatarMenu(false)
+    if (closing) {
+      setAvatarMenu(false)
+      setAvatarMenuPosition(null)
+    }
   }, [closing])
 
   useEffect(() => {
@@ -310,11 +362,18 @@ export const KrLiveActivityCard = memo(function KrLiveActivityCard({
         onKeyDown={handleCardKeyDown}
       >
         <button
+          ref={avatarButtonRef}
           type="button"
           className="kr-agent-mini-avatar"
           onClick={(event) => {
             event.stopPropagation()
-            setAvatarMenu((open) => !open)
+            if (avatarMenu) {
+              setAvatarMenu(false)
+              setAvatarMenuPosition(null)
+              return
+            }
+            setAvatarMenuPosition(positionAvatarMenu(event.currentTarget.getBoundingClientRect()))
+            setAvatarMenu(true)
             setAvatarError(false)
           }}
           title="设置 Agent 头像"
@@ -335,30 +394,6 @@ export const KrLiveActivityCard = memo(function KrLiveActivityCard({
           </svg>
         </span>
 
-        {avatarMenu && (
-          <div
-            className="kr-agent-avatar-menu"
-            role="dialog"
-            aria-label="Agent 头像设置"
-            onClick={(event) => { event.stopPropagation() }}
-          >
-            <div className="kr-agent-avatar-menu__title">Agent 头像</div>
-            <button type="button" className="kr-agent-avatar-menu__action" onClick={() => { inputRef.current?.click() }}>
-              上传图片
-            </button>
-            <button
-              type="button"
-              className="kr-agent-avatar-menu__action"
-              onClick={resetAvatar}
-              disabled={avatar === null}
-            >
-              恢复默认
-            </button>
-            <div className="kr-agent-avatar-menu__hint">自动居中裁切为 128 × 128</div>
-            {avatarError && <div className="kr-agent-avatar-menu__error">图片无法读取，请换一张</div>}
-          </div>
-        )}
-
         <input
           ref={inputRef}
           className="kr-agent-avatar-input"
@@ -368,6 +403,33 @@ export const KrLiveActivityCard = memo(function KrLiveActivityCard({
           tabIndex={-1}
         />
       </section>
+
+      {avatarMenu && avatarMenuPosition !== null && createPortal(
+        <div
+          ref={avatarMenuRef}
+          className="kr-agent-avatar-menu"
+          style={avatarMenuPosition as CSSProperties}
+          role="dialog"
+          aria-label="Agent 头像设置"
+          onClick={(event) => { event.stopPropagation() }}
+        >
+          <div className="kr-agent-avatar-menu__title">Agent 头像</div>
+          <button type="button" className="kr-agent-avatar-menu__action" onClick={() => { inputRef.current?.click() }}>
+            上传图片
+          </button>
+          <button
+            type="button"
+            className="kr-agent-avatar-menu__action"
+            onClick={resetAvatar}
+            disabled={avatar === null}
+          >
+            恢复默认
+          </button>
+          <div className="kr-agent-avatar-menu__hint">自动居中裁切为 128 × 128</div>
+          {avatarError && <div className="kr-agent-avatar-menu__error">图片无法读取，请换一张</div>}
+        </div>,
+        document.body,
+      )}
 
       <div className="kr-agent-mini-details" data-open={expanded || undefined} aria-hidden={!expanded}>
         <div className="kr-agent-mini-details__inner">
