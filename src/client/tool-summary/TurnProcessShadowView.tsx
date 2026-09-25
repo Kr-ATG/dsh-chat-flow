@@ -1,21 +1,12 @@
 /**
  * Official turn-process control, shadowed (dsh-chat-plus).
  *
- * 紧凑模式下官方 control 行与插件自有行会渲染出两行完全一样的
- * 「N 次工具调用 › / 已思考 ›」（control 在前、插件行在成员位），因此把
- * control 键整个接管：同一位置只留一行，文案/DOM 与官方逐字一致，
- * 点击行为一分为二——
+ * KR 对话在同一 per-turn 座位挂一张瞬态活动卡：分析 / 思考 / 工具调用自动跟随，
+ * 最终回答开始后上移退场。普通「对话」不渲染这条 control，也不打开活动弹窗；
+ * 过程内容由官方正文与独立工具行按各自链路呈现。
  *
- * - 行正文：点击始终打开共享活动抽屉（有工具进工具分区、纯思考进思考分区，
- *   两边都有时页签可自由切换）；
- * - 尾部 chevron：保留官方内联折叠开关（stopPropagation，仅用于折叠/展开原生流）。
- *
- * KR 对话不再渲染这条 control，而是在同一 per-turn 座位挂一张瞬态活动卡：
- * 分析 / 思考 / 工具调用自动跟随，最终回答开始后上移退场。
- *
- * 非 KR 成员槽位（思考 chip / 工具入口）以 `turnProcess.foldable` 判断
- * control 是否接管：接管时只登记抽屉数据、不占行；无 control（非紧凑模式、
- * 流式回合、旧 host）时回退到原来的自有行，抽屉照常可进。
+ * 存储层的普通模式闸门只做兜底：即便旧 bundle / 旧调用方仍调用 open，
+ * 普通「对话」也不会弹窗。
  */
 
 import { memo, useEffect, useRef, useState, useSyncExternalStore } from 'react'
@@ -25,7 +16,7 @@ import type { ChatNode, ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-cha
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
-import { activityStore, type ActivityReasoningItem, type ViewMode } from './activity-drawer.tsx'
+import { activityStore, type ActivityReasoningItem } from './activity-drawer.tsx'
 import { callName, isRunning } from './tool-stats.ts'
 import { argFields, toolArgsRaw } from './activity-view-model.ts'
 import { getKrChatStore } from '../kr-chat/kr-chat-store.ts'
@@ -640,6 +631,7 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
     ? `${configuredAnswerStarted ? 'settled' : 'streaming'}:${latestStep?.step ?? 0}:${latestStep?.answerProbe ?? ''}`
     : ''
   const [liveSummaryReady, setLiveSummaryReady] = useState(false)
+  const previousKrMode = useRef(isKrMode)
   useEffect(() => {
     if (!liveSummaryCandidate) {
       setLiveSummaryReady(false)
@@ -661,8 +653,10 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
     }
   }, [locationTurn?.status])
 
-  // 实时思考预览堆叠
-  const activeThinking = counts.reasoning > 0 && (counts.streaming === true || counts.toolsRunning === true)
+  // 实时思考预览堆叠只在 KR 模式保留；普通「对话」不创建这个浮层。
+  const activeThinking = isKrMode
+    && counts.reasoning > 0
+    && (counts.streaming === true || counts.toolsRunning === true)
   useEffect(() => {
     if (activeThinking) {
       const row = document.querySelector('[data-turn-process="' + turn + '"].' + NS + '__process')
@@ -672,6 +666,15 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
     }
     return () => { if (activeThinking) store.setPreviewAnchor(undefined, null) }
   }, [activeThinking, turn, store])
+
+  // 只在真实 tab 模式切换时关闭抽屉；初次普通挂载/虚拟化重挂不误关其它
+  // 插件或普通工具抽屉。这里是当前座位级补救，跨所有座位卸载的切换仍由
+  // 控制器/DOM 状态同步负责。
+  useEffect(() => {
+    const previous = previousKrMode.current
+    previousKrMode.current = isKrMode
+    if (previous !== isKrMode && store.openTurn !== null) store.close()
+  }, [isKrMode, store])
 
   // KR 无论当前回合是否 foldable 都由活动卡占位；它从 turn-process 的
   // per-turn 座位出现，因此第一条 assistant 文本之前也能立刻显示。
@@ -688,101 +691,7 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
       />
     )
   }
-  if (turnProcess === undefined) return null
-  if (!turnProcess.foldable) return null
-
-  const open = turnProcess.open
-  const data = node.data
-  const labels: string[] = []
-  if (data.toolCallCount > 0) {
-    labels.push(t(data.toolCallCount === 1 ? 'message.turnProcess.toolCalls.one' : 'message.turnProcess.toolCalls.other', { count: data.toolCallCount }))
-  }
-
-  const thinkingLabel = labels.length > 0 && (counts.reasoning > 0 || data.inlineReasoning)
-    ? (counts.reasoning > 0 ? `${counts.reasoning} 次思考` : '思考')
-    : undefined
-  const label = labels.length === 0
-    ? t('message.turnProcess.thoughtForAWhile')
-    : labels.filter(l => l !== thinkingLabel).join(t('message.turnProcess.separator'))
-
-  const hasTools = data.toolCallCount > 0 || counts.tools > 0
-  const tab: ViewMode = hasTools ? 'tools' : 'reasoning'
-  const toggle = (): void => { turnProcess.setOpen(!open) }
-
-  // 仅在用户主动点击时收集数据并注入 store，绝不在 render/effect 阶段触发
-  const handleOpen = (mode: ViewMode): void => {
-    const snapshot = snapshotRef.current
-    if (snapshot) {
-      const collected = collectTurnNodes(snapshot, turn)
-      if (collected.tools.length > 0) {
-        store.setTools(turn, collected.tools, cwd, collected.turnStart)
-      }
-      if (collected.reasoning.length > 0) {
-        store.setReasoning(turn, collected.reasoning)
-      }
-    }
-    if (openFile && inspectCall) {
-      store.setHandlers({ openFile, inspectCall })
-    }
-    store.open(turn, mode)
-  }
-
-  return (
-    <button
-      type="button"
-      className={`${NS}__process`}
-      data-open={open || undefined}
-      data-turn-process={data.turn}
-      data-turn-process-tool-calls={data.toolCallCount}
-      data-turn-process-messages={data.messageCount}
-      data-turn-process-subagents={data.subagentCount}
-      aria-expanded={open}
-      aria-label={[label, thinkingLabel].filter(Boolean).join(' ')}
-      onClick={() => { handleOpen(tab) }}
-    >
-      <span className={`${NS}__process-label`}>{label}</span>
-      {thinkingLabel !== undefined && (
-        <span
-          className={`${NS}__process-think`}
-          role="button"
-          tabIndex={0}
-          title={counts.reasoning > 0 ? `查看${counts.reasoning} 次思考` : '查看思考过程'}
-          aria-label={counts.reasoning > 0 ? `查看${counts.reasoning} 次思考` : '查看思考过程'}
-          onClick={(event) => {
-            event.stopPropagation()
-            handleOpen('reasoning')
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
-              event.stopPropagation()
-              handleOpen('reasoning')
-            }
-          }}
-        >
-          {t('message.turnProcess.separator')}{thinkingLabel}
-        </span>
-      )}
-      <span
-        className={`${NS}__process-chevronbtn`}
-        role="button"
-        tabIndex={0}
-        title={open ? '折叠本轮原文' : '展开本轮原文'}
-        aria-label={open ? '折叠本轮原文' : '展开本轮原文'}
-        onClick={(event) => {
-          event.stopPropagation()
-          toggle()
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            event.stopPropagation()
-            toggle()
-          }
-        }}
-      >
-        <IconChevronDownOutlineRegular size={14} className={`${NS}__process-chevron`} />
-      </span>
-    </button>
-  )
+  // 普通「对话」不渲染回合折叠 control：工具、消息、思考等过程内容都不再
+  // 收进折叠条或活动弹窗；KR 分支已提前返回并由实时活动卡承接。
+  return null
 })

@@ -19,6 +19,7 @@ import { ToolCallTreeList } from './ToolGroupNodeView.tsx'
 import { ErrorBoundary } from '../error-boundary.tsx'
 import { modalAnimClass, modalMaskAnimClass, modalStaggerClass } from '../modal-animation.ts'
 import { LiveThinkingStack, LIVE_RECLAIM_UNMOUNT_MS, type LiveThinkingItem } from '../thinking/live-stack.tsx'
+import { getKrChatStore } from '../kr-chat/kr-chat-store.ts'
 
 /**
  * 活动抽屉进出场时长（ms）：必须与 tool-summary/styles.ts 里
@@ -72,12 +73,59 @@ export interface ActivityStore {
 }
 
 const STORE_KEY = '__dshActivityDrawerStore__'
+const guardedStores = new WeakSet<ActivityStore>()
+
+/** 普通「对话」不应消费/打开 KR 的思考抽屉。 */
+function isOrdinaryChat(): boolean {
+  try {
+    return getKrChatStore().snapshot.activeTab !== 'kr'
+  } catch {
+    return true
+  }
+}
+
+/**
+ * 兼容已经由旧 dsh-webui / 旧 chat-plus 创建的同名 window 总线。
+ * 旧对象可能仍暴露 reasoning 打开入口；这里在总线边界统一拦截，避免旧
+ * React 树或旧调用方把思考弹窗带回普通对话。KR 模式原样透传。
+ */
+function installModeGuards(store: ActivityStore): ActivityStore {
+  if (guardedStores.has(store)) return store
+  guardedStores.add(store)
+  const originalOpen = store.open.bind(store)
+  const originalGet = store.get.bind(store)
+  store.open = (turn, mode) => {
+    // 普通「对话」不展示回合折叠，也不打开活动弹窗；KR 视图原样透传。
+    if (isOrdinaryChat()) {
+      store.close('ordinary-chat-drawer-disabled')
+      return
+    }
+    originalOpen(turn, mode)
+  }
+  store.get = (turn) => {
+    const value = originalGet(turn)
+    if (isOrdinaryChat() && value?.reasoning !== undefined) {
+      return { ...value, reasoning: undefined }
+    }
+    return value
+  }
+  // 切回普通对话时关闭旧总线中已打开的抽屉；切到 KR 不做任何事。
+  getKrChatStore().subscribe(() => {
+    if (isOrdinaryChat() && store.openTurn !== null) store.close('mode-transition')
+  })
+  return store
+}
 
 /** Create-or-read the shared window bus. */
 export function activityStore(): ActivityStore {
   const globalObj = globalThis as Record<string, unknown>
   const existing = globalObj[STORE_KEY] as ActivityStore | undefined
-  if (existing !== undefined) return existing
+  if (existing !== undefined) {
+    const guarded = installModeGuards(existing)
+    // 页面加载后普通模式可能还挂着旧 bundle 留下的弹窗，立刻关掉。
+    if (isOrdinaryChat() && guarded.openTurn !== null) guarded.close('ordinary-chat-drawer-disabled')
+    return guarded
+  }
   const listeners = new Set<() => void>()
   const data = new Map<number, ActivityTurnData>()
   let openTurn: number | null = null
@@ -154,7 +202,9 @@ export function activityStore(): ActivityStore {
     handlers: () => handlers,
   }
   globalObj[STORE_KEY] = store
-  return store
+  const guarded = installModeGuards(store)
+  if (isOrdinaryChat() && guarded.openTurn !== null) guarded.close('ordinary-chat-drawer-disabled')
+  return guarded
 }
 
 /**
@@ -266,19 +316,29 @@ function DrawerPanel({ turn, data, store, openFile, inspectCall, closing }: {
   /** 出场中：播出场动画再卸载（见 DrawerApp 的 closing 状态机）。 */
   readonly closing: boolean
 }) {
-  const reasoning = data?.reasoning ?? []
+  const krStore = getKrChatStore()
+  const isKrMode = useSyncExternalStore(
+    (cb) => krStore.subscribe(cb),
+    () => krStore.snapshot.activeTab === 'kr',
+  )
+  // 共享总线的历史数据可能来自 KR；普通「对话」渲染层再次硬隔离，
+  // 即使旧调用方/旧 bundle 仍传来 reasoning，也不会显示思考页签或思考正文。
+  const reasoning = isKrMode ? (data?.reasoning ?? []) : []
   const toolNodes = data?.tools ?? []
   const blocks = useMemo(() => toolNodes.map(node => node.data.root), [toolNodes])
   const stats = useMemo(() => computeStats(blocks), [blocks])
   const kinds = useMemo(() => kindByToolName(blocks), [blocks])
   const close = (): void => { store.close() }
-  const mode = store.activeMode
+  const mode = isKrMode ? store.activeMode : 'tools'
   // 分区页签：行点击只决定初始分区（工具有工具、纯思考进思考），两个分区
   // 都有内容时页签常驻可切——单行合并后不能再让思考“消失”。面板按 key=turn
   // 重挂，mode 变化（同轮重开）时跟随。
   const [tab, setTab] = useState<DrawerTab>(mode ?? (reasoning.length > 0 ? 'reasoning' : 'tools'))
+  useEffect(() => {
+    if (!isKrMode) setTab('tools')
+  }, [isKrMode])
   useEffect(() => { if (mode !== null) setTab(mode) }, [mode])
-  const showTabs = reasoning.length > 0 && toolNodes.length > 0
+  const showTabs = isKrMode && reasoning.length > 0 && toolNodes.length > 0
   // 下划线用选中页签自己的 ::after 画（纯 CSS，见 styles），切换时新线展开
   // 0.22s——不量位置、不插指示条元素，任何环境都不会走样。
 

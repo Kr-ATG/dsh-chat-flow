@@ -10,15 +10,16 @@
  *  2. **KR 过程是一张瞬态活动卡**：由 turn-process 的 per-turn 座位聚合
  *     分析、思考与工具调用到有界时间线，自动跟随滚动；最终回答出现后整卡
  *     上移淡出。回合正文仍保持官方链路，结束后才包步骤 / 总结卡。
- *  3. **非 KR 对话保留旧 chip**：思考材料按回合聚合，点击打开共享活动抽屉看
- *     全文；think 块一律不内联展示（避免长思考链拖拽滚动）。
+ *  3. **非 KR 对话不展示思考折叠**：普通「对话」视图把 thinking block 从官方
+ *     AssistantNodeView 输入中过滤掉，也不写入普通活动抽屉；KR 视图仍由
+ *     turn-process 活动卡与右侧大盘完整展示思考。
  *
  * 总结卡门控不变：turn.status === 'closed'（或中断）后，中间片段变轻量步骤
  * 卡，最终回复变总结卡（本轮完成徽章 + 用时/步骤/工具/思考统计）。
  */
-import { memo, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { memo, useEffect, useMemo, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
-import { IconChevronDownOutlineRegular, JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   AssistantChatData, ChatNode, ChatNodeViewProps, ChatViewSlotProps, TurnTailOwnerProps,
@@ -28,11 +29,8 @@ import type { AssistantBlock, RenderMessageImages } from '@deepseek-ai/dsh-clien
 // Seat props) so ChatNodeViewProps resolves its owner / hooks / session share.
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
-import { activityStore, useDrawerOpen, type ActivityReasoningItem } from '../tool-summary/activity-drawer.tsx'
-import { LiveThinkingStack, LiveThinkingCard as StackLiveCard, LIVE_RECLAIM_UNMOUNT_MS, type LiveThinkingItem } from './live-stack.tsx'
-import { useMotionAllowed } from '../motion-utils.ts'
-import { formatDuration } from '../tool-summary/tool-stats.ts'
-import { useNow } from '../tool-summary/use-now.ts'
+import { activityStore } from '../tool-summary/activity-drawer.tsx'
+import { LiveThinkingCard as StackLiveCard, type LiveThinkingItem } from './live-stack.tsx'
 import { FlowCard, type ReplyCardMeta } from '../flow-card.tsx'
 import { splitDiagram } from '../diagram/parse.ts'
 import { DiagramCard } from '../diagram/DiagramCard.tsx'
@@ -67,93 +65,9 @@ interface ReasoningItem {
 }
 
 /**
- * Turn-level reasoning ENTRY: instead of rendering reasoning inline (and
- * fighting the transcript scroll), one compact chip per turn opens the shared
- * activity dialog with the full reasoning material. While the turn is still
- * thinking the chip labels itself "思考中…" with a live transcript card
- * below it (upstream better-display ReasoningCard language: bounded viewport
- * with edge fades; no footer controls).
+ * 旧版普通对话思考 chip 已移除；KR 思考由 turn-process 活动卡与右栏大盘承接。
+ * 保留本文件的 LiveThinkingCard re-export，避免历史内部引用断裂。
  */
-function ReasoningChip({ items, running, turn, thinkingStart, t, turnProcess, closed }: {
-  items: readonly ReasoningItem[]
-  running: boolean
-  turn: number
-  thinkingStart?: number | undefined
-  t: ChatViewSlotProps['t']
-  turnProcess?: { readonly foldable: boolean } | undefined
-  /** 回合已结束（开始总结）：轨道逐行滑出再合拢，而不是一下全收。 */
-  closed: boolean
-}) {
-  const store = activityStore()
-  // 思考材料登记挪到父组件（本轮有工具调用时 chip 不挂载、不占行，
-  // 抽屉里仍要有思考分区）。
-  const now = useNow(running)
-  const elapsed = thinkingStart !== undefined ? Math.max(0, now - thinkingStart) : undefined
-  // 抽屉开合态：与官方 turn-process 行同行（data-open 把 chevron 转下来）。
-  const drawerOpen = useDrawerOpen(turn)
-  // 官方 control 行接管时（紧凑模式 closed 回合）本行让位：control 影子行是
-  // 唯一的入口（running 与接管互斥，接管要求回合 closed，见工具入口同注释）。
-  const controlActive = turnProcess?.foldable === true
-  // 无工具调用的回合只剩这一行：文案取官方 turn-process 的「已思考」。
-  const label = running
-    ? elapsed !== undefined ? `思考中 · ${formatDuration(elapsed)}` : '思考中…'
-    : t('message.turnProcess.thoughtForAWhile')
-  // 堆叠输入：本轮全部非空思考段（时间序）。running=false 的中途 tool 间隙
-  // 不算结束，旧段保留等第 2 段；只有回合 closed 才逐行滑出回收。
-  const stackItems = useMemo<readonly LiveThinkingItem[]>(() => (
-    items
-      .filter(item => item.text !== '')
-      .map(item => ({ text: item.text, step: item.step, running: item.running }))
-  ), [items])
-  // 总结瞬间 control 接管不能直接卸载：否则堆叠来不及播回收，看起来“一瞬间
-  // 就没了”。接管后保留挂载播完回收（只剩堆叠、按钮已让位），再彻底让位。
-  const motion = useMotionAllowed(true)
-  const [deferredControl, setDeferredControl] = useState(controlActive)
-  useEffect(() => {
-    if (!controlActive) { setDeferredControl(false); return undefined }
-    if (stackItems.length === 0) { setDeferredControl(true); return undefined }
-    setDeferredControl(false)
-    if (!motion) { setDeferredControl(true); return undefined }
-    const id = window.setTimeout(() => { setDeferredControl(true) }, LIVE_RECLAIM_UNMOUNT_MS)
-    return () => { window.clearTimeout(id) }
-  }, [controlActive, stackItems.length, motion])
-  if (deferredControl) return null
-  // 接管过渡期（controlActive 但尚未让位）：按钮已是 control 影子行的，不再渲染，
-  // 轨道按 closing 逐行滑出回收，保证总结动画看得见。
-  if (controlActive) {
-    return (
-      <div className="dtt__reasoning" data-reclaim="true">
-        <LiveThinkingStack items={stackItems} closing />
-      </div>
-    )
-  }
-  return (
-    <div
-      className="dtt__reasoning"
-      data-running={running || undefined}
-      data-reclaim={closed || undefined}
-    >
-      <button
-        type="button"
-        className="dtt__process"
-        data-open={drawerOpen || undefined}
-        data-running={running || undefined}
-        data-turn-process={turn}
-        data-turn-process-tool-calls={0}
-        data-turn-process-messages={0}
-        data-turn-process-subagents={0}
-        aria-expanded={drawerOpen}
-        aria-label={label}
-        onClick={() => { store.open(turn, 'reasoning') }}
-      >
-        <span className="dtt__process-label">{label}</span>
-        <IconChevronDownOutlineRegular className="dtt__process-chevron" />
-      </button>
-      <LiveThinkingStack items={stackItems} closing={closed} />
-    </div>
-  )
-}
-
 /**
  * 兼容 re-export：工具行仍 `import { LiveThinkingCard } from
  * '../thinking/ThinkingStepNodeView.tsx'`，新实现在 live-stack.tsx。
@@ -286,7 +200,7 @@ function AssistantBody({ blocks, streaming, interrupted, renderMessageImages, me
 export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
   props: ChatNodeViewProps<'assistant-step'>,
 ) {
-  const { node, useTurnData, useChat, openFile, renderMessageImages, fileMentions, t, turnProcess } = props
+  const { node, useTurnData, useChat, openFile, renderMessageImages, fileMentions, t } = props
   const krStore = getKrChatStore()
   const krState = useSyncExternalStore(
     (cb) => krStore.subscribe(cb),
@@ -371,12 +285,8 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     ? <GeneratedImageStrip images={generated.urls} model={generated.model} />
     : undefined
 
-  // "当前思考"的起点：取仍在流式输出的那个 step 的首个可见内容时间
-  // （data.time），而不是整轮的 turn 开始时间，这样计时才是这段思考的时长。
-  const thinkingStart = useMemo(() => {
-    const runningStep = steps.find(step => step.data.status === 'running')
-    return runningStep?.data.time
-  }, [steps])
+  // "当前思考"起点仅供历史兼容注释使用；普通对话不渲染思考 chip，KR 活动卡
+  // 直接从 turn-process 投影读取实时状态。
   const visibleBlocks = useMemo(
     () => data.blocks.filter(block => block.kind !== 'reasoning'),
     [data.blocks],
@@ -394,10 +304,10 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
   // turn-process 一致，推理折叠不单独占行），chip 不挂载也得登记，抽屉里
   // 才有思考分区。
   useEffect(() => {
-    if (pluginRenders && isFirstStep && reasoningItems.length > 0 && turnNumber !== undefined) {
+    if (isKrMode && isFirstStep && reasoningItems.length > 0 && turnNumber !== undefined) {
       activityStore().setReasoning(turnNumber, reasoningItems)
     }
-  }, [pluginRenders, isFirstStep, reasoningItems, turnNumber])
+  }, [isKrMode, isFirstStep, reasoningItems, turnNumber])
   // 本轮 git 相关调用：扫工具节点参数里的 git <动词>（见 tool-stats.gitVerbOf）。
   // 总结卡元信息与右侧大盘共用这份去重结果。
   const gitVerbs = useMemo(() => {
@@ -410,22 +320,9 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
   }, [toolNodes])
   const gitDetail = useMemo(() => [...new Set(gitVerbs)].join(' · '), [gitVerbs])
 
-  const folded = toolCount > 0
-  const turnClosedEarly = locationTurn?.status === 'closed'
-  // KR 过程由 turn-process 座位上的实时活动卡承接；这里仅保留非 KR chip。
-  const chip = isKrMode
-    ? undefined
-    : (isFirstStep && reasoningItems.length > 0 && !folded
-        ? <ReasoningChip
-            items={reasoningItems}
-            running={turnRunning}
-            turn={turnNumber as number}
-            thinkingStart={thinkingStart}
-            t={t}
-            turnProcess={turnProcess}
-            closed={turnClosedEarly === true}
-          />
-        : undefined)
+  // 普通「对话」不展示思考 chip；KR 过程由 turn-process 座位上的实时活动卡承接。
+  // 即使官方 assistant-step 捕获失败而落到本组件的自有 renderer，也不能恢复旧折叠。
+  const chip = undefined
   const timing = useChat((snapshot) => {
     if (turnNumber === undefined) return undefined
     return snapshot.legacy.turnTimings.get(turnNumber)
@@ -459,17 +356,20 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
 
   const OfficialComp = getOfficialAssistantNodeView()
   if (!pluginRenders && OfficialComp) {
-    const defaultUsePresentation = (selector: (policy: any) => any) => selector({
-      mode: 'detailed',
-      foldCompletedTurns: true,
-      stepGrouping: 'collapsed',
-      liveProcessDetail: true,
-      settledReasoningPreview: true,
-    })
-    const usePresentation = typeof (props as any).usePresentation === 'function'
-      ? (props as any).usePresentation
-      : defaultUsePresentation
-    return <OfficialComp {...props} usePresentation={usePresentation} />
+    // 普通「对话」彻底移除 thinking block：官方 ReasoningRow/DisclosureRow
+    // 即使收到 settledReasoningPreview=false 仍会渲染并可展开，不能只改 policy。
+    // 只替换当前 assistant-step 的 node，turn-process 的工具折叠仍由官方/影子行负责。
+    const hasReasoning = node.data.blocks.some((block) => block.kind === 'reasoning')
+    const officialNode = hasReasoning
+      ? {
+          ...node,
+          data: {
+            ...node.data,
+            blocks: node.data.blocks.filter((block) => block.kind !== 'reasoning'),
+          },
+        } as typeof node
+      : node
+    return <OfficialComp {...props} node={officialNode} />
   }
 
   const { hasVisible, rendered } = AssistantBody({

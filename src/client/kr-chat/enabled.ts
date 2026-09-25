@@ -13,8 +13,8 @@
  *     - 不再往 body 写 data-dsh-kr-chat → 「KR 模式下隐藏左侧工具树 / 折叠条」
  *       那套 CSS 不生效。这点很关键：那套规则是「详情收敛到右侧大盘」的前提，
  *       没有大盘还隐藏工具行，工具调用就彻底看不见了；
- *     - ThinkingStepNodeView 不再委托官方渲染，回到插件自带的思考 chip /
- *       步骤卡 / proto-tabs / diagram 呈现（见 pluginRenders）。
+ *     - ThinkingStepNodeView 普通「对话」路径会过滤 thinking block，且不显示旧思考 chip；
+ *       KR 视图仍由 turn-process 活动卡与右侧大盘呈现思考。
  *  3. 截图按钮回到「对话」里常驻（不再要求 KR 模式）。
  */
 export const KR_CHAT_ENABLED = true
