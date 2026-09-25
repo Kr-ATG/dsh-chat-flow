@@ -108,8 +108,23 @@ export function apply(ctx: ClientContext): void {
     console.warn('[dsh-chat-plus] 捕获官方 assistant-step 失败：', error)
   }
 
-  // 思考与步骤呈现：在 KR 模式下呈现 KrFlowThoughtCard / KrFlowExecutingCard，
-  // 在普通「对话」模式下委托回官方 AssistantNodeView 原生渲染。
+  // 回合过程座位：KR 模式挂单张实时活动卡；普通对话模式保留聚合 chip +
+  // 活动抽屉。这个座位从首条 assistant 输出前就存在，能覆盖“刚发出消息”
+  // 的空窗，而 assistant-step 座位要等模型先创建 step 才挂载。
+  guarded(ctx, 'turn-process seat', () => {
+    const entries = ctx.slots.entries('conversation.chat.node')
+    const processEntry = entries.find((entry: any) => entry.options?.key === 'turn-process' && (entry.options?.priority ?? 0) >= 0)
+    ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+      name: 'conversation.chat.node',
+      key: 'turn-process',
+      priority: -100,
+      locale: 'chat',
+      ...(processEntry?.options?.inject ? { inject: processEntry.options.inject } : {}),
+    }, TurnProcessShadowView))
+  })
+
+  // 助手正文：流式期保持官方 Markdown / image 链路，回合结束后呈现步骤与
+  // 总结卡；普通「对话」模式整体委托回官方 AssistantNodeView。
   guarded(ctx, 'assistant-step seat', () => {
     const entries = ctx.slots.entries('conversation.chat.node')
     const assistantEntry = entries.find((e: any) => e.options?.key === 'assistant-step' && (e.options?.priority ?? 0) >= 0)

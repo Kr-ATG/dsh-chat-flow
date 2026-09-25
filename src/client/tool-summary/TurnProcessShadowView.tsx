@@ -10,12 +10,15 @@
  *   两边都有时页签可自由切换）；
  * - 尾部 chevron：保留官方内联折叠开关（stopPropagation，仅用于折叠/展开原生流）。
  *
- * 成员槽位（思考 chip / 工具入口）以 `turnProcess.foldable` 判断 control
- * 是否接管：接管时只登记抽屉数据、不占行；无 control（非紧凑模式、
+ * KR 对话不再渲染这条 control，而是在同一 per-turn 座位挂一张瞬态活动卡：
+ * 分析 / 思考 / 工具调用自动跟随，最终回答开始后上移退场。
+ *
+ * 非 KR 成员槽位（思考 chip / 工具入口）以 `turnProcess.foldable` 判断
+ * control 是否接管：接管时只登记抽屉数据、不占行；无 control（非紧凑模式、
  * 流式回合、旧 host）时回退到原来的自有行，抽屉照常可进。
  */
 
-import { memo, useEffect, useRef } from 'react'
+import { memo, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ChatNode, ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: activates the ui-chat / ui-tool SlotMap augmentation so
 // ChatNodeViewProps resolves its owner/keyed share.
@@ -25,9 +28,11 @@ import { IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primit
 import { activityStore, type ActivityReasoningItem, type ViewMode } from './activity-drawer.tsx'
 import { isRunning } from './tool-stats.ts'
 import { getKrChatStore } from '../kr-chat/kr-chat-store.ts'
+import { KrActivityCardGate, type KrActivityReasoningItem } from '../kr-chat/KrLiveActivityCard.tsx'
 import { clearLiveDshTodos } from '../kr-chat/kr-todo-bridge.ts'
 
 const NS = 'dts'
+const LIVE_SUMMARY_CONFIRM_MS = 1200
 
 export let latestChatSnapshot: any = null
 /**
@@ -363,10 +368,154 @@ export function collectTurnNodes(snapshot: any, turn: number): {
   return { tools, reasoning: reasoningList, tasks: turnTasks, turnStart, turnEnd, durationMs }
 }
 
+interface KrActivityStepState {
+  readonly step: number
+  readonly status: 'running' | 'settled' | 'interrupted'
+  readonly hasVisibleAnswer: boolean
+  /** 同一 step 仍含工具调用时，不把它误判为最终总结。 */
+  readonly hasToolCall: boolean
+  /** 可见答案内容探针：文本增长时重置总结候选的静默计时。 */
+  readonly answerProbe: string
+}
+
+interface KrActivityProjection {
+  readonly reasoning: readonly KrActivityReasoningItem[]
+  readonly tools: readonly ChatNode<'tool-call'>[]
+  readonly steps: readonly KrActivityStepState[]
+}
+
+const EMPTY_KR_ACTIVITY_PROJECTION: KrActivityProjection = {
+  reasoning: [],
+  tools: [],
+  steps: [],
+}
+
+/**
+ * 从 chat snapshot 投影 KR 活动卡数据。live 时只走本轮 locations 快路径；
+ * closed 的第一次收口发布可传 includeHidden 扫全量 nodes，补齐 compact/answer
+ * 隐藏成员并拿到工具终态。
+ */
+function collectKrActivityProjection(snapshot: any, turn: number, includeHidden = false): KrActivityProjection {
+  const tools = new Map<string, ChatNode<'tool-call'>>()
+  const steps = new Map<string, ChatNode<'assistant-step'>>()
+
+  const addNode = (candidate: any): void => {
+    if (candidate === undefined || candidate === null) return
+    if (candidate.kind === 'tool-call' && candidate.key !== undefined) {
+      tools.set(candidate.key, candidate as ChatNode<'tool-call'>)
+      return
+    }
+    if (candidate.kind === 'assistant-step' && candidate.key !== undefined) {
+      steps.set(candidate.key, candidate as ChatNode<'assistant-step'>)
+    }
+  }
+
+  try {
+    for (const key of snapshot?.locations?.getTurn?.(turn) ?? []) {
+      addNode(snapshot?.nodes?.get?.(key))
+    }
+  } catch { /* 投影不可读时继续走全量扫描 */ }
+
+  // live 投影只扫本轮 locations；完整 nodes 扫描仅在 closed 的第一次
+  // 收口发布执行一次，用来补齐 compact/hidden 终态。
+  if (includeHidden) {
+    try {
+      if (typeof snapshot?.nodes?.values === 'function') {
+        for (const candidate of snapshot.nodes.values()) {
+          const locationTurn = candidate?.location?.turn
+          const candidateTurn = candidate?.data?.turn
+            ?? (typeof locationTurn === 'number' ? locationTurn : locationTurn?.turn)
+          if (candidateTurn === turn) addNode(candidate)
+        }
+      }
+    } catch { /* 未知 snapshot 形状返回空投影 */ }
+  }
+
+  const orderedSteps = [...steps.values()].sort((a, b) => a.anchorSeq - b.anchorSeq)
+  const reasoning: KrActivityReasoningItem[] = []
+  const stepStates: KrActivityStepState[] = []
+  for (const step of orderedSteps) {
+    let hasVisibleAnswer = false
+    let hasToolCall = false
+    let answerProbe = ''
+    let blockIndex = 0
+    for (const block of step.data.blocks) {
+      if (block.kind === 'reasoning') {
+        const text = block.text.trim()
+        if (text !== '') {
+          reasoning.push({
+            text,
+            running: step.data.status === 'running',
+            step: step.data.step,
+            order: step.anchorSeq + (blockIndex++) / 1000,
+          })
+        }
+      } else if (block.kind === 'tool-call') {
+        hasToolCall = true
+      } else {
+        hasVisibleAnswer = true
+        const visibleText = typeof (block as any).text === 'string' ? (block as any).text : ''
+        answerProbe += `${visibleText}\u0000`
+      }
+    }
+    stepStates.push({
+      step: step.data.step,
+      status: step.data.status,
+      hasVisibleAnswer,
+      hasToolCall,
+      answerProbe,
+    })
+  }
+
+  return {
+    reasoning,
+    tools: [...tools.values()].sort((a, b) => a.anchorSeq - b.anchorSeq),
+    steps: stepStates,
+  }
+}
+
+function sameKrActivityProjection(left: KrActivityProjection, right: KrActivityProjection): boolean {
+  if (left === right) return true
+  if (
+    left.reasoning.length !== right.reasoning.length
+    || left.tools.length !== right.tools.length
+    || left.steps.length !== right.steps.length
+  ) return false
+  for (let index = 0; index < left.reasoning.length; index += 1) {
+    const a = left.reasoning[index]
+    const b = right.reasoning[index]
+    if (a.text !== b.text || a.running !== b.running || a.step !== b.step || a.order !== b.order) return false
+  }
+  for (let index = 0; index < left.tools.length; index += 1) {
+    const a = left.tools[index]
+    const b = right.tools[index]
+    // DSH snapshot 对未变化节点保持引用稳定；只让真正变化的 tool node
+    // 触发新 projection，避免每个 live delta 都重建整张列表。
+    if (a.key !== b.key || a.data.root !== b.data.root) return false
+  }
+  for (let index = 0; index < left.steps.length; index += 1) {
+    const a = left.steps[index]
+    const b = right.steps[index]
+    if (
+      a.step !== b.step
+      || a.status !== b.status
+      || a.hasVisibleAnswer !== b.hasVisibleAnswer
+      || a.hasToolCall !== b.hasToolCall
+      || a.answerProbe !== b.answerProbe
+    ) return false
+  }
+  return true
+}
+
 /** Single per-turn row at the official control position (priority -100 shadows builtin). */
 export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: ChatNodeViewProps<'turn-process'>) {
   const { node, useChat, turnProcess, t, cwd, openFile, inspectCall } = props
   const store = activityStore()
+  const krStore = getKrChatStore()
+  const krTab = useSyncExternalStore(
+    (cb) => krStore.subscribe(cb),
+    () => krStore.snapshot.activeTab,
+  )
   const turn = node.data.turn
 
   // 1. 获取计数（浅比较，避免非必要重渲染）
@@ -380,6 +529,87 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
     return 0
   })
 
+  // 3. KR 活动卡直接消费实时投影；useChat 会在思考文本增长、工具状态变化、
+  // 新节点加入时发布新数组，因此卡片内容与右侧大盘同步，不需要轮询 DOM。
+  // store 是 KR 视图的唯一实时真相；body 属性由控制器稍后同步，不能拿它
+  // 作为 React 渲染门槛，否则刚切到 KR 的那一帧会漏掉活动卡。
+  const isKrMode = krTab === 'kr'
+  const locationTurn = node.location.kind === 'turn' || node.location.kind === 'step'
+    ? node.location.turn
+    : undefined
+  // 初次就是 closed 的历史轮次不扫描；open → closed 的第一次发布仍扫描
+  // 一次，拿到工具已结束/失败/中断的终态，再冻结给退场动画。
+  const krClosedProjectionCollectedRef = useRef(locationTurn?.status !== 'open')
+  const krProjectionCacheRef = useRef<KrActivityProjection>(EMPTY_KR_ACTIVITY_PROJECTION)
+  const krProjectionSnapshot = useChat((snapshot) => {
+    const shouldCollect = isKrMode && (
+      locationTurn?.status === 'open'
+      || (locationTurn?.status === 'closed' && !krClosedProjectionCollectedRef.current)
+    )
+    if (!shouldCollect) return EMPTY_KR_ACTIVITY_PROJECTION
+    const next = collectKrActivityProjection(
+      snapshot,
+      turn,
+      locationTurn?.status === 'closed' && !krClosedProjectionCollectedRef.current,
+    )
+    if (sameKrActivityProjection(krProjectionCacheRef.current, next)) {
+      return krProjectionCacheRef.current
+    }
+    krProjectionCacheRef.current = next
+    return next
+  })
+  // closed 历史轮次不再全量扫描 snapshot；保留最后一次开放期数据只供退场
+  // 冻结使用，避免长会话里 N 个历史 turn × 全量 nodes 的重复开销。
+  const krLastProjectionRef = useRef<KrActivityProjection>(EMPTY_KR_ACTIVITY_PROJECTION)
+  if (
+    krProjectionSnapshot !== EMPTY_KR_ACTIVITY_PROJECTION
+    && (krProjectionSnapshot.reasoning.length > 0 || krProjectionSnapshot.tools.length > 0)
+  ) {
+    krLastProjectionRef.current = krProjectionSnapshot
+  }
+  const krProjection = krProjectionSnapshot === EMPTY_KR_ACTIVITY_PROJECTION
+    ? krLastProjectionRef.current
+    : krProjectionSnapshot
+  const answerStep = turnProcess?.spec.answerStep ?? null
+  const configuredAnswerStarted = answerStep !== null && krProjection.steps.some(
+    (step) => step.step === answerStep && step.hasVisibleAnswer && !step.hasToolCall,
+  )
+  // DSH 只有 assistant step 定型后才发布 answerStep；最终答案流式期间
+  // answerStep 仍是 null。用「最新 step 正在运行、已有可见正文、且不含
+  // tool-call」作为候选，并要求正文静默 1.2s；文本增长会重置计时，工具
+  // 调用到达会立即取消，避免把工具前的桥接回复误判成总结。
+  const latestStep = krProjection.steps.at(-1)
+  const liveSummaryCandidate = isKrMode && (
+    configuredAnswerStarted
+    || (latestStep?.status === 'running'
+      && latestStep.hasVisibleAnswer
+      && !latestStep.hasToolCall)
+  )
+  const liveSummaryProbe = liveSummaryCandidate
+    ? `${configuredAnswerStarted ? 'settled' : 'streaming'}:${latestStep?.step ?? 0}:${latestStep?.answerProbe ?? ''}`
+    : ''
+  const [liveSummaryReady, setLiveSummaryReady] = useState(false)
+  useEffect(() => {
+    if (!liveSummaryCandidate) {
+      setLiveSummaryReady(false)
+      return undefined
+    }
+    const id = window.setTimeout(() => { setLiveSummaryReady(true) }, LIVE_SUMMARY_CONFIRM_MS)
+    return () => { window.clearTimeout(id) }
+  }, [liveSummaryCandidate, liveSummaryProbe, turn])
+  const answerStarted = liveSummaryReady
+  const interrupted = krProjection.steps.some((step) => step.status === 'interrupted')
+  const krCommitted = locationTurn?.status === 'closed' || interrupted
+  const krClosing = krCommitted || answerStarted
+  const krActive = isKrMode && locationTurn?.status === 'open' && !krClosing
+  useEffect(() => {
+    if (locationTurn?.status === 'open') {
+      krClosedProjectionCollectedRef.current = false
+    } else if (locationTurn?.status === 'closed') {
+      krClosedProjectionCollectedRef.current = true
+    }
+  }, [locationTurn?.status])
+
   // 实时思考预览堆叠
   const activeThinking = counts.reasoning > 0 && (counts.streaming === true || counts.toolsRunning === true)
   useEffect(() => {
@@ -392,12 +622,22 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
     return () => { if (activeThinking) store.setPreviewAnchor(undefined, null) }
   }, [activeThinking, turn, store])
 
+  // KR 无论当前回合是否 foldable 都由活动卡占位；它从 turn-process 的
+  // per-turn 座位出现，因此第一条 assistant 文本之前也能立刻显示。
+  if (isKrMode) {
+    return (
+      <KrActivityCardGate
+        turn={turn}
+        reasoning={krProjection.reasoning}
+        tools={krProjection.tools}
+        active={krActive}
+        closing={krClosing}
+        committed={krCommitted}
+      />
+    )
+  }
   if (turnProcess === undefined) return null
   if (!turnProcess.foldable) return null
-  // 当处于 KR 对话模式时，彻底去除狭窄的折叠条，右侧大盘已完整呈现
-  if (typeof document !== 'undefined' && document.body.hasAttribute('data-dsh-kr-chat')) {
-    return null
-  }
 
   const open = turnProcess.open
   const data = node.data

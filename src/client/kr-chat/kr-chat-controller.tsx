@@ -42,6 +42,28 @@ function resolveLatestTurn(): number {
 }
 
 /**
+ * 回合是否仍在执行。以 snapshot.timeline 的 start/end 为事实源，避免活动卡
+ * 正在播放 1.18s 退场动画时，DOM 仍有节点就把右侧大盘误判为 running。
+ * 只有旧 host 读不到 timeline 时才回退到「active 卡 / assistant running」DOM。
+ */
+function isCurrentTurnRunning(turn: number): boolean {
+  const snap = latestChatSnapshot || (typeof window !== 'undefined' ? (window as any).__dshLatestChatSnapshot__ : null)
+  try {
+    const turns = snap?.timeline?.turns
+    const timing = turns?.get ? turns.get(turn) : turns?.[turn]
+    if (typeof timing?.start?.time === 'number') {
+      return typeof timing.end?.time !== 'number'
+    }
+  } catch { /* 旧 snapshot 形状回退 DOM */ }
+  if (typeof document === 'undefined') return false
+  return Boolean(
+    document.querySelector('.kr-agent-mini-shell[data-active="true"] .kr-agent-mini-card')
+    || document.querySelector('[data-turn-process] [data-running="true"]')
+    || document.querySelector('.dtt__assistant[data-running="true"]'),
+  )
+}
+
+/**
  * 会话是否已经「有内容」——即不是刚点开、首条消息还没发出去的空白新会话。
  *
  * 只认官方稳定钩子，不看会话 id：
@@ -216,11 +238,7 @@ export function KrPanelSystem() {
   // 最新轮次：空白新会话没有 navigation 条目，按 1 处理（面板会走空态）。
   const latestTurn = Math.max(1, resolveLatestTurn())
 
-  const isRunning = typeof document !== 'undefined' && Boolean(
-    document.querySelector('.kr-flow-executing-card') ||
-    document.querySelector('[data-turn-process] [data-running="true"]') ||
-    document.querySelector('.dtt__assistant[data-running="true"]')
-  )
+  const isRunning = isCurrentTurnRunning(latestTurn)
 
   if (krState.panelOpen) {
     return (

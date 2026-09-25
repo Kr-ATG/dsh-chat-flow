@@ -28,6 +28,7 @@ body[data-dsh-kr-chat="true"] .dts__entry,
 body[data-dsh-kr-chat="true"] .dtt__chip,
 body[data-dsh-kr-chat="true"] [data-chat-call-id],
 body[data-dsh-kr-chat="true"] [data-chat-anchor-key^="call:"],
+body[data-dsh-kr-chat="true"] [data-step-process],
 body[data-dsh-kr-chat="true"] [data-turn-process],
 /*
  * 官方把「同一个 assistant-step 节点」投影成两份 DOM：
@@ -46,6 +47,19 @@ body[data-dsh-kr-chat="true"] [data-turn-process],
  */
 body[data-dsh-kr-chat="true"] [data-turn-process-member] {
   display: none !important;
+}
+
+/* 实时活动卡借用 turn-process 的 per-turn 座位，但KR 模式要让它可见。
+   :has 只命中含新卡的那一个过程投影，不把官方过程内容/重复节点放回来。 */
+body[data-dsh-kr-chat="true"] [data-turn-process]:has(.kr-agent-mini-shell),
+body[data-dsh-kr-chat="true"] [data-turn-process-member]:has(.kr-agent-mini-shell) {
+  display: block !important;
+}
+
+/* response group 是最终答案投影：即使 DSH 尚未把 live turn 切到 answer
+   状态，也先让它的可见正文显示出来；reasoning group 仍隐藏，由活动卡承接。 */
+body[data-dsh-kr-chat="true"] [data-turn-process-member][data-chat-group-part="response"] {
+  display: block !important;
 }
 
 /* ══ KR 模式下左侧对话流交互（无染色视觉，点击即可直接选中联动大盘） ═════════ */
@@ -1196,89 +1210,6 @@ body[data-kr-resizing="true"] * {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ══ 左侧对话流卡片化（去除旧折叠） ════════════════════════════════════════ */
-/* 结构化思考过程卡片 */
-.kr-flow-thought-card {
-  margin: 8px 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-1, rgba(255,255,255,0.03));
-  border: 1px solid var(--kr-card-border);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.kr-flow-thought-card__header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--kr-accent);
-}
-
-.kr-flow-thought-card__body {
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--dsw-alias-label-secondary);
-}
-
-/* 正在执行状态卡片 */
-.kr-flow-executing-card {
-  margin: 8px 0;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--kr-accent) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--kr-accent) 22%, transparent);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.kr-flow-executing-card__spinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid color-mix(in srgb, var(--kr-accent) 30%, transparent);
-  border-top-color: var(--kr-accent);
-  border-radius: 50%;
-  animation: kr-spin 0.8s linear infinite;
-  flex: none;
-}
-
-@keyframes kr-spin {
-  to { transform: rotate(360deg); }
-}
-
-.kr-flow-executing-card__info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.kr-flow-executing-card__title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--kr-accent);
-}
-
-.kr-flow-executing-card__subtitle {
-  font-size: 12px;
-  color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.kr-flow-executing-card__time {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--kr-accent);
-  font-variant-numeric: tabular-nums;
-  flex: none;
-}
-
 /* ══ 记忆卡片停靠区（固定右栏底部）═══════════════════════════════════════
    记忆卡不再是 .kr-panel__scroll 的子节点，而是滚动区之下的独立 flex footer：
    滚动区（flex:1 1 0）高度自动让位，记忆卡永远钉在右栏最下方——无论内容
@@ -1519,6 +1450,373 @@ body[data-kr-resizing="true"] * {
   padding: 2px 6px 3px;
   font-size: 11px;
   color: var(--dsw-alias-label-primary);
+}
+
+/* ══ KR 极简 Agent 状态卡：只显示一句当前动作 + 可配置头像 ═══════════════ */
+.kr-agent-mini-shell {
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr;
+  width: 100%;
+  min-width: 0;
+  max-height: 260px;
+  margin: -4px 0;
+  overflow: visible;
+}
+
+.kr-agent-mini-card {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  width: min(440px, 100%);
+  min-height: 50px;
+  padding: 7px 14px 7px 7px;
+  border: 1px solid var(--kr-card-border);
+  border-radius: 10px;
+  background: var(--dsh-flow-veil, color-mix(in srgb, var(--dsw-alias-label-primary) 3.5%, transparent));
+  cursor: pointer;
+  transform-origin: 0 50%;
+  animation: kr-agent-mini-in .38s cubic-bezier(.16, 1, .3, 1) both;
+}
+
+.kr-agent-mini-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--kr-accent) 48%, transparent);
+  outline-offset: 2px;
+}
+
+.kr-agent-mini-card:hover {
+  border-color: color-mix(in srgb, var(--kr-accent) 24%, var(--kr-card-border));
+}
+
+.kr-agent-mini-chevron {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform .22s cubic-bezier(.16, 1, .3, 1);
+}
+
+.kr-agent-mini-chevron svg {
+  width: 15px;
+  height: 15px;
+}
+
+.kr-agent-mini-chevron[data-open="true"] {
+  transform: rotate(180deg);
+}
+
+.kr-agent-mini-shell[data-closing="true"]:not([data-committed="true"]) .kr-agent-mini-card {
+  opacity: .42;
+  transform: translateY(-3px);
+}
+
+.kr-agent-mini-shell[data-closing="true"][data-committed="true"] {
+  max-height: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  animation: kr-agent-mini-exit 980ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.kr-agent-mini-details {
+  display: grid;
+  grid-template-rows: 1fr;
+  min-height: 0;
+  opacity: 1;
+  transition: grid-template-rows .34s cubic-bezier(.16, 1, .3, 1), opacity .24s ease, margin .34s cubic-bezier(.16, 1, .3, 1);
+}
+
+.kr-agent-mini-details > .kr-agent-mini-details__inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.kr-agent-mini-details[data-open="true"] {
+  margin-top: 7px;
+}
+
+.kr-agent-mini-details:not([data-open="true"]) {
+  grid-template-rows: 0fr;
+  margin-top: 0;
+  opacity: 0;
+}
+
+.kr-agent-mini-details__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 3px 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.kr-agent-mini-details__head span:first-child {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.kr-agent-mini-details__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.kr-agent-node-card {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--kr-card-border) 82%, transparent);
+  border-radius: 8px;
+  padding: 8px 9px 9px;
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 2%, transparent);
+}
+
+.kr-agent-node-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 9.5px;
+  line-height: 14px;
+}
+
+.kr-agent-node-card__head span:first-child {
+  color: var(--kr-accent);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.kr-agent-node-card__head span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kr-agent-node-card__value {
+  display: -webkit-box;
+  min-height: 32px;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.kr-agent-mini-avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--kr-accent) 18%, var(--kr-card-border));
+  border-radius: 50%;
+  padding: 0;
+  background: color-mix(in srgb, var(--kr-accent) 7%, var(--dsw-alias-bg-layer-1));
+  color: var(--kr-accent);
+  cursor: pointer;
+  transition: border-color .16s ease, transform .16s ease;
+}
+
+.kr-agent-mini-avatar:hover {
+  border-color: color-mix(in srgb, var(--kr-accent) 42%, var(--kr-card-border));
+}
+
+.kr-agent-mini-avatar:active {
+  transform: scale(.96);
+}
+
+.kr-agent-mini-avatar:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--kr-accent) 52%, transparent);
+  outline-offset: 2px;
+}
+
+.kr-agent-mini-avatar > img,
+.kr-agent-mini-avatar__default {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.kr-agent-mini-avatar > img {
+  display: block;
+  object-fit: cover;
+}
+
+.kr-agent-mini-avatar__default {
+  display: grid;
+  place-items: center;
+}
+
+.kr-agent-mini-avatar__default svg {
+  width: 23px;
+  height: 23px;
+}
+
+.kr-agent-mini-avatar__status {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base));
+  border-radius: 50%;
+  background: var(--kr-accent);
+  animation: kr-agent-mini-pulse 1.6s ease-in-out infinite;
+}
+
+.kr-agent-mini-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.kr-agent-mini-action {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: kr-agent-mini-action-in .36s cubic-bezier(.16, 1, .3, 1) both;
+}
+
+.kr-agent-avatar-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 40;
+  display: grid;
+  gap: 3px;
+  width: 188px;
+  box-sizing: border-box;
+  border: 1px solid var(--kr-card-border);
+  border-radius: 9px;
+  padding: 8px;
+  background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base));
+  box-shadow: 0 10px 28px rgba(15, 17, 21, .10);
+}
+
+.kr-agent-avatar-menu__title {
+  padding: 2px 4px 6px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.kr-agent-avatar-menu__action {
+  width: 100%;
+  border: 0;
+  border-radius: 5px;
+  padding: 7px 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kr-agent-avatar-menu__action:hover:not(:disabled) {
+  background: var(--kr-hover-bg);
+  color: var(--dsw-alias-label-primary);
+}
+
+.kr-agent-avatar-menu__action:disabled {
+  opacity: .42;
+  cursor: default;
+}
+
+.kr-agent-avatar-menu__action:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--kr-accent) 48%, transparent);
+  outline-offset: -1px;
+}
+
+.kr-agent-avatar-menu__hint,
+.kr-agent-avatar-menu__error {
+  padding: 4px 4px 1px;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.kr-agent-avatar-menu__hint {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.kr-agent-avatar-menu__error {
+  color: var(--kr-error);
+}
+
+.kr-agent-avatar-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* 仍被 KR 任务卡 / 执行结果卡的行内 spinner 复用。 */
+@keyframes kr-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes kr-agent-mini-in {
+  from { opacity: 0; transform: translateY(7px) scale(.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes kr-agent-mini-action-in {
+  from { opacity: 0; transform: translateY(9px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes kr-agent-mini-exit {
+  0% { max-height: 260px; margin-top: -4px; margin-bottom: -4px; opacity: 1; transform: translateY(0) scale(1); }
+  65% { max-height: 220px; margin-top: -2px; margin-bottom: -2px; opacity: .92; transform: translateY(-12px) scale(.992); }
+  100% { max-height: 0; margin-top: 0; margin-bottom: 0; opacity: 0; transform: translateY(-28px) scale(.985); }
+}
+
+@keyframes kr-agent-mini-pulse {
+  0%, 100% { opacity: .55; }
+  50% { opacity: 1; }
+}
+
+@media (max-width: 520px) {
+  .kr-agent-mini-shell {
+    width: 100%;
+  }
+
+  .kr-agent-mini-details__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kr-agent-mini-card,
+  .kr-agent-mini-action,
+  .kr-agent-mini-shell[data-closing="true"][data-committed="true"],
+  .kr-agent-mini-avatar__status {
+    animation: none !important;
+  }
 }
 
 /* ══ 隐藏原生 DSH 任务列表/Plan卡片（KR模式下收敛至右侧大盘） ═══════════════ */

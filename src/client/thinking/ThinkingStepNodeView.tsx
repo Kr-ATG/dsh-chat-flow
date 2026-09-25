@@ -2,18 +2,19 @@
  * dsh-chat-plus — 回合级思考 chip + 对话流卡片（assistant-step 槽位替换）。
  *
  * 移植自 dsh-webui 的 BETTER assistant 渲染（_tmp-webui/src/client/markdown/
- * renderer.tsx 的 ReasoningEntry + BetterAssistantNodeView），两点关键差异：
+ * renderer.tsx 的 ReasoningEntry + BetterAssistantNodeView），关键差异：
  *
  *  1. **正文链路保持官方**：text 块用官方 `MarkdownText`（ui-primitives）、
  *     image 块走官方 `renderMessageImages` 槽——不引入 markstream/shiki/katex，
  *     流式输出与官方渲染完全一致（「流式输出就没了」是本次移植的第一约束）。
- *  2. **卡片只在回合结束后出现**：回合仍在进行（含中间步骤已定型）时一律不包
- *     卡，流式正文直接平铺；turn.status === 'closed'（或中断）后，中间片段变
- *     轻量步骤卡、最终回复变总结卡（本轮完成徽章 + 用时/步骤/工具/思考统计）。
+ *  2. **KR 过程是一张瞬态活动卡**：由 turn-process 的 per-turn 座位聚合
+ *     分析、思考与工具调用到有界时间线，自动跟随滚动；最终回答出现后整卡
+ *     上移淡出。回合正文仍保持官方链路，结束后才包步骤 / 总结卡。
+ *  3. **非 KR 对话保留旧 chip**：思考材料按回合聚合，点击打开共享活动抽屉看
+ *     全文；think 块一律不内联展示（避免长思考链拖拽滚动）。
  *
- * 思考材料按「回合」聚合：第一个 assistant-step 渲染一枚 chip（思考中实时
- * 时长 + 实时文字滚动预览），点击打开共享活动抽屉看全文；同一回合其余步骤
- * 只渲染自己的正文。think 块一律不内联展示（避免长思考链拖拽滚动）。
+ * 总结卡门控不变：turn.status === 'closed'（或中断）后，中间片段变轻量步骤
+ * 卡，最终回复变总结卡（本轮完成徽章 + 用时/步骤/工具/思考统计）。
  */
 import { memo, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
@@ -37,7 +38,7 @@ import { splitDiagram } from '../diagram/parse.ts'
 import { DiagramCard } from '../diagram/DiagramCard.tsx'
 import { splitProtoTabs } from '../proto/parse.ts'
 import { ProtoTabsCard } from '../proto/ProtoTabsCard.tsx'
-import { gitVerbOf } from '../tool-summary/tool-stats.ts'
+import { gitVerbOf, isRunning } from '../tool-summary/tool-stats.ts'
 import { GeneratedImageStrip } from '../generated-images/GeneratedImageStrip.tsx'
 import { useGeneratedImages } from '../generated-images/use-generated-images.ts'
 import { getKrChatStore } from '../kr-chat/kr-chat-store.ts'
@@ -63,88 +64,6 @@ interface ReasoningItem {
   readonly running: boolean
   /** The owning assistant step number (for the live card heading). */
   readonly step: number
-}
-
-/** KR 对话卡片化思考过程（去掉旧折叠，直观展现步骤） */
-function KrFlowThoughtCard({
-  items,
-  turnNumber,
-}: {
-  readonly items: readonly ReasoningItem[]
-  readonly turnNumber?: number
-}) {
-  const points = useMemo(() => {
-    const text = items.map((i) => i.text).join('\n')
-    const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
-    const numbered = lines.filter((l) => /^\d+[\.、\s]/.test(l))
-    if (numbered.length > 0) return numbered
-    return lines.slice(0, 3)
-  }, [items])
-
-  if (points.length === 0) return null
-  const store = getKrChatStore()
-
-  return (
-    <div
-      className="kr-flow-thought-card"
-      onClick={() => {
-        if (turnNumber !== undefined) {
-          store.setSelectedTurn(turnNumber)
-          store.setPanelOpen(true)
-        }
-      }}
-      style={{ cursor: 'pointer' }}
-      title="点击在右侧大盘中查看完整轨迹"
-    >
-      <div className="kr-flow-thought-card__header">
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M2 6a6 6 0 1 1 10.174 4.31c-.203.196-.359.4-.453.619l-.762 1.769A.5.5 0 0 1 10.5 13a.5.5 0 0 1 0 1 .5.5 0 0 1 0 1l-.224.447a1 1 0 0 1-.894.553H6.618a1 1 0 0 1-.894-.553L5.5 15a.5.5 0 0 1 0-1 .5.5 0 0 1 0-1 .5.5 0 0 1-.46-.302l-.761-1.77a1.964 1.964 0 0 0-.453-.618A5.984 5.984 0 0 1 2 6zm6-5a5 5 0 0 0-3.479 8.592c.263.254.514.564.676.941L5.83 12h4.342l.632-1.467c.162-.377.413-.687.676-.941A5 5 0 0 0 8 1z" />
-        </svg>
-        <span>思考过程 ({points.length})</span>
-      </div>
-      <div className="kr-flow-thought-card__body">
-        {points.map((p, idx) => (
-          <div key={idx} style={{ marginBottom: 3 }}>
-            {p}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/** KR 对话 Agent 正在执行卡片 */
-function KrFlowExecutingCard({
-  subtitle,
-  elapsed,
-  turnNumber,
-}: {
-  readonly subtitle?: string
-  readonly elapsed: string
-  readonly turnNumber?: number
-}) {
-  const store = getKrChatStore()
-
-  return (
-    <div
-      className="kr-flow-executing-card"
-      onClick={() => {
-        if (turnNumber !== undefined) {
-          store.setSelectedTurn(turnNumber)
-          store.setPanelOpen(true)
-        }
-      }}
-      style={{ cursor: 'pointer' }}
-      title="点击在右侧大盘查看实时工具调用"
-    >
-      <div className="kr-flow-executing-card__spinner" />
-      <div className="kr-flow-executing-card__info">
-        <div className="kr-flow-executing-card__title">Agent 正在执行</div>
-        <div className="kr-flow-executing-card__subtitle">{subtitle || '正在推进各项任务步骤与工具调用…'}</div>
-      </div>
-      <div className="kr-flow-executing-card__time">{elapsed}</div>
-    </div>
-  )
 }
 
 /**
@@ -424,7 +343,11 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
       .map(block => ({ text: block.text, running: stepRunning, step: step.data.step }))
   }), [steps])
   const isFirstStep = steps.length > 0 && node.key === steps[0]?.key
-  const turnRunning = steps.some(step => step.data.status === 'running')
+  const toolsRunning = toolNodes.some((toolNode) => {
+    try { return isRunning(toolNode.data.root) } catch { return false }
+  })
+  // 工具执行期通常没有 assistant-step 处于 running；两段任一仍在推进都算整轮活跃。
+  const turnRunning = steps.some(step => step.data.status === 'running') || toolsRunning
 
   // ── 本回合生图结果（generate_image）→ 画廊条 ──────────────────────────
   // 数据源是工具结果：小结果内联 JSON（b64_json → data URL），大结果被
@@ -454,7 +377,6 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
     const runningStep = steps.find(step => step.data.status === 'running')
     return runningStep?.data.time
   }, [steps])
-
   const visibleBlocks = useMemo(
     () => data.blocks.filter(block => block.kind !== 'reasoning'),
     [data.blocks],
@@ -476,14 +398,8 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
       activityStore().setReasoning(turnNumber, reasoningItems)
     }
   }, [pluginRenders, isFirstStep, reasoningItems, turnNumber])
-  const now = useNow(turnRunning)
-  const turnElapsed = thinkingStart !== undefined ? Math.max(0, now - thinkingStart) : 1000
-  const turnElapsedText = formatDuration(turnElapsed)
-
   // 本轮 git 相关调用：扫工具节点参数里的 git <动词>（见 tool-stats.gitVerbOf）。
-  // ⚠ 必须在下面的 krExecutingCard 之前求值 —— 之前 gitDetail 声明在使用点之后，
-  // 触发 TDZ（Cannot access 'gitDetail' before initialization），
-  // 让整个 conversation.chat.node 槽位崩溃、退化成官方渲染（总结卡随之消失）。
+  // 总结卡元信息与右侧大盘共用这份去重结果。
   const gitVerbs = useMemo(() => {
     const verbs: string[] = []
     for (const node of toolNodes) {
@@ -494,18 +410,9 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
   }, [toolNodes])
   const gitDetail = useMemo(() => [...new Set(gitVerbs)].join(' · '), [gitVerbs])
 
-  const krThoughtCard = isKrMode && isFirstStep && reasoningItems.length > 0
-    ? <KrFlowThoughtCard items={reasoningItems} turnNumber={turnNumber as number} />
-    : undefined
-
-  const krExecutingCard = isKrMode && isFirstStep && turnRunning
-    ? <KrFlowExecutingCard subtitle={gitDetail || undefined} elapsed={turnElapsedText} turnNumber={turnNumber as number} />
-    : undefined
-
   const folded = toolCount > 0
   const turnClosedEarly = locationTurn?.status === 'closed'
-  // KR 视图里思考由 KrFlowThoughtCard 承接，chip 让位；KR 关闭后「对话」就是
-  // 插件渲染，chip 照常出现（= KR 之前的形态）。
+  // KR 过程由 turn-process 座位上的实时活动卡承接；这里仅保留非 KR chip。
   const chip = isKrMode
     ? undefined
     : (isFirstStep && reasoningItems.length > 0 && !folded
@@ -577,11 +484,13 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
   if (!hasVisible && chip === undefined && gallery === undefined) return null
 
   return (
-    <div className="dtt__assistant" data-streaming={streaming || undefined}>
+    <div
+      className="dtt__assistant"
+      data-streaming={streaming || undefined}
+      data-running={turnRunning || undefined}
+    >
       <div className="dtt__assistant-body">
         {chip}
-        {krThoughtCard}
-        {krExecutingCard}
         {rendered.length > 0 && (variant !== undefined
           ? <FlowCard variant={variant} meta={cardMeta} interrupted={interrupted}>{rendered}{gallery}</FlowCard>
           : <>{rendered}{gallery}</>)}

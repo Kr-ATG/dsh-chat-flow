@@ -9,11 +9,9 @@
  *      dsh-chat-flow-shot-styles / dsh-modal-animation-styles /
  *      dsh-chat-flow-proto-styles / dsh-chat-flow-diagram-styles /
  *      dsh-chat-flow-download-styles）
- *   4. `apply(ctx)` registers all four chat-node seats + actions + toolview:
+ *   4. `apply(ctx)` registers the two active chat-node seats + actions + toolview:
  *        conversation.chat.node / turn-process     priority -100
- *        conversation.chat.node / tool-call        priority -100
  *        conversation.chat.node / assistant-step   priority -100
- *        conversation.chat.node / model-retry      priority -100
  *        conversation.chat.assistant-actions / chat-flow-screenshot  order 5
  *
  * Usage: node scripts/smoke-client.mjs
@@ -338,20 +336,26 @@ for (const expected of expectedStyles) {
 if (!krEnabled && styleIds.includes('dsh-kr-chat-styles')) {
   fail('KR_CHAT_ENABLED=false 时不应注入 dsh-kr-chat-styles（KR 只隐藏不删除）')
 }
+if (!code.includes('kr-agent-mini-card') || !code.includes('kr-agent-mini-exit')) {
+  fail('client bundle is missing the KR minimal activity card / exit motion')
+} else {
+  pass('client bundle contains KR minimal activity card and exit motion')
+}
+
 if (styleIds.length === expectedStyles.length) {
   pass(`injected ${styleIds.length} <style> sheets (dtt__ + dts__ + tsh__ + modal + proto + diagram + download${krEnabled ? ' + kr' : ''})`)
 } else if (styleIds.length > expectedStyles.length) {
   fail(`unexpected extra styles: ${styleIds.join(', ')}`)
 }
 
-// 七枚槽位：对话增强四枚（assistant-step keyed / 截图按钮 / download toolview /
-// kr-todo-bridge）+ 融合工作台三枚（automation-notifier、dsh-memory-inject-toggle、
-// skill toolview）。座位 id/order/locale 全部原样保留（dsh-triad 退役零迁移）。
+// 八枚槽位：对话增强五枚（turn-process / assistant-step keyed / 截图按钮 /
+// download toolview / kr-todo-bridge）+ 融合工作台三枚（automation-notifier、
+// dsh-memory-inject-toggle、skill toolview）。座位 id/order/locale 全部原样保留。
 const cell = (key) => registeredSlots.find((s) => s?.slot === 'conversation.chat.node' && s?.key === key)
-if (registeredSlots.length !== 7) {
-  fail(`expected 7 slot registrations, got ${registeredSlots.length}: ${JSON.stringify(registeredSlots)}`)
+if (registeredSlots.length !== 8) {
+  fail(`expected 8 slot registrations, got ${registeredSlots.length}: ${JSON.stringify(registeredSlots)}`)
 } else {
-  pass('registered 7 seats (4 chat-plus + 3 triad: automation-notifier / memory toggle / skill toolview)')
+  pass('registered 8 seats (5 chat-plus + 3 triad: automation-notifier / memory toggle / skill toolview)')
 }
 
 const downloadSeat = registeredSlots.find((s) => s?.slot === 'tool.call.toolview' && s?.key === 'download')
@@ -375,6 +379,17 @@ else pass('seat shell.overlay / automation-notifier @ order 90 (triad)')
 const todoDockSeat = registeredSlots.find((s) => s?.slot === 'conversation.input.dock' && s?.id === 'kr-todo-bridge')
 if (todoDockSeat === undefined) fail('missing input.dock seat conversation.input.dock / kr-todo-bridge')
 else pass('seat conversation.input.dock / kr-todo-bridge')
+
+const processSeat = cell('turn-process')
+if (processSeat === undefined) {
+  fail('missing registration for key turn-process')
+} else if (processSeat.priority !== -100) {
+  fail(`key turn-process priority = ${processSeat.priority}, expected -100`)
+} else if (processSeat.locale !== 'chat') {
+  fail(`key turn-process locale = ${processSeat.locale}, expected "chat"`)
+} else {
+  pass('seat conversation.chat.node / turn-process @ priority -100')
+}
 
 const asst = cell('assistant-step')
 if (asst === undefined) {
