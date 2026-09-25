@@ -10,7 +10,6 @@ import type { ChatNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { callName, isRunning } from '../tool-summary/tool-stats.ts'
-import { argFields, toolArgsRaw } from '../tool-summary/activity-view-model.ts'
 import { useMotionAllowed } from '../motion-utils.ts'
 
 const EXIT_MS = 980
@@ -76,42 +75,117 @@ function toolVerb(name: string): string {
   return `调用 ${name || '工具'}`
 }
 
-function compactText(text: string, limit = 150): string {
-  const value = text.replace(/\s+/g, ' ').trim()
-  return value.length > limit ? `${value.slice(0, limit - 1)}…` : value
+type WorkflowStatus = 'done' | 'current' | 'pending'
+
+interface WorkflowStage {
+  readonly label: string
+  readonly detail: string
+  readonly status: WorkflowStatus
 }
 
-function changedFileName(block: any): string | null {
-  const name = String(callName(block) ?? '').toLowerCase()
-  if (!/^(write|edit|apply_patch|str_replace_editor|patch)$/.test(name)) return null
-  try {
-    const args = argFields(toolArgsRaw(block))
-    const value = args.file_path ?? args.path ?? args.filename ?? args.filePath
-    if (typeof value !== 'string' || value.trim() === '') return null
-    return value.split(/[\\/]/).filter(Boolean).at(-1) ?? null
-  } catch {
-    return null
+interface WorkflowView {
+  readonly title: string
+  readonly current: string
+  readonly stages: readonly WorkflowStage[]
+}
+
+function toolNames(tools: readonly ChatNode<'tool-call'>[]): string[] {
+  return tools.flatMap((node) => {
+    try { return [callName(node.data.root).toLowerCase()] } catch { return [] }
+  })
+}
+
+function makeWorkflow(
+  title: string,
+  labels: readonly string[],
+  details: readonly string[],
+  currentIndex: number,
+): WorkflowView {
+  const safeIndex = Math.max(0, Math.min(currentIndex, labels.length - 1))
+  return {
+    title,
+    current: labels[safeIndex],
+    stages: labels.map((label, index) => ({
+      label,
+      detail: details[index] ?? '',
+      status: index < safeIndex ? 'done' : index === safeIndex ? 'current' : 'pending',
+    })),
   }
 }
 
-function MiniNodeCard({
-  label,
-  meta,
-  value,
-}: {
-  readonly label: string
-  readonly meta: string
-  readonly value: string
-}) {
-  return (
-    <div className="kr-agent-node-card">
-      <div className="kr-agent-node-card__head">
-        <span>{label}</span>
-        <span>{meta}</span>
-      </div>
-      <div className="kr-agent-node-card__value">{value}</div>
-    </div>
-  )
+function buildWorkflow(
+  reasoning: readonly KrActivityReasoningItem[],
+  tools: readonly ChatNode<'tool-call'>[],
+  active: boolean,
+  closing: boolean,
+): WorkflowView {
+  const names = toolNames(tools)
+  const text = reasoning.map((item) => item.text).join(' ').toLowerCase()
+  const hasResearch = names.some((name) => /search|web|grep|glob|find|browse|fetch|github/.test(name))
+    || /搜索|查找|检索|最新|热门|趋势|机票|航班|flight|github|trending/.test(text)
+  const hasMutation = names.some((name) => /write|edit|patch|bash|pwsh|shell|terminal|run_code/.test(name))
+  const hasCompare = /比较|对比|筛选|评估|推荐|候选|方案|整理|总结|汇总/.test(text)
+  const runningSearch = names.some((name) => /search|web|grep|glob|find|browse|fetch/.test(name))
+    && tools.some((node) => { try { return isRunning(node.data.root) } catch { return false } })
+  const runningMutation = names.some((name) => /write|edit|patch|bash|pwsh|shell|terminal|run_code/.test(name))
+    && tools.some((node) => { try { return isRunning(node.data.root) } catch { return false } })
+
+  let title = '本轮任务'
+  if (/机票|航班|flight|航空/.test(text)) title = '机票任务'
+  else if (/github|git.*热门|git.*趋势|trending|仓库|项目/.test(text)) title = 'Git 项目调研'
+  else if (/修复|bug|测试|代码/.test(text)) title = '代码任务'
+  else if (/构建|部署|发布/.test(text)) title = '项目构建'
+
+  if (hasMutation) {
+    const locateDone = names.some((name) => /read|grep|glob|find|search/.test(name))
+    const verifyDone = names.some((name) => /read|bash|pwsh|shell|terminal|run_code/.test(name)) && !runningMutation
+    const currentIndex = closing ? 3 : runningMutation ? 2 : verifyDone ? 3 : locateDone ? 2 : 1
+    return makeWorkflow(title, ['明确目标', '定位内容', '执行修改', '检查结果'], [
+      reasoning.length > 0 ? '目标已明确' : '正在理解目标',
+      locateDone ? '已定位相关文件' : '准备定位内容',
+      runningMutation ? '正在执行修改' : '准备执行修改',
+      verifyDone ? '结果已检查' : '等待检查结果',
+    ], currentIndex)
+  }
+
+  if (hasResearch) {
+    const currentIndex = closing ? 3 : runningSearch ? 1 : hasSearch ? 2 : hasCompare ? 2 : active ? 0 : 3
+    const isFlight = /机票|航班|flight|航空/.test(text)
+    const isGit = /github|git.*热门|git.*趋势|trending/.test(text)
+    const labels = isFlight
+      ? ['确认行程', '搜索航班', '比较方案', '整理推荐']
+      : isGit
+        ? ['确认条件', '搜索项目', '筛选热门', '整理结论']
+        : ['明确需求', '查找信息', '比较筛选', '整理结果']
+    const details = isFlight
+      ? [
+          reasoning.length > 0 ? '行程需求已明确' : '正在确认行程需求',
+          runningSearch ? '正在搜索航班' : '已整理航班信息',
+          hasCompare ? '已比较价格与时间' : '准备比较方案',
+          closing ? '正在整理推荐' : '准备整理推荐',
+        ]
+      : isGit
+        ? [
+            reasoning.length > 0 ? '筛选条件已明确' : '正在确认筛选条件',
+            runningSearch ? '正在搜索 GitHub 项目' : '已整理项目信息',
+            hasCompare ? '已按热门程度筛选' : '准备筛选热门项目',
+            closing ? '正在整理结论' : '准备整理结论',
+          ]
+        : [
+            reasoning.length > 0 ? '目标已明确' : '正在理解需求',
+            runningSearch ? '正在查找信息' : `${tools.length > 0 ? '已整理' : '等待'}信息来源`,
+            hasCompare ? '已整理候选方案' : '准备比较筛选',
+            closing ? '正在生成最终结果' : '准备交付结果',
+          ]
+    return makeWorkflow(title, labels, details, currentIndex)
+  }
+
+  const currentIndex = closing ? 2 : active ? 1 : 2
+  return makeWorkflow(title, ['明确需求', '执行任务', '整理结果'], [
+    reasoning.length > 0 ? '目标已明确' : '正在理解需求',
+    active ? '正在推进任务' : '任务已推进',
+    closing ? '正在生成最终结果' : '准备交付结果',
+  ], currentIndex)
 }
 
 function defaultAvatar() {
@@ -162,29 +236,10 @@ export const KrLiveActivityCard = memo(function KrLiveActivityCard({
     }
     return null
   }, [tools])
-  const analysisValue = useMemo(() => {
-    const latest = [...reasoning].reverse().find((item) => item.text.trim() !== '')
-    if (latest !== undefined) return compactText(latest.text)
-    return active ? '正在分析需求' : '本轮暂无分析记录'
-  }, [active, reasoning])
-  const toolValue = useMemo(() => {
-    const recent = tools.slice(-3).reverse()
-    if (recent.length === 0) return '暂未调用工具'
-    return recent.map((node) => {
-      try { return toolVerb(callName(node.data.root) || '工具') } catch { return '调用工具' }
-    }).join(' · ')
-  }, [tools])
-  const fileNames = useMemo(() => {
-    const names = new Set<string>()
-    for (const node of tools) {
-      try {
-        const name = changedFileName(node.data.root)
-        if (name !== null) names.add(name)
-      } catch { /* 未知工具形状跳过 */ }
-    }
-    return [...names]
-  }, [tools])
-  const fileValue = fileNames.length > 0 ? fileNames.slice(0, 3).join('、') : '暂无文件变更'
+  const workflow = useMemo(
+    () => buildWorkflow(reasoning, tools, active, closing),
+    [active, closing, reasoning, tools],
+  )
   const thinking = reasoning.some((item) => item.running)
   const action = closing
     ? 'Agent 正在总结'
@@ -359,14 +414,27 @@ export const KrLiveActivityCard = memo(function KrLiveActivityCard({
 
       <div className="kr-agent-mini-details" data-open={expanded || undefined} aria-hidden={!expanded}>
         <div className="kr-agent-mini-details__inner">
-          <div className="kr-agent-mini-details__head">
-            <span>关键节点</span>
-            <span>点击上方状态卡收起</span>
-          </div>
-          <div className="kr-agent-mini-details__grid">
-            <MiniNodeCard label="分析" meta={`${reasoning.length} 条思考`} value={analysisValue} />
-            <MiniNodeCard label="工具" meta={`${tools.length} 次调用`} value={toolValue} />
-            <MiniNodeCard label="文件" meta={`${fileNames.length} 个变更`} value={fileValue} />
+          <div className="kr-agent-workflow-card">
+            <div className="kr-agent-workflow-card__head">
+              <span>执行进度</span>
+              <span>{workflow.title}</span>
+            </div>
+            <div className="kr-agent-workflow-card__current">
+              <span className="kr-agent-workflow-card__current-label">当前节点</span>
+              <strong>{workflow.current}</strong>
+              <span>{workflow.stages.find((stage) => stage.status === 'current')?.detail ?? ''}</span>
+            </div>
+            <div className="kr-agent-workflow-card__steps">
+              {workflow.stages.map((stage, index) => (
+                <div className="kr-agent-workflow-step" data-status={stage.status} key={`${stage.label}:${index}`}>
+                  <span className="kr-agent-workflow-step__index">{stage.status === 'done' ? '✓' : index + 1}</span>
+                  <div className="kr-agent-workflow-step__copy">
+                    <span className="kr-agent-workflow-step__label">{stage.label}</span>
+                    <span className="kr-agent-workflow-step__detail">{stage.detail}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
