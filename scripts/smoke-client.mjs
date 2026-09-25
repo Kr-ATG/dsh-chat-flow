@@ -347,6 +347,11 @@ if (!code.includes('avatarMenuPosition') || !code.includes('.kr-agent-avatar-men
 } else {
   pass('Agent avatar menu is body-portaled with fixed positioning')
 }
+if (!code.includes('kr-agent-mini-char-in') || code.includes('kr-agent-mini-color-flow')) {
+  fail('KR Agent action must use per-character motion without the old whole-line color sweep')
+} else {
+  pass('KR Agent action uses staggered per-character motion')
+}
 
 if (styleIds.length === expectedStyles.length) {
   pass(`injected ${styleIds.length} <style> sheets (dtt__ + dts__ + tsh__ + modal + proto + diagram + download${krEnabled ? ' + kr' : ''})`)

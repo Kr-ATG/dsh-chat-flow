@@ -1766,7 +1766,9 @@ body[data-kr-resizing="true"] * {
 }
 
 .kr-agent-mini-action {
-  display: block;
+  display: flex;
+  width: max-content;
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
@@ -1774,25 +1776,19 @@ body[data-kr-resizing="true"] * {
   font-weight: 550;
   line-height: 20px;
   white-space: nowrap;
-  animation: kr-agent-mini-action-in .36s cubic-bezier(.16, 1, .3, 1) both;
 }
 
-.kr-agent-mini-copy[data-running="true"] .kr-agent-mini-action {
-  color: transparent;
-  background: linear-gradient(
-    90deg,
-    var(--dsw-alias-label-tertiary) 0%,
-    var(--dsw-alias-label-secondary) 42%,
-    var(--dsw-alias-label-tertiary) 58%,
-    var(--dsw-alias-label-tertiary) 100%
-  );
-  background-size: 220% 100%;
-  background-repeat: no-repeat;
-  -webkit-background-clip: text;
-  background-clip: text;
-  animation:
-    kr-agent-mini-action-in .36s cubic-bezier(.16, 1, .3, 1) both,
-    kr-agent-mini-color-flow 3.2s linear .36s infinite;
+.kr-agent-mini-char {
+  display: inline-block;
+  flex: 0 0 auto;
+  color: inherit;
+  white-space: pre;
+}
+
+/* 运行中按字符依次上浮显现；不再用整行灰色渐变横扫。 */
+.kr-agent-mini-copy[data-running="true"] .kr-agent-mini-char {
+  animation: kr-agent-mini-char-in .46s cubic-bezier(.2, .8, .2, 1) both;
+  animation-delay: calc(var(--kr-char-index, 0) * 34ms);
 }
 
 /* 官方 turn-process 行是固定高度且 overflow:hidden；菜单必须 portal 到 body，
@@ -1893,14 +1889,25 @@ body[data-kr-resizing="true"] * {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-@keyframes kr-agent-mini-action-in {
-  from { opacity: 0; transform: translateY(9px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes kr-agent-mini-color-flow {
-  from { background-position: 120% 0; }
-  to { background-position: -120% 0; }
+@keyframes kr-agent-mini-char-in {
+  0% {
+    opacity: 0;
+    color: var(--kr-accent);
+    filter: blur(2px);
+    transform: translateY(7px);
+  }
+  58% {
+    opacity: 1;
+    color: var(--kr-accent);
+    filter: blur(0);
+    transform: translateY(-1px);
+  }
+  100% {
+    opacity: 1;
+    color: var(--dsw-alias-label-primary);
+    filter: blur(0);
+    transform: none;
+  }
 }
 
 @keyframes kr-agent-mini-exit {
@@ -1926,7 +1933,7 @@ body[data-kr-resizing="true"] * {
 
 @media (prefers-reduced-motion: reduce) {
   .kr-agent-mini-card,
-  .kr-agent-mini-action,
+  .kr-agent-mini-char,
   .kr-agent-mini-shell[data-closing="true"][data-committed="true"],
   .kr-agent-avatar-menu,
   .kr-agent-mini-avatar__status {

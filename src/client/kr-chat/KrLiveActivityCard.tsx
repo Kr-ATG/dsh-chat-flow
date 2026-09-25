@@ -237,6 +237,7 @@ export const KrLiveActivityCard = memo(function KrLiveActivityCard({
       : thinking
         ? 'Agent 正在思考'
         : active ? 'Agent 正在分析' : 'Agent 正在整理结果'
+  const actionCharacters = useMemo(() => Array.from(action), [action])
 
   useEffect(() => {
     const onStorage = (event: StorageEvent): void => {
@@ -385,7 +386,17 @@ export const KrLiveActivityCard = memo(function KrLiveActivityCard({
         </button>
 
         <div className="kr-agent-mini-copy" data-running={active && !closing ? 'true' : undefined}>
-          <span key={action} className="kr-agent-mini-action">{action}</span>
+          <span key={action} className="kr-agent-mini-action">
+            {actionCharacters.map((character, index) => (
+              <span
+                key={`${index}-${character}`}
+                className="kr-agent-mini-char"
+                style={{ '--kr-char-index': index } as CSSProperties}
+              >
+                {character}
+              </span>
+            ))}
+          </span>
         </div>
 
         <span className="kr-agent-mini-chevron" data-open={expanded || undefined} aria-hidden>
