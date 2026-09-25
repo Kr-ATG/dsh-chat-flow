@@ -168,6 +168,38 @@ service 图上是一等公民。只调它的 API 会让两插件之间形成隐�
   换回完整工作台不需要恢复任何服务端能力。
 - 热力图格子改为可配尺寸（紧凑档 9px + 单字星期标签），52 周正好一行放进 648px 卡片。
 
+### 用量：修 compact 打不开 + 聚合 47s，加供应商/模型筛选（2026-09-26）
+
+瘦身那一版有两处必须记下来的坑，都属于「点了没反应 / 等到失去耐心」：
+
+- **compact 卡片点了完全没动静**：`PopoverShell` 的 props 解构里漏了 `anchor`，而函数体
+  里 compact 分支要拿它算定位 → `ReferenceError: anchor is not defined` → 面板被
+  `ErrorBoundary`（`fallback={null}`）静默吞掉，入口按钮还在、控制台才有痕迹。
+  **教训**：compact 这类「贴在入口旁」的浮层，定位参数一旦漏解构就是纯静默失败；
+  新增浮层形态后要单独点一遍，不能只靠「面板在不在」判断挂载成功。
+- **聚合要 47 秒**：`collectUsage` 把「没有新事件的会话」（delta 为空）判成
+  「日志被截断」，于是**每个安静会话每轮都从头重读自己的完整日志**。本机 1194 个
+  persisted 会话 → 每轮全量重读。空 delta 不携带截断信息，真正的截断能从
+  「有新事件但 seq 接不上」认出来。修完冷聚合 **47.11s → 0.79s**。
+
+在此之上把聚合彻底移出请求路径：**stale-while-revalidate**（有旧快照就立刻返回，
+刷新丢后台；只有 `?refresh=1` 才同步等）+ 一个自paced后台循环（启动预热，间隔
+`clamp(2 × 上一轮耗时, 30s, 5min)`——语料便宜就保持新鲜，贵就自己退避而不是排队）。
+面板打开因此恒为毫秒级（实测 **0.007s**）。
+
+同时补上查询维度：
+
+- **供应商 / 模型级联下拉**（`ScopeFilter`）：供应商取 model id 第一段斜杠前的部分
+  （`provider/model`，且 provider 段内还可能有斜杠，如 `openrouter/stealth/ox-alpha`）；
+  选项按 token 降序、带搜索框与滚动，浮层 portal 到 body 以避开卡片 `overflow:hidden`
+  的裁切。筛选贯穿四格汇总、52 周热力与当日明细；`cacheHitRate` 按 host 口径重算
+  （`cacheRead / (input + cacheRead + cacheWrite)`，一位小数），否则筛出来的值和
+  全量对不上会被当成 bug。
+- **筛选态下摘掉「调用次数」指标**：host 的 models 项不带调用次数，按模型拆不出来，
+  归零后热力图会是一片全空的格子。
+- 刷新按钮真正走 `?refresh=1`（之前只是重新拉一次，拿到的是同一份旧快照）；
+  卡片高度改两档定值（414 / 560），消掉下半截约 200px 空白与内容溢出。
+
 ### 一个被实测证伪的假设
 
 原以为 `@deepseek-ai/dsh-util-crypto` 可以像 dsh-triad 那样留在 allowlist 里（它有
