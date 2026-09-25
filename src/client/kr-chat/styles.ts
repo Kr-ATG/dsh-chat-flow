@@ -1474,9 +1474,10 @@ body[data-kr-resizing="true"] * {
   width: min(440px, 100%);
   min-height: 50px;
   padding: 7px 14px 7px 7px;
-  border: 1px solid var(--kr-card-border);
-  border-radius: 10px;
-  background: var(--dsh-flow-veil, color-mix(in srgb, var(--dsw-alias-label-primary) 3.5%, transparent));
+  border: 1px solid var(--dsw-alias-border-l3, rgba(127, 127, 127, .16));
+  border-radius: 14px;
+  background: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(15, 17, 21, .04), 0 8px 24px -18px rgba(15, 17, 21, .28);
   cursor: pointer;
   transform-origin: 0 50%;
   animation: kr-agent-mini-in .38s cubic-bezier(.16, 1, .3, 1) both;
@@ -1571,11 +1572,13 @@ body[data-kr-resizing="true"] * {
 }
 
 .kr-agent-node-card {
+  position: relative;
   min-width: 0;
-  border: 1px solid color-mix(in srgb, var(--kr-card-border) 82%, transparent);
-  border-radius: 8px;
-  padding: 8px 9px 9px;
-  background: color-mix(in srgb, var(--dsw-alias-label-primary) 2%, transparent);
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l3, rgba(127, 127, 127, .16));
+  border-radius: 14px;
+  background: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(15, 17, 21, .04), 0 8px 24px -18px rgba(15, 17, 21, .28);
 }
 
 .kr-agent-node-card__head {
@@ -1583,13 +1586,15 @@ body[data-kr-resizing="true"] * {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+  border-bottom: 1px solid var(--dsw-alias-border-l3, rgba(127, 127, 127, .12));
+  padding: 10px 12px 8px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 9.5px;
   line-height: 14px;
 }
 
 .kr-agent-node-card__head span:first-child {
-  color: var(--kr-accent);
+  color: var(--dsw-alias-label-secondary);
   font-size: 10.5px;
   font-weight: 600;
 }
@@ -1602,9 +1607,10 @@ body[data-kr-resizing="true"] * {
 
 .kr-agent-node-card__value {
   display: -webkit-box;
-  min-height: 32px;
-  margin-top: 4px;
+  min-height: 38px;
+  margin: 0;
   overflow: hidden;
+  padding: 11px 12px 12px;
   color: var(--dsw-alias-label-secondary);
   font-size: 11px;
   line-height: 16px;
