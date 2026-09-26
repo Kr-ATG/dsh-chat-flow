@@ -95,7 +95,7 @@ async function walkSkillDir(dir, prefix, out) {
   for (const entry of entries) {
     const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
     if (entry.isDirectory()) await walkSkillDir(join(dir, entry.name), rel, out);
-    else out.push(rel);
+    else if (entry.name !== BUNDLED_STAMP) out.push(rel);
   }
 }
 
@@ -117,8 +117,31 @@ async function readSkillMeta(root, dir) {
     compatibility: typeof fields.compatibility === "string" ? fields.compatibility : "",
     fileCount: files.length,
     files: files.slice(0, 200),
-    root: rootLabel(root)
+    root: rootLabel(root),
+    // 内置标记（dsh-chat-plus patch）：面板据此显示「内置」徽章并禁用删除。
+    builtin: await isBundledSkillDir(root, dir)
   };
+}
+/**
+ * 插件内置技能的标记文件（dsh-chat-plus patch）。
+ *
+ * 由 `src/triad/bundled-skills.ts` 在物化内置技能时写入：内置技能被同步到
+ * `~/.dsh/skills/<name>/` 后，目录里除了技能内容还多这一个 stamp，记录
+ * 「这个目录归 dsh-chat-plus 管」以及当初装进去的内容 hash。
+ *
+ * 面板靠它区分「用户自己放的技能」（可删）与「插件随包分发的技能」
+ * （不可删，删了启动时会自己回来）。这里刻意不 import 那个模块——
+ * vendor 半身是 vendored 的独立 JS，跨目录 import 会把 TS 依赖拖进来。
+ */
+var BUNDLED_STAMP = ".dsh-chat-plus-bundled.json";
+/** 目录是否为本插件物化的内置技能。 */
+async function isBundledSkillDir(root, dir) {
+  try {
+    await stat(join(root, dir, BUNDLED_STAMP));
+    return true;
+  } catch {
+    return false;
+  }
 }
 function rootLabel(root) {
   if (root === managedRoot()) return "agents";
@@ -604,6 +627,11 @@ async function deleteSkill(skillName) {
     for (const dir of entries) {
       const meta = await readSkillMeta(root, dir);
       if (dir !== name2 && (meta === void 0 || meta.name !== name2)) continue;
+      // 内置技能拒绝删除（dsh-chat-plus patch）：它由插件随包分发，删掉
+      // 下次启动就会原样装回来。与其让用户删了又莫名重现，不如当场说清。
+      if (meta !== void 0 && meta.builtin === true) {
+        throw new Error(`「${meta.name}」是 dsh-chat-plus 内置技能，不可删除`);
+      }
       try {
         await rm(join(root, dir), { recursive: true, force: true });
       } catch {

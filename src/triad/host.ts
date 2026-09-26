@@ -38,6 +38,7 @@ import { apply as applySkillToggles } from './skill-toggles.js'
 import { applySkillHealth } from './skill-health.js'
 import { applyMcpRecommended } from './mcp-recommended.js'
 import { applyMcpStatus } from './mcp-status.js'
+import { installBundledSkills } from './bundled-skills.js'
 import type { MemoryConfig } from './memory/types.js'
 
 /**
@@ -87,6 +88,20 @@ export function resolveConfig(config: TriadConfig = {}): {
  */
 export async function applyTriadHost(ctx: Context, config: TriadConfig = {}): Promise<void> {
   const resolved = resolveConfig(config)
+
+  // ── 内置技能物化（最先行） ──────────────────────────────────────────
+  // 必须早于下面所有模块：技能要被装进 `~/.dsh/skills` 才会被 DSH 的
+  // skill-filesystem provider 扫到，而技能面板列的就是这个目录。放在
+  // 面板/开关之后装，面板会先渲染出一个"技能不存在"的空态再刷新。
+  // 纯文件操作、不依赖任何 ctx service，失败只 warn（内置技能装不上不该
+  // 拖垮记忆引擎与自动化）。
+  try {
+    await installBundledSkills(ctx.logger)
+  } catch (error) {
+    ctx.logger?.warn?.(
+      `[dsh-chat-plus] bundled skills install failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 
   // ── 记忆引擎 ────────────────────────────────────────────────────────
   try {

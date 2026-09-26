@@ -43,6 +43,11 @@ interface SkillInfo {
   compatibility?: string
   /** 技能目录名：与 name 可以不一致（手工拷目录、改名导入），删除/查看走它。 */
   dir?: string
+  /**
+   * 是否为 dsh-chat-plus 随包分发的内置技能（host 靠目录里的 stamp 判定）。
+   * 内置技能标「内置」且禁用删除——它由插件版本决定，删了启动时会原样装回。
+   */
+  builtin?: boolean
 }
 
 interface BundleInfo {
@@ -73,6 +78,7 @@ const SKILL_ZH: Record<string, string> = {
   error: '暂时无法读取技能。', retry: '重试',
   uploadHint: '拖入技能文件夹安装，或点击选择', uploadMeta: '{n} 个文件 · {folder}',
   fileCount: '{n} 文件', expandSkillFiles: '展开技能文件', previewLoading: '正在加载内容…', viewSkillFiles: '查看技能文件', viewerNav: '技能文件', viewerFont: '字号', viewerSmall: '小字号', viewerNormal: '标准字号', viewerLarge: '大字号', viewerFull: '全屏查看', viewerExitFull: '退出全屏', viewerFilesCount: '{n} 个文件', assignToBundle: '归入 Bundle', assignTitle: '将「{name}」归入', assignEmpty: '还没有技能包,先点「新建 Bundle」创建一个。', deleteSkillBtn: '删除技能',
+  builtinTag: '内置', builtinNotDeletable: '内置技能，随 dsh-chat-plus 分发，不可删除',
   installName: '技能名称', installNamePlaceholder: '例如 my-skill', installDescription: '描述（可选）',
   installNameFromArchive: '技能名取自压缩包内的 SKILL.md',
   installNameInvalid: '技能名只能包含小写字母、数字和连字符（a-z 0-9 -）',
@@ -2210,6 +2216,7 @@ const css = {
   bundleMissingBtn: 'skm-bundle-missing-btn',
   installHint: 'skm-install-hint',
   tagStatus: 'skm-tag-status',
+  tagBuiltin: 'skm-tag-builtin',
 }
 
 const STYLE_ID = 'dsh-skill-manager-styles'
@@ -2341,6 +2348,9 @@ const SHEET = `
 .skm-skill-card[data-off='true'] .skm-skill-card-desc{color:var(--dsw-alias-label-quaternary,#a5aab2)}
 .skm-skill-badge,.skm-skill-title{transition:color 220ms ease}
 .skm-tag-status{background:transparent;border:1px dashed var(--dsw-alias-border-l2,rgba(0,0,0,.18));color:var(--dsw-alias-label-tertiary,#81858c)}
+/* 内置技能徽章：与「关」标签的虚线框刻意反着来——实心底 + 主色描边，
+   一眼区别于用户自己装的技能。 */
+.skm-tag-builtin{background:color-mix(in srgb,var(--dsw-alias-state-business-primary,#3d6be5) 12%,transparent);border:1px solid color-mix(in srgb,var(--dsw-alias-state-business-primary,#3d6be5) 34%,transparent);color:var(--dsw-alias-state-business-primary,#3d6be5)}
 .skm-skill-meta{margin-left:auto;flex:none;font-size:12px;line-height:17px;color:var(--dsw-alias-label-caption,#adb2b8);white-space:nowrap}
 .skm-skill-card-foot{display:flex;align-items:center;gap:6px;margin:12px -16px 0;padding:8px 14px 8px 16px;border-top:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.06))}
 .skm-skill-foot-label{flex:none;font-size:12px;line-height:17px;color:var(--dsw-alias-label-caption,#adb2b8)}
@@ -2350,6 +2360,10 @@ const SHEET = `
 .skm-skill-foot-icon:disabled{opacity:.38;cursor:default}
 .skm-skill-foot-icon:disabled:hover{background:transparent;color:var(--dsw-alias-label-secondary,#61666b);transform:none}
 .skm-skill-foot-icon-danger:hover{background:#fdebeb;color:var(--dsw-alias-state-error-primary,#e0434b)}
+/* 内置技能的删除按钮：置灰 + 禁指针。hover 的红底一并压掉，否则鼠标停在
+   一个点不动的按钮上还会亮危险色，比不禁用更误导。 */
+.skm-skill-foot-icon:disabled{cursor:not-allowed;opacity:.32;transform:none}
+.skm-skill-foot-icon:disabled:hover{background:transparent;color:var(--dsw-alias-label-secondary,#61666b)}
 .skm-skill-card-actions{margin-left:auto;display:flex;align-items:center;gap:4px}
 
 /* ── Skills Hub 页面骨架：左栏（分类/筛选/添加） / 统计行 / 工具栏 / tabs / 分组 / 卡片 ── */
@@ -3435,6 +3449,7 @@ function SkillCard({ skill, bundleId, bundleName, enabled, lockedReason, scopeLa
       <div className={css.skillTags}>
         <span className={`${css.tag} ${css.tagSource}`}>{bundleName ?? skillT('tagLoose')}</span>
         <span className={`${css.tag} ${css.tagScope}`} data-off={enabled ? undefined : 'true'}>{scopeLabel}</span>
+        {skill.builtin === true && <span className={`${css.tag} ${css.tagBuiltin}`}>{skillT('builtinTag')}</span>}
         {!enabled && <span className={`${css.tag} ${css.tagStatus}`}>{skillT('skillOffTag')}</span>}
         <span className={css.skillMeta}>{skillT('fileCount', { n: fileMeta })}</span>
       </div>
@@ -3468,9 +3483,10 @@ function SkillCard({ skill, bundleId, bundleName, enabled, lockedReason, scopeLa
               </button>
             </Tooltip>
           )}
-          <Tooltip label={skillT('deleteSkillBtn')} side="bottom" delayMs={500}>
+          <Tooltip label={skill.builtin === true ? skillT('builtinNotDeletable') : skillT('deleteSkillBtn')} side="bottom" delayMs={500}>
             <button type="button" className={`${css.skillFootIcon} ${css.skillFootIconDanger}`}
-              aria-label={skillT('deleteSkillBtn')} title={skillT('deleteSkillBtn')}
+              aria-label={skillT('deleteSkillBtn')} title={skill.builtin === true ? skillT('builtinNotDeletable') : skillT('deleteSkillBtn')}
+              disabled={skill.builtin === true}
               onClick={() => { onDelete?.(skill) }}>
               <IconTrashOutline16 size={14} aria-hidden="true" />
             </button>
