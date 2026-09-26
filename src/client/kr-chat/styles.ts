@@ -229,8 +229,10 @@ body[data-ds-dark-theme] .kr-split__side {
   display: flex;
   flex-direction: column;
   /* 大盘不再刷自己的底色（--kr-canvas-bg = transparent）：底色透出主对话区，
-     卡片靠自身投影浮在这层底色上。栏位边界仍留一根发丝分隔线。 */
-  border-left: 1px solid var(--kr-hairline);
+     卡片靠自身投影浮在这层底色上。左边缘的分隔线也一并去掉 —— 底色既然透出，
+     那根线就成了唯一还把右栏「框住」的东西，卡片阴影已经足够声明栏位；
+     留着它反而是「透明层 + 一条框线」这种自相矛盾的画法。
+     栏位边界改由两件事承担：卡片自身的投影，以及 hover 才亮起来的拖拽手柄。 */
   background: var(--kr-canvas-bg);
   position: relative;
   z-index: 10;
@@ -250,7 +252,8 @@ body[data-kr-resizing="true"] * {
   cursor: col-resize !important;
 }
 
-/* 左边缘拖拽手柄：宽 7px 的命中区，视觉上只有 1px 发丝线加粗一下。
+/* 左边缘拖拽手柄：宽 7px 的命中区。分隔线去掉后它是右栏唯一剩下的边界线索，
+   所以常态透明、悬停/拖拽才亮一条竖线 —— 平时干净，需要时又找得到。
    absolute 覆盖在容器左边缘上（容器 overflow:hidden 已裁剪），不参与 flex。 */
 .kr-panel__resize-handle {
   position: absolute;
@@ -271,11 +274,16 @@ body[data-kr-resizing="true"] * {
   left: 3px;
   width: 1px;
   background: transparent;
-  transition: background 0.15s ease;
+  opacity: 0;
+  transform: scaleY(0.4);
+  transform-origin: 50% 50%;
+  transition: background 0.18s ease, opacity 0.18s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .kr-panel__resize-handle:hover::before,
 .kr-split__side[data-dragging="true"] .kr-panel__resize-handle::before {
   background: var(--kr-accent);
+  opacity: 1;
+  transform: scaleY(1);
 }
 
 /* 全屏态铺满整个 split：无投影，此规则保留作显式声明，
