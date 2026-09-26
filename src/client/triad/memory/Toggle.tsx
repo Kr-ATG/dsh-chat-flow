@@ -39,6 +39,9 @@ function toState(res: InjectStateView): InjectStateView {
     explicit: res.explicit === true,
     // 缺字段按 true 兜底：中文通道是内置能力，默认就该开着。
     zhEnabled: res.zhEnabled !== false,
+    // 缺字段按 false 兜底：diagram 通道默认关，且缺字段意味着旧 host 根本没
+    // 这个能力——显示「关」比显示「开」诚实（显示开着却注不进去是假阳性）。
+    diagramEnabled: res.diagramEnabled === true,
   }
 }
 
@@ -52,7 +55,7 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
   apiRef.current = api
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const hideTimer = useRef<number | null>(null)
-  const [state, setState] = useState<InjectStateView>({ enabled: true, defaultEnabled: true, explicit: false, zhEnabled: true })
+  const [state, setState] = useState<InjectStateView>({ enabled: true, defaultEnabled: true, explicit: false, zhEnabled: true, diagramEnabled: false })
   const [open, setOpen] = useState(false)
   // 钉住（点击后悬停移出也不收）。pinnedRef 供 120ms 收起计时器闭包读取，
   // 避免计时器读到调度时的过期值。
@@ -64,7 +67,7 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
   const reload = useCallback((): void => {
     void apiRef.current.getInjectState(sessionId)
       .then(res => { setState(toState(res)) })
-      .catch(() => { setState({ enabled: true, defaultEnabled: true, explicit: false, zhEnabled: true }) })
+      .catch(() => { setState({ enabled: true, defaultEnabled: true, explicit: false, zhEnabled: true, diagramEnabled: false }) })
   }, [sessionId])
 
   useEffect(() => { reload() }, [reload])
@@ -82,6 +85,7 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
           explicit: next === null ? false : (typeof res.explicit === 'boolean' ? res.explicit : true),
           // 同样要透传：这两个 setter 只该动自己的字段，写整个对象会把它抹掉。
           zhEnabled: typeof res.zhEnabled === 'boolean' ? res.zhEnabled : prev.zhEnabled,
+          diagramEnabled: typeof res.diagramEnabled === 'boolean' ? res.diagramEnabled : prev.diagramEnabled,
         }))
       })
       .catch(reload)
@@ -106,6 +110,7 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
           defaultEnabled: typeof res.defaultEnabled === 'boolean' ? res.defaultEnabled : prev.defaultEnabled,
           explicit: typeof res.explicit === 'boolean' ? res.explicit : prev.explicit,
           zhEnabled: typeof res.zhEnabled === 'boolean' ? res.zhEnabled : prev.zhEnabled,
+          diagramEnabled: typeof res.diagramEnabled === 'boolean' ? res.diagramEnabled : prev.diagramEnabled,
         }))
       })
       .catch(() => undefined)
@@ -123,6 +128,21 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
     setState(prev => ({ ...prev, zhEnabled: next }))
     void apiRef.current.setZhInjectState(next)
       .then(res => { setState(prev => ({ ...prev, zhEnabled: res.enabled !== false })) })
+      .catch(reload)
+      .finally(() => { setBusy(false) })
+  }, [reload])
+
+  /**
+   * 写对话内流程图规范通道开关（全局单值，与上面三个开关零联动）。
+   *
+   * 乐观更新 + 失败回读，与 pushZh 同款：host 半身未重启时新路由不存在，
+   * 写入会失败，此时 UI 必须诚实地弹回真实状态，而不是挂一个假的「已开启」。
+   */
+  const pushDiagram = useCallback((next: boolean): void => {
+    setBusy(true)
+    setState(prev => ({ ...prev, diagramEnabled: next }))
+    void apiRef.current.setDiagramInjectState(next)
+      .then(res => { setState(prev => ({ ...prev, diagramEnabled: res.enabled === true })) })
       .catch(reload)
       .finally(() => { setBusy(false) })
   }, [reload])
@@ -185,6 +205,7 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
   const explicit = state.explicit === true
   // 中文通道独立于上面三个，纯读自己的字段。
   const zhOn = state.zhEnabled !== false
+  const diagramOn = state.diagramEnabled === true
   const button = (
     <button
       type="button"
@@ -230,6 +251,23 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
             onClick={() => { pushZh(!zhOn) }}
           />
         </div>
+        <div className={diagramOn ? `${css.zhRow} ${css.zhRowOn}` : css.zhRow}>
+          <span className={css.zhMain}>
+            <span className={css.zhLabel}>
+              {t('diagramInjectLabel')}
+              <span className={css.zhBuiltin}>{t('diagramInjectBuiltin')}</span>
+            </span>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={diagramOn}
+            aria-label={t('diagramInjectLabel')}
+            disabled={busy}
+            className={css.switch}
+            onClick={() => { pushDiagram(!diagramOn) }}
+          />
+        </div>
         <div className={css.injectDivider} />
         <div className={css.injectRow}>
           <span className={css.injectMain}>
@@ -270,6 +308,7 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
         )}
         <p className={css.injectFoot}>{t('injectCardFoot')}</p>
         <p className={css.zhFoot}>{t('zhInjectHint')}</p>
+        <p className={css.zhFoot}>{t('diagramInjectHint')}</p>
       </div>
     </div>
   )

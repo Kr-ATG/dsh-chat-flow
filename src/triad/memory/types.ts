@@ -101,6 +101,13 @@ export interface StoreState {
    * 时，中文偏好记忆仍会单独注入。缺省 = 跟随 config.zhInjectDefaultEnabled。
    */
   zhInjectEnabled?: boolean
+  /**
+   * 对话内流程图（diagram 围栏）能力规范注入开关（全局单值，三态缺省）。
+   * 与 zh 通道同一范式：主注入关闭、项目被设为「不注入」时仍单独注入。
+   * 缺省 = 跟随 config.diagramInjectDefaultEnabled（默认关——它是锦上添花的
+   * 呈现能力，不是语言契约，不该每个会话白烧一份常驻 token）。
+   */
+  diagramInjectEnabled?: boolean
 }
 
 /** 单个会话的 ticker 状态。 */
@@ -188,6 +195,18 @@ export interface MemoryConfig {
    * message。该能力硬编码在插件内，不提供卸载/移除入口——只有这个开关。
    */
   zhInjectDefaultEnabled: boolean
+  /**
+   * 对话内流程图能力规范注入默认开关（内置能力，默认关）。
+   *
+   * 与 zhInjectDefaultEnabled 同构：内置于插件、无卸载路径，只有这一个开关。
+   * 打开后每个会话首步注入一条内置 user message，告诉模型本客户端的
+   * `diagram` 围栏 JSON 规范（flowchart 语法与全部硬限制），使模型能自动
+   * 在对话里画出 SVG 流程图卡片。关着时模型完全不知道这个围栏存在。
+   *
+   * 默认关的理由：它只影响「要不要额外渲染一张图」，不影响任务正确性；
+   * 而规则文本约 1KB，每会话常驻首轮，开销换不回对等收益。
+   */
+  diagramInjectDefaultEnabled: boolean
   /** 注入检索 top-k（当前任务相关记忆注入条数；identity/pinned/长期常驻不占此预算）。 */
   injectTopK: number
   /** 全局条目数上限（超限按 importance + recency 淘汰低分条目）。 */
@@ -239,6 +258,7 @@ export const DEFAULT_CONFIG: MemoryConfig = {
   logApiRequests: false,
   injectDefaultEnabled: true,
   zhInjectDefaultEnabled: true,
+  diagramInjectDefaultEnabled: false,
   injectTopK: 8,
   entryLimit: 500,
   pruneNeverHitDays: 21,
@@ -330,7 +350,7 @@ export type ConfigNumberKey = keyof typeof CONFIG_NUMBER_BOUNDS
 
 const CONFIG_NUMBER_KEYS = Object.keys(CONFIG_NUMBER_BOUNDS) as ConfigNumberKey[]
 
-const CONFIG_BOOLEAN_KEYS = ['dailyCompileEnabled', 'consolidateEnabled', 'logApiRequests', 'injectDefaultEnabled', 'zhInjectDefaultEnabled'] as const
+const CONFIG_BOOLEAN_KEYS = ['dailyCompileEnabled', 'consolidateEnabled', 'logApiRequests', 'injectDefaultEnabled', 'zhInjectDefaultEnabled', 'diagramInjectDefaultEnabled'] as const
 
 /** 可调布尔字段名。 */
 export type ConfigBooleanKey = (typeof CONFIG_BOOLEAN_KEYS)[number]

@@ -54,6 +54,12 @@ diagram 围栏放 JSON（坐标 /4 网格，节点 ≤9、边 ≤12，非法结�
 
 shape 三选一 oval / rect / diamond，pts 为完整折线点（含起终点，圆角自动倒）。size 缺省 full，紧凑版设 "size": "compact"（去副标签和图例，矮四成）。卡片右上角另有“紧 / 标 / 大”切换，看图的人可随时改比例（放大横向滚动）。视口自动贴合内容宽度，窄图不留两侧空白。
 
+**模型怎么知道这个围栏**：靠记忆注入的第三条内置通道 `DIAGRAM_INJECTION_RULE`，与「中文偏好记忆」同构（独立 user message、走 `agent/pre-step`、位置刻意在「项目排除 + 主注入开关」两道闸门之前、每会话只注首步）。开关在 composer 记忆注入悬浮卡片里「中文优先」下方一行「对话内流程图」，标「内置」，**默认关**——它是锦上添花的呈现能力而非语言契约，不该每个会话白烧约 1KB 常驻 token。关着时模型完全不知道这个围栏存在。
+
+配置面：`state.diagramInjectEnabled`（面板落盘）/ `config.diagramInjectDefaultEnabled`（`cordis.patch.yml` 覆盖）。路由 `GET|POST /api/dsh-memory/diagram-inject-state`，状态随 `/inject-state` 回包顺带返回（不新开 GET 端点，避免放大 composer 的既有轮询量）。
+
+> 卡片只在 **「KR对话」视图**渲染，普通「对话」视图里同一个围栏会原样显示成代码块（`pluginRenders = !KR_CHAT_ENABLED || isKrMode`）。与通用 `diagram-design` 技能（产独立 HTML）始终是两套格式，没有打通。
+
 ## 可交互卡片（proto-tabs）
 
 总结时想放可点卡片，正文里加一个围栏（JSON，tabs 最多 4 个，minis 每 Tab 最多 4 条）：

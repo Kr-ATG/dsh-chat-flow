@@ -90,6 +90,48 @@ const ZH_INJECTION_RULE = [
 /** 中文通道的注入预算：只投 preference/identity 子集，给多了纯浪费。 */
 const ZH_INJECTION_BUDGET = 1500
 
+/**
+ * 对话内流程图（diagram 围栏）能力规范注入文本。
+ *
+ * 为什么需要它：客户端的 `splitDiagram()` 会拦截正文里的 ```diagram 围栏并
+ * 渲染成 SVG 卡片，但**模型默认完全不知道这个围栏存在**——渲染器、样式、
+ * README 全在，指令侧是空的。这是「有渲染器、没接线」的典型缺口。
+ *
+ * 与 zh 通道的差异：zh 投的是记忆条目（动态检索 + 预算截断），这里投的是一段
+ * 纯静态规范文本，不读条目、不做检索、不参与命中加分——它是能力声明，不是记忆。
+ *
+ * 措辞刻意写清「非法静默回退」：模型对 JSON 围栏的容错直觉很强，但本解析器
+ * 遇到非法结构不报错、直接把围栏当普通代码块显示。不知道这点，模型会以为出图
+ * 失败然后重试越修越乱。
+ */
+const DIAGRAM_INJECTION_RULE = [
+  '【对话内流程图 · 内置通道】本客户端的对话流会把 ```diagram 代码围栏渲染成可交互的 SVG 流程图卡片。',
+  '需要画流程图时输出下面这种围栏（内容为单行 JSON）。不要用 mermaid——mermaid 只在对话截图里被渲染，对话流里始终是代码块。',
+  '',
+  '格式：{"type":"flowchart","title":"标题","desc":"一句话","size":"full","nodes":[…],"edges":[…]}',
+  '',
+  'nodes（1–9 个）：{"id":"唯一标识","shape":"oval|rect|diamond","x":0,"y":0,"w":160,"h":48,"name":"主标签","sub":"副标签","focal":false}',
+  '  · shape：oval=起止，rect=步骤，diamond=判断（最多 3 个出口）。形状承担类型，颜色不承担。',
+  '  · 坐标：x∈[0,800]、y∈[0,1000]，建议对齐 4 的网格；w∈[40,400]、h∈[32,200]。',
+  '  · name ≤14 字，sub ≤24 字（compact 模式不渲染 sub）。',
+  '  · focal=true 走品牌橙高亮，整图最多用一个，标在主干或最关键的那个节点上。',
+  '',
+  'edges（0–12 条）：每条由两端节点 id、分支文字、高亮开关、折线点数组四个字段组成——',
+  '  字段名依次是 from（起点节点 id）、to（终点节点 id）、label（分支文字，≤8 字）、accent（是否橙色高亮）、pts（[[x,y],[x,y]] 这样的点数组）。',
+  '  · pts 是完整折线点，必须含起点与终点、2–8 个点、坐标为数字；拐角圆角由渲染器自动倒，label 画在水平边中点。',
+  '  · 流向自上而下；判断分支一律要标 label（如「是」「否」「超限」），未标分支的判断图是反模式。',
+  '  · accent=true 的连线是橙箭头：只标主干或最关键的那条分支，不要每条都标。',
+  '',
+  '硬性约束（违反会**静默回退成代码块**，不报错、也不会告诉你失败）：',
+  '  · type 必须是 "flowchart"；节点 id 不得重复；edges 的 from/to 必须是已声明的节点 id。',
+  '  · 节点 ≤9、边 ≤12。图复杂了就别硬塞——用文字或表格说清楚，或改用 mermaid。',
+  '  · 一条回复里最多一个 diagram 围栏。',
+  '',
+  '两条纪律：',
+  '  · 图是补充不是正文：先给文字结论或步骤清单，再决定要不要附一张图，不要为画图而画图。',
+  '  · 该围栏只在「KR对话」视图渲染，普通「对话」视图里会原样显示成代码块。你无法确知当前处于哪个视图——若这次任务明确要出图供人阅读，优先用 mermaid（截图能出真图）。',
+].join('\n')
+
 /** 创建注入器。 */
 export function createMemoryInjector(
   store: MemoryStore,
@@ -106,6 +148,12 @@ export function createMemoryInjector(
    * 提前 return，来不及置位，反而是中文通道把它占了。两边各记各的。
    */
   const zhStepCounters = new Map<string, number>()
+
+  /**
+   * diagram 通道的每会话 step 计数，理由同 zhStepCounters——三条内置通道各记
+   * 各的，共用一个 Map 会互相抢占首步名额。
+   */
+  const diagramStepCounters = new Map<string, number>()
 
   async function buildMemoryBlock(
     agent: PreStepAgent,
@@ -211,6 +259,31 @@ export function createMemoryInjector(
       }
     }
 
+    // ── 对话内流程图能力规范注入（内置通道） ──────────────────────────
+    // 位置同样刻意：两道闸门之前，与中文通道并列。它回答的是「本客户端支持
+    // 什么呈现能力」，跟「记忆库要不要进上下文」正交。
+    const diagramEnabled = await store.isDiagramInjectEnabled(config.diagramInjectDefaultEnabled !== false)
+    if (!diagramEnabled) {
+      logger?.debug?.('[dsh-memory] diagram injection off (switch disabled)')
+    } else if (!diagramStepCounters.has(sessionId)) {
+      diagramStepCounters.set(sessionId, 1)
+      try {
+        messages = [...messages, createUserMessage({
+          content: [{ type: 'text', text: DIAGRAM_INJECTION_RULE }],
+          source: {
+            kind: 'plugin:dsh-memory',
+            plugin: 'dsh-memory',
+            form: 'snapshot',
+            sections: [{ name: '对话内流程图', text: DIAGRAM_INJECTION_RULE }],
+          },
+        })]
+        logger?.debug?.('[dsh-memory] diagram injection ok')
+      } catch (error) {
+        // 失败绝不能影响主注入与中文通道。
+        logger?.warn?.(`[dsh-memory] diagram injection failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
     // 项目注入排除：被排除的工作区里，会话不注入**记忆库条目**（用户在面板
     // 项目上下文条里按项目关闭注入）。判定在会话级开关之前——排除是项目级
     // 硬闸，会话级开关管不到它。注意这不再影响上面已产出的中文块。
@@ -264,6 +337,7 @@ export function createMemoryInjector(
     disposeSession: (sessionId: string) => {
       stepCounters.delete(sessionId)
       zhStepCounters.delete(sessionId)
+      diagramStepCounters.delete(sessionId)
     },
   }
 }

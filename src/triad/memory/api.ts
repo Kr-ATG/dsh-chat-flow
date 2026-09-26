@@ -263,7 +263,9 @@ async function handle(
       // /inject-state（历史上打过一分钟 498 次的请求风暴），再加一个独立
       // GET 端点等于把翻倍的轮询量固化下来。合并回包，零新增请求。
       const zhEnabled = await store.isZhInjectEnabled(config.zhInjectDefaultEnabled !== false)
-      json(res, 200, { enabled: explicit ?? defaultEnabled, defaultEnabled, explicit, zhEnabled })
+      // diagram 同理并进回包：新开一个 GET 端点等于把翻倍的轮询量固化下来。
+      const diagramEnabled = await store.isDiagramInjectEnabled(config.diagramInjectDefaultEnabled !== false)
+      json(res, 200, { enabled: explicit ?? defaultEnabled, defaultEnabled, explicit, zhEnabled, diagramEnabled })
       return
     }
     if (method === 'POST' && rest === '/inject-state') {
@@ -289,6 +291,21 @@ async function handle(
       const body = await readBody(req) as Record<string, unknown>
       const enabled = body.enabled !== false
       await store.setZhInjectEnabled(enabled)
+      json(res, 200, { ok: true, enabled, builtin: true })
+      return
+    }
+
+    // ── 对话内流程图规范注入开关（内置能力，全局单值） ─────────────────
+    // 与 zh 端点同构，builtin:true 恒定——同样硬编码在插件里，无卸载入口。
+    if (method === 'GET' && rest === '/diagram-inject-state') {
+      const enabled = await store.isDiagramInjectEnabled(config.diagramInjectDefaultEnabled !== false)
+      json(res, 200, { enabled, builtin: true })
+      return
+    }
+    if (method === 'POST' && rest === '/diagram-inject-state') {
+      const body = await readBody(req) as Record<string, unknown>
+      const enabled = body.enabled !== false
+      await store.setDiagramInjectEnabled(enabled)
       json(res, 200, { ok: true, enabled, builtin: true })
       return
     }
