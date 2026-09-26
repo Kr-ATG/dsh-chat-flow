@@ -20,6 +20,7 @@ import { activityStore, type ActivityReasoningItem } from './activity-drawer.tsx
 import { callName, isRunning } from './tool-stats.ts'
 import { argFields, toolArgsRaw } from './activity-view-model.ts'
 import { getKrChatStore } from '../kr-chat/kr-chat-store.ts'
+import { getOfficialTurnProcessNodeView } from '../index.ts'
 import { KrActivityCardGate, type KrActivityReasoningItem } from '../kr-chat/KrLiveActivityCard.tsx'
 import { clearLiveDshTodos } from '../kr-chat/kr-todo-bridge.ts'
 
@@ -691,7 +692,16 @@ export const TurnProcessShadowView = memo(function TurnProcessShadowView(props: 
       />
     )
   }
-  // 普通「对话」不渲染回合折叠 control：工具、消息、思考等过程内容都不再
-  // 收进折叠条或活动弹窗；KR 分支已提前返回并由实时活动卡承接。
+  // 普通「对话」把座位原样还给官方：那条「工具调用 N 次 · 已思考…」的折叠行
+  // 与它内部的思考、工具树都是官方自己的实现，插件一个字节都不该插手。
+  //
+  // 这里是「占座即替换」——插件用 priority -100 注册在这个 key 上，官方组件
+  // 就不会再被渲染。所以 return null 不是"少画一点"，而是普通对话里工具调用
+  // 与折叠入口一起消失。必须显式转发给官方组件。
+  const OfficialProcess = getOfficialTurnProcessNodeView()
+  if (OfficialProcess) {
+    return <OfficialProcess {...props} />
+  }
+  // 捕获失败（官方组件尚未就位）时的兜底：宁可这一拍没有折叠行，也不能崩。
   return null
 })

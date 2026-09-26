@@ -59,6 +59,7 @@ function guarded(ctx: ClientContext, label: string, mount: () => void): void {
 
 let savedCtx: ClientContext | null = null
 export let officialAssistantNodeView: any = null
+export let officialTurnProcessNodeView: any = null
 
 export function getOfficialAssistantNodeView(): any {
   if (officialAssistantNodeView) return officialAssistantNodeView
@@ -74,6 +75,30 @@ export function getOfficialAssistantNodeView(): any {
     }
   }
   return officialAssistantNodeView
+}
+
+/**
+ * 捕获官方原生的 turn-process 折叠 control。
+ *
+ * 与 assistant-step 同理：插件用 priority -100 占这个座位只是为了在 KR 模式
+ * 放实时活动卡，普通「对话」必须把座位原样还给官方那条「工具调用 N 次 /
+ * 已思考…」的折叠行。没有这个捕获，插件一旦占座，官方组件就永远没机会渲染，
+ * 普通对话里工具调用与思考就一起消失了。
+ */
+export function getOfficialTurnProcessNodeView(): any {
+  if (officialTurnProcessNodeView) return officialTurnProcessNodeView
+  if (savedCtx) {
+    try {
+      const entries = savedCtx.slots.entries('conversation.chat.node')
+      const processEntry = entries.find((e: any) => e.options?.key === 'turn-process' && (e.options?.priority ?? 0) >= 0)
+      if (processEntry?.component) {
+        officialTurnProcessNodeView = processEntry.component
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return officialTurnProcessNodeView
 }
 
 export function apply(ctx: ClientContext): void {
@@ -101,19 +126,25 @@ export function apply(ctx: ClientContext): void {
   // 对话截图：assistant 消息操作栏相机按钮 → 截图面板（独立 id，KR模式生效）。
   guarded(ctx, 'screenshot seat', () => { applyMessageScreenshot(ctx) })
 
-  // 捕获官方原生的 assistant-step 渲染组件，普通「对话」模式下直接由官方接管
+  // 捕获官方原生的 assistant-step / turn-process 渲染组件：普通「对话」模式下
+  // 两个座位都原样委托回官方，插件只负责 KR 那一栏。
   try {
     const entries = ctx.slots.entries('conversation.chat.node')
     const assistantEntry = entries.find((e: any) => e.options?.key === 'assistant-step' && (e.options?.priority ?? 0) >= 0)
     if (assistantEntry?.component) {
       officialAssistantNodeView = assistantEntry.component
     }
+    const processEntry = entries.find((e: any) => e.options?.key === 'turn-process' && (e.options?.priority ?? 0) >= 0)
+    if (processEntry?.component) {
+      officialTurnProcessNodeView = processEntry.component
+    }
   } catch (error) {
-    console.warn('[dsh-chat-plus] 捕获官方 assistant-step 失败：', error)
+    console.warn('[dsh-chat-plus] 捕获官方节点视图失败：', error)
   }
 
-  // 回合过程座位：KR 模式挂单张实时活动卡；普通「对话」不渲染折叠 control，
-  // 也不打开活动弹窗。这个座位仍必须在首条 assistant 输出前占位，供 KR 使用。
+  // 回合过程座位：KR 模式挂单张实时活动卡；普通「对话」把座位原样还给官方
+  // 的折叠 control（工具调用 / 思考都在那条行里）。这个座位仍必须在首条
+  // assistant 输出前占位，供 KR 使用。
   guarded(ctx, 'turn-process seat', () => {
     const entries = ctx.slots.entries('conversation.chat.node')
     const processEntry = entries.find((entry: any) => entry.options?.key === 'turn-process' && (entry.options?.priority ?? 0) >= 0)

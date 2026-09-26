@@ -356,20 +356,16 @@ export const ThinkingStepNodeView = memo(function ThinkingStepNodeView(
 
   const OfficialComp = getOfficialAssistantNodeView()
   if (!pluginRenders && OfficialComp) {
-    // 普通「对话」彻底移除 thinking block：官方 ReasoningRow/DisclosureRow
-    // 即使收到 settledReasoningPreview=false 仍会渲染并可展开，不能只改 policy。
-    // 只替换当前 assistant-step 的 node，turn-process 的工具折叠仍由官方/影子行负责。
-    const hasReasoning = node.data.blocks.some((block) => block.kind === 'reasoning')
-    const officialNode = hasReasoning
-      ? {
-          ...node,
-          data: {
-            ...node.data,
-            blocks: node.data.blocks.filter((block) => block.kind !== 'reasoning'),
-          },
-        } as typeof node
-      : node
-    return <OfficialComp {...props} node={officialNode} />
+    /*
+     * 普通「对话」把 assistant-step 原样交回官方：thinking block 照常传给
+     * AssistantNodeView，官方自己的 ReasoningRow / DisclosureRow 会照常渲染
+     * 并可展开。
+     *
+     * 曾经在这里把 reasoning block 过滤掉再转发（"彻底移除 thinking block"），
+     * 结果普通对话里思考被整段抹掉——官方组件拿不到 block，就不是"不折叠"
+     * 而是"没有"。插件在普通模式下对官方节点只有「原样委托」这一种姿态。
+     */
+    return <OfficialComp {...props} />
   }
 
   const { hasVisible, rendered } = AssistantBody({
