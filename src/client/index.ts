@@ -35,6 +35,7 @@ import { ThinkingStepNodeView } from './thinking/ThinkingStepNodeView.tsx'
 import { RetryShadowView } from './retry/RetryShadowView.tsx'
 import { applyMessageScreenshot } from './shot/index.tsx'
 import { mountShellChrome } from './shell-chrome.ts'
+import { installOpenPathFix } from './open-path-fix.ts'
 import { injectKrStyles } from './kr-chat/styles.ts'
 import { mountKrChatController } from './kr-chat/kr-chat-controller.tsx'
 import { KrTodoBridge } from './kr-chat/kr-todo-bridge.ts'
@@ -93,6 +94,9 @@ export function apply(ctx: ClientContext): void {
   // 壳窗口控制联动：壳内（iframe）检测 + header 右簇左移留位 + 主题上报。
   // 浏览器直开时整模块 no-op。
   guarded(ctx, 'shell chrome', mountShellChrome)
+
+  // 「用文件资源管理器打开」：官方那条被 windowsHide 吞了窗口，fetch 层改道。
+  guarded(ctx, 'open path fix', installOpenPathFix)
 
   // 对话截图：assistant 消息操作栏相机按钮 → 截图面板（独立 id，KR模式生效）。
   guarded(ctx, 'screenshot seat', () => { applyMessageScreenshot(ctx) })

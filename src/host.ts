@@ -30,6 +30,7 @@ import { readFileSync, statSync } from 'node:fs'
 import { resolve, sep, extname } from 'node:path'
 import { applyScreenshot } from './shot/index.ts'
 import { applyDownloadRoutes, applyDownloadTool } from './download/index.ts'
+import { applyOpenPathRoutes } from './open-path/index.ts'
 import { applyTriadHost } from './triad/host.ts'
 export { applyDownloadRoutes, downloadTool, readDownloadState, watchShellDownload } from './download/index.ts'
 
@@ -157,6 +158,8 @@ export function apply(ctx: Record<string, any>): void {
     applyScreenshot(webCtx)
     // 下载工具的实时进度路由（GET /api/chat-flow/download/progress）。
     applyDownloadRoutes(webCtx)
+    // 「用文件资源管理器打开」修复：官方那条被 windowsHide 吞了窗口。
+    applyOpenPathRoutes(webCtx)
   })
   // download 工具：注册进 host 工具注册表（模型可见，GUI 实时进度条）。
   // tools 服务缺失时回调不执行，其余能力不受影响（延迟注入的天然降级）。
