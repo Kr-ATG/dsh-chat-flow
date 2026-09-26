@@ -16,8 +16,15 @@
  * 是唯一能同时拿到 app 与 path 的位置。
  */
 
-/** 官方打开路由。 */
-const UPSTREAM_ROUTE = '/open-in-app/open'
+/**
+ * 官方打开路由的**匹配片段**。
+ *
+ * 刻意不带前导斜杠：官方前端发的是相对 URL（`open-in-app/open`），
+ * 带斜杠去 includes 会永远落空 —— 补丁看起来装上了却一次都没生效。
+ * 不带斜杠时，相对（`open-in-app/open`）与绝对（`/open-in-app/open`）
+ * 两种写法都能命中。
+ */
+const UPSTREAM_ROUTE = 'open-in-app/open'
 /** 本插件的修正版打开路由。 */
 const FIXED_ROUTE = '/api/chat-flow/open-path'
 /** 受影响的应用 id：仅 Windows 资源管理器。其它平台的 finder 走 macOS 的 open，不受影响。 */
