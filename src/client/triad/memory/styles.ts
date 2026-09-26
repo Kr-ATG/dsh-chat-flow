@@ -231,7 +231,6 @@ export const css = {
   zhMain: 'dsh-memory-zh-main',
   zhLabel: 'dsh-memory-zh-label',
   zhBuiltin: 'dsh-memory-zh-builtin',
-  zhFoot: 'dsh-memory-zh-foot',
 } as const
 
 const STYLE_ID = 'dsh-memory-styles'
@@ -639,18 +638,17 @@ body[data-ds-dark-theme] .dsh-memory-inject-card{background:var(--dsw-static-neu
 .dsh-memory-inject-foot{margin:2px 0 0;font-size:11px;line-height:15px;color:var(--m-text-3)}
 .dsh-memory-inject-divider{height:1px;margin:2px 0;background:linear-gradient(90deg,transparent,var(--m-border) 12%,var(--m-border) 88%,transparent)}
 
-/* ── 中文优先（内置通道） ────────────────────────────────────────────
+/* ── 内置通道行（中文优先 / 对话内流程图） ───────────────────────────
    不给它图标。文字模拟图标（「文」字方块）在 272px 卡片里既抢戏又土，
-   而这一行的表意完全由「中文优先 + 内置」承载，左侧一根主色竖条做锚点
-   就够——状态变化由竖条的亮度与辉光说清，不靠额外图形。 */
-.dsh-memory-zh-row{position:relative;display:flex;align-items:center;gap:10px;margin:3px 0 1px;padding:8px 9px 8px 12px;border:1px solid var(--m-border);border-radius:9px;background:var(--dsw-alias-bg-layer-1,transparent);transition:border-color .2s cubic-bezier(.2,.8,.2,1),background .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s cubic-bezier(.2,.8,.2,1)}
-.dsh-memory-zh-row::before{content:'';position:absolute;left:4px;top:9px;bottom:9px;width:2px;border-radius:1px;background:var(--m-primary);opacity:.22;transition:opacity .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s cubic-bezier(.2,.8,.2,1),transform .22s cubic-bezier(.2,.8,.2,1)}
-.dsh-memory-zh-row-on{border-color:color-mix(in srgb,var(--m-primary) 34%,transparent);background:color-mix(in srgb,var(--m-primary) 6%,transparent)}
-.dsh-memory-zh-row-on::before{opacity:1;box-shadow:0 0 7px color-mix(in srgb,var(--m-primary) 45%,transparent)}
+   而这一行的表意完全由「名称 + 内置」承载。
+   左侧主色竖条已按用户要求移除：两行都带竖条时，选中态与开关的蓝色开关
+   互相抢注意力，反而看不出是哪一行开了。状态改由整行的描边 + 底色 + 极轻
+   外发光说清——竖条时代的辉光语义保留，只是从局部移到整行。 */
+.dsh-memory-zh-row{position:relative;display:flex;align-items:center;gap:10px;margin:3px 0 1px;padding:8px 9px;border:1px solid var(--m-border);border-radius:9px;background:var(--dsw-alias-bg-layer-1,transparent);transition:border-color .2s cubic-bezier(.2,.8,.2,1),background .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s cubic-bezier(.2,.8,.2,1)}
+.dsh-memory-zh-row-on{border-color:color-mix(in srgb,var(--m-primary) 34%,transparent);background:color-mix(in srgb,var(--m-primary) 6%,transparent);box-shadow:0 0 9px -3px color-mix(in srgb,var(--m-primary) 45%,transparent)}
 .dsh-memory-zh-main{flex:1;min-width:0;display:flex;align-items:center}
 .dsh-memory-zh-label{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px;font-weight:500;line-height:19px;color:var(--m-text)}
 .dsh-memory-zh-builtin{flex:none;padding:0 5px;border-radius:4px;background:color-mix(in srgb,var(--m-primary) 14%,transparent);color:var(--m-primary);font-size:10px;font-weight:500;line-height:15px;letter-spacing:.02em}
-.dsh-memory-zh-foot{margin:6px 0 0;font-size:11px;line-height:15px;color:var(--m-text-3)}
 @media (prefers-reduced-motion:reduce){.dsh-memory-inject-card,.dsh-memory-inject-card-on{transition:none}}
 .dsh-memory-switch:focus-visible,.dsh-memory-toggle:focus-visible{outline:none;box-shadow:0 0 0 2px rgba(65,118,230,.35)}
 

@@ -251,6 +251,7 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
             onClick={() => { pushZh(!zhOn) }}
           />
         </div>
+        <div className={css.injectDivider} />
         <div className={diagramOn ? `${css.zhRow} ${css.zhRowOn}` : css.zhRow}>
           <span className={css.zhMain}>
             <span className={css.zhLabel}>
@@ -307,8 +308,6 @@ export function MemoryToggle({ sessionId, t, ...api }: MemoryToggleProps): JSX.E
           </button>
         )}
         <p className={css.injectFoot}>{t('injectCardFoot')}</p>
-        <p className={css.zhFoot}>{t('zhInjectHint')}</p>
-        <p className={css.zhFoot}>{t('diagramInjectHint')}</p>
       </div>
     </div>
   )
