@@ -2,14 +2,15 @@
  * dsh-chat-plus — KR 右栏「记忆」卡片。
  *
  * 用户要的三件事：
- *  1. **常驻底部**：卡片挂在滚动区之下的独立 flex footer（.kr-panel__memory-dock，
- *     见 KrAgentPanel 与 styles.ts），永远钉在右栏最下方——无论内容多少、无论
- *     滚动位置，随时可以删；
- *  2. **口径 = 本会话新增，有新增才显示**：两个分区（工作区 / 全局）都只列
- *     「这个会话写下 / 更新过」的条目，为的是「一眼看清这次对话新记了哪些」。
- *     没有新增的分区**整个不出现**（连「暂无」占位行都不留），两个分区都无新增
- *     时卡体收成一行头部。工作区分区再叠加当前 cwd 对应 projectHash 的限定
- *     （path 匹配，不自己复刻 sha1 算法）。
+ *  1. **没有新增就整卡不出现**：加载中、两个分区都没有新增、记忆模块不可用
+ *     —— 三种情况一律 return null，dock 容器由 `.kr-panel__memory-dock:empty`
+ *     自动收掉，右栏回到「只有三张卡」的干净状态。加载中不渲染是为了不闪一张
+ *     空卡；模块不可用不渲染是因为这张卡的全部价值就是「这次对话新记了什么」，
+ *     它没有新增时只剩一行诊断文字，host 侧异常本来就有 console.warn 兜底。
+ *  2. **常驻底部但高度克制**：卡片挂在滚动区之下的独立 flex footer
+ *     （.kr-panel__memory-dock，见 KrAgentPanel 与 styles.ts），永远钉在右栏
+ *     最下方；但它常驻占着右栏时思考卡只能被挤到最小档，所以默认只露 6 条、
+ *     列表封顶在 40vh。
  *
  *     「这个会话写下」按**条目溯源**判定：host 在写入/更新条目时把
  *     `provenance.sessionId` 一并落盘（自动提取、memory_remember / memory_revise
@@ -17,11 +18,13 @@
  *     「进入会话的时间基线」猜（localStorage + 5 分钟时钟冗余），时钟偏差、刷新
  *     时机、切会话都会把别的会话的记忆误判成本会话的，已被替换。
  *
- *  3. **可批量删**：分区标题行「选择」进多选态，勾若干条一次删完，删除前有
- *     一次行内二次确认（不做模态弹窗，避免打断大盘阅读）。
- *
- * 记忆模块不可用（fetch 失败 / 404 / 旧 host 没挂路由）时整卡不崩：降级成一行
- * 「记忆模块未就绪」，其余卡片照常工作。
+ *  3. **行内单条删除，不再有批量多选**：分区行只放「小圆点 + 名称 + 计数 +
+ *     目录」，「展开其余 N 条」下沉到列表底部居中一行；卡片标题行只留「图标 +
+ *     名称 + 总数」。删除是行尾 hover 才浮现的垃圾桶，点一下该行原地变确认态。
+ *     原来那套「选择 → 每行 checkbox → 已选 N 条 → 删除 → 确认 → 取消」的六层
+ *     状态压在一条 400px 的标题行上，是「乱」的主因；批量删记忆的记忆工作台
+ *     （triad 面板）里有完整实现，右栏是轻量视图，不该承担管理职责。
+ *     置顶收成属性行里的一枚可点星标，顺手消掉原来那条 11px 的置顶空槽。
  *
  * 之所以把「内容变了要重新测量」上报给 KrAgentPanel：记忆卡条目数直接决定右栏
  * 溢出程度，而挤压自适应（use-adaptive-rows.ts）需要知道这件事才重算思考卡行数。
@@ -44,28 +47,20 @@ type SectionKey = 'workspace' | 'global'
 /** 每个分区默认 preview 的条数（超出点「展开其余」，避免一屏全是记忆）。
  *  与 .kr-memory__list 的 max-height 成对维护：只抬条数会被封顶裁掉，只抬封顶
  *  则条数不够撑不满，两边一起抬记忆卡的默认高度才真翻一倍。 */
-const SECTION_PREVIEW_COUNT = 16
+const SECTION_PREVIEW_COUNT = 6
 
-/** 单个分区的交互态（选择 / 二次确认 / 请求中 / 行内报错 / 展开 / 已选）。 */
+/** 单个分区的交互态（请求中 / 行内报错 / 展开）。 */
 interface SectionState {
-  /** 多选态：每行出现 checkbox，标题行换成「已选 N 条 · 删除 · 取消」。 */
-  selecting: boolean
-  /** 二次确认态：删除按钮变成「确认删除 N 条？」+ 确认/取消。 */
-  confirming: boolean
   busy: boolean
   error: string
   /** 是否展开全部条目（默认只 preview 前几条）。 */
   showAll: boolean
-  selected: ReadonlySet<string>
 }
 
 const EMPTY_SECTION: SectionState = {
-  selecting: false,
-  confirming: false,
   busy: false,
   error: '',
   showAll: false,
-  selected: new Set<string>(),
 }
 
 /**
@@ -93,6 +88,28 @@ function byUpdatedDesc(a: MemoryEntryView, b: MemoryEntryView): number {
   if (!Number.isFinite(ta)) return 1
   if (!Number.isFinite(tb)) return -1
   return tb - ta
+}
+
+/**
+ * 两份条目集合是否等价（轮询去重用）。
+ *
+ * 比对 id + updatedAt + pinned 三项：内容与 scope 变了必然伴随 updatedAt 变化，
+ * 而这正是轮询唯一需要捕捉的变化——别的差异（比如服务端重排）不值得让整张卡
+ * 重渲染。数组顺序不参与判定，所以 /list 的返回顺序抖动不会造成假更新。
+ */
+function sameEntrySet(
+  previous: readonly MemoryEntryView[],
+  next: readonly MemoryEntryView[],
+): boolean {
+  if (previous.length !== next.length) return false
+  const index = new Map<string, MemoryEntryView>()
+  for (const entry of previous) index.set(entry.id, entry)
+  for (const entry of next) {
+    const old = index.get(entry.id)
+    if (old === undefined) return false
+    if (old.updatedAt !== entry.updatedAt || old.pinned !== entry.pinned) return false
+  }
+  return true
 }
 
 /** 归一化路径：统一分隔符、去尾部斜杠（Windows 会话 cwd 常带 `\`，host 存的是原样）。 */
@@ -201,7 +218,6 @@ export const KrMemoryCard = memo(function KrMemoryCard({
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
   const [entries, setEntries] = useState<readonly MemoryEntryView[]>([])
   const [projects, setProjects] = useState<readonly ProjectView[]>([])
-  const [cwd, setCwd] = useState('')
   const [workspaceHash, setWorkspaceHash] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState(false)
   const [openedIds, setOpenedIds] = useState<ReadonlySet<string>>(() => new Set())
@@ -209,6 +225,13 @@ export const KrMemoryCard = memo(function KrMemoryCard({
     workspace: EMPTY_SECTION,
     global: EMPTY_SECTION,
   })
+  /**
+   * 行内单条删除的确认态：只记 id，不存整份选择集。
+   *
+   * 同一时刻至多一条处于确认态——点第二条时上一条自动解除，所以这里既没有
+   * 多选 checkbox，也没有「已选 N 条」那种要跨行维护的中间态。
+   */
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   // 会话身份变化才重新拉记忆（subscriber 在流式期间每秒触发多次，绝不能跟着重拉）。
   useEffect(() => {
@@ -224,8 +247,8 @@ export const KrMemoryCard = memo(function KrMemoryCard({
     setEntries([])
     setProjects([])
     setWorkspaceHash(null)
-    setCwd('')
     setOpenedIds(new Set<string>())
+    setPendingDeleteId(null)
     setSections({ workspace: EMPTY_SECTION, global: EMPTY_SECTION })
   }, [sessionKey])
 
@@ -250,7 +273,6 @@ export const KrMemoryCard = memo(function KrMemoryCard({
         }
         if (cancelled) return
         const workspace = pickWorkspaceProject(registry, workspaceCwd)
-        setCwd(workspaceCwd)
         setProjects(registry)
         setEntries(response.entries)
         setWorkspaceHash(workspace?.hash ?? null)
@@ -267,6 +289,36 @@ export const KrMemoryCard = memo(function KrMemoryCard({
     })()
     return () => { cancelled = true }
   }, [sessionKey, reloadToken])
+
+  /**
+   * 轻量轮询：让「会话进行中新写入的记忆」也能让卡片自己冒出来。
+   *
+   * 这条是「没有新增就不渲染」的前提条件：卡片既然默认不在屏上，就不能只靠
+   * 会话切换时拉的那一次数据——否则用户刚记完一条，右栏依旧空着，看起来就像
+   * 功能坏了。host 侧的写入有两条路径（memory_remember 工具与自动提取），后者
+   * 根本没有客户端事件可订阅，所以只能用轮询兜。
+   *
+   * 三道约束把它压到几乎无感：页面不可见时不发请求（后台标签页别空转）；20s
+   * 一轮而不是更密；拿到结果先逐条比对 id/updatedAt/pinned，没变就原样返回
+   * 旧数组引用，React 不会重渲染，更不会触发大盘重测高度。
+   */
+  useEffect(() => {
+    if (status !== 'ready') return
+    let cancelled = false
+    const timer = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      void listMemory()
+        .then((response) => {
+          if (cancelled) return
+          setEntries((previous) => (sameEntrySet(previous, response.entries) ? previous : response.entries))
+        })
+        .catch(() => { /* 轮询失败静默：下轮再来，不打断阅读 */ })
+    }, 20_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [status])
 
   const workspaceProject = useMemo(
     () => projects.find((project) => project.hash === workspaceHash) ?? null,
@@ -318,8 +370,6 @@ export const KrMemoryCard = memo(function KrMemoryCard({
     sessionNewEntries.global.length,
     sections.workspace.showAll ? 1 : 0,
     sections.global.showAll ? 1 : 0,
-    sections.workspace.selecting ? 1 : 0,
-    sections.global.selecting ? 1 : 0,
     openedIds.size,
     collapsed ? 0 : 1,
   ].join('|')
@@ -331,14 +381,6 @@ export const KrMemoryCard = memo(function KrMemoryCard({
   const patchSection = useCallback((key: SectionKey, patch: Partial<SectionState>) => {
     setSections((previous) => replaceSection(previous, key, { ...previous[key], ...patch }))
   }, [])
-
-  const enterSelect = useCallback((key: SectionKey) => {
-    patchSection(key, { selecting: true, confirming: false, error: '' })
-  }, [patchSection])
-
-  const cancelSelect = useCallback((key: SectionKey) => {
-    patchSection(key, { selecting: false, confirming: false, error: '', selected: new Set<string>() })
-  }, [patchSection])
 
   const toggleShowAll = useCallback((key: SectionKey) => {
     setSections((previous) => replaceSection(previous, key, { ...previous[key], showAll: !previous[key].showAll }))
@@ -353,14 +395,28 @@ export const KrMemoryCard = memo(function KrMemoryCard({
     })
   }, [])
 
-  const toggleSelected = useCallback((key: SectionKey, id: string) => {
-    setSections((previous) => {
-      const next = new Set(previous[key].selected)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return replaceSection(previous, key, { ...previous[key], selected: next })
-    })
-  }, [])
+  /** 单条删除：乐观摘掉本地条目 → 请求 → 失败整份回滚并留在该行确认态。 */
+  const confirmDelete = useCallback(async (entry: MemoryEntryView) => {
+    const key: SectionKey = entry.scope === 'global' ? 'global' : 'workspace'
+    if (sections[key].busy) return
+    const snapshot = entries
+    setPendingDeleteId(null)
+    setEntries((previous) => previous.filter((item) => item.id !== entry.id))
+    patchSection(key, { busy: true, error: '' })
+    try {
+      await deleteMemoryBatch([entry.id])
+      patchSection(key, { busy: false })
+      // 与 host 对齐（missing / 并发删除造成的差异），顺带刷新置顶态
+      setReloadToken((value) => value + 1)
+    } catch (error) {
+      setEntries(snapshot)
+      patchSection(key, {
+        busy: false,
+        error: error instanceof Error ? error.message : '删除失败',
+      })
+      setPendingDeleteId(entry.id)
+    }
+  }, [entries, patchSection, sections])
 
   /** 单条置顶（可选能力；host 不支持时只报一行错，不影响其余交互）。 */
   const togglePin = useCallback(async (entry: MemoryEntryView) => {
@@ -377,57 +433,18 @@ export const KrMemoryCard = memo(function KrMemoryCard({
   }, [patchSection])
 
   /**
-   * 批量删除：乐观摘掉本地条目 → 请求 → 失败整份回滚 + 留在确认态。
-   *
-   * 之所以乐观：删 10 条不该等 10 次往返才有反馈；而回滚用整份快照而不是逐条
-   * 补回，避免「删到一半失败」把列表补成半新半旧。
+   * 首屏加载中（一条都还没拿到）时不渲染：宁可这一拍右栏少一张卡，也不要闪
+   * 一张写着「加载中…」的空卡——那半秒看起来像出了错。
    */
-  const confirmDelete = useCallback(async (key: SectionKey) => {
-    const state = sections[key]
-    if (state.selected.size === 0 || state.busy) return
-    const ids = [...state.selected]
-    const snapshot = entries
-    setEntries((previous) => previous.filter((entry) => !ids.includes(entry.id)))
-    patchSection(key, { busy: true, confirming: false, error: '' })
-    try {
-      await deleteMemoryBatch(ids)
-      patchSection(key, { busy: false, selecting: false, selected: new Set<string>() })
-      // 与 host 对齐（missing / 并发删除造成的差异），顺带刷新置顶态
-      setReloadToken((value) => value + 1)
-    } catch (error) {
-      setEntries(snapshot)
-      patchSection(key, {
-        busy: false,
-        confirming: true,
-        error: error instanceof Error ? error.message : '删除失败',
-      })
-    }
-  }, [entries, patchSection, sections])
-
-  // 首屏加载中（一条都还没拿到）时不给分区占位：否则会先闪一下
-  // 「未取到当前工作区路径」，像出了错一样。
   const firstLoading = status === 'loading' && entries.length === 0 && projects.length === 0
 
-  if (status === 'unavailable') {
-    return (
-      <div className="kr-card kr-card--memory">
-        <div className="kr-card__header" onClick={() => setCollapsed(!collapsed)}>
-          <span className="kr-card__icon">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 1.8a2.4 2.4 0 0 0-2.4 2.4v.6H4.2A1.8 1.8 0 0 0 2.4 6.6v5.4a1.8 1.8 0 0 0 1.8 1.8h7.6a1.8 1.8 0 0 0 1.8-1.8V6.6a1.8 1.8 0 0 0-1.8-1.8h-1.4v-.6A2.4 2.4 0 0 0 8 1.8z" />
-              <path d="M6.6 7.8h2.8M8 6.4v2.8" />
-            </svg>
-          </span>
-          <span className="kr-card__title">记忆</span>
-          <span className="kr-card__chevron" data-collapsed={collapsed ? 'true' : 'false'}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6">
-              <path d="M2.5 4.5 6 8 9.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-        </div>
-        {!collapsed && <div className="kr-memory__note">记忆模块未就绪</div>}
-      </div>
-    )
+  const newEntryCount = sessionNewEntries.workspace.length + sessionNewEntries.global.length
+
+  // 三种「不出现在屏上」：加载中（不闪空卡）、模块不可用（只剩一行诊断文字，
+  // host 侧异常另有 console.warn）、本会话没有新增记忆（这张卡的全部意义）。
+  // return null 后 dock 变空，.kr-panel__memory-dock:empty 负责把 footer 收掉。
+  if (firstLoading || status === 'unavailable' || newEntryCount === 0) {
+    return null
   }
 
   const renderSection = (key: SectionKey): JSX.Element | null => {
@@ -442,9 +459,8 @@ export const KrMemoryCard = memo(function KrMemoryCard({
     const visible = state.showAll ? sessionList : sessionList.slice(0, SECTION_PREVIEW_COUNT)
     const hiddenCount = sessionList.length - visible.length
 
-    // 口径只有一种：本会话新增。分区**有新增才渲染，没有整个不出现**——
-    // 「本会话暂无新记忆」的占位行本身就是噪音，两张空分区把常驻 footer
-    // 撑得老高。两个分区都没新增时整个卡体收成一行头部。
+    // 分区行只做一件事：说清「哪一批、几条」。原来挤在这一行的「展开其余 N 条」
+    // 与「选择」两枚按钮已分别下沉到列表底部与行尾操作区，标题行不再需要交互。
 
     return (
       <section className="kr-memory__section">
@@ -454,73 +470,6 @@ export const KrMemoryCard = memo(function KrMemoryCard({
             <span className="kr-memory__count">({count})</span>
             {scopeLabel !== '' && <span className="kr-memory__scope">{scopeLabel}</span>}
           </span>
-
-          {state.selecting ? (
-            <>
-              <span className="kr-memory__selected">
-                {state.confirming ? `确认删除 ${state.selected.size} 条？` : `已选 ${state.selected.size} 条`}
-              </span>
-              {state.confirming ? (
-                <>
-                  <button
-                    type="button"
-                    className="kr-memory__link kr-memory__link--danger"
-                    disabled={state.busy || state.selected.size === 0}
-                    onClick={(event) => { event.stopPropagation(); void confirmDelete(key) }}
-                  >
-                    {state.busy ? '删除中…' : '确认'}
-                  </button>
-                  <button
-                    type="button"
-                    className="kr-memory__link"
-                    disabled={state.busy}
-                    onClick={(event) => { event.stopPropagation(); patchSection(key, { confirming: false }) }}
-                  >
-                    取消
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="kr-memory__link kr-memory__link--danger"
-                    disabled={state.selected.size === 0}
-                    onClick={(event) => { event.stopPropagation(); patchSection(key, { confirming: true, error: '' }) }}
-                  >
-                    删除
-                  </button>
-                  <button
-                    type="button"
-                    className="kr-memory__link"
-                    onClick={(event) => { event.stopPropagation(); cancelSelect(key) }}
-                  >
-                    取消
-                  </button>
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              {hiddenCount > 0 && (
-                <button
-                  type="button"
-                  className="kr-memory__link"
-                  onClick={(event) => { event.stopPropagation(); toggleShowAll(key) }}
-                >
-                  {state.showAll ? '收起' : `展开其余 ${hiddenCount} 条`}
-                </button>
-              )}
-              {sessionList.length > 0 && (
-                <button
-                  type="button"
-                  className="kr-memory__link"
-                  onClick={(event) => { event.stopPropagation(); enterSelect(key) }}
-                >
-                  选择
-                </button>
-              )}
-            </>
-          )}
         </div>
 
         {state.error !== '' && <div className="kr-memory__err">{state.error}</div>}
@@ -528,70 +477,108 @@ export const KrMemoryCard = memo(function KrMemoryCard({
         <div className="kr-memory__list">
           {visible.map((entry) => {
             const opened = openedIds.has(entry.id)
-            const checked = state.selected.has(entry.id)
+            const confirming = pendingDeleteId === entry.id
             const kind = memoryKindLabel(entry.kind)
             return (
               <div
                 className="kr-memory__row"
                 key={entry.id}
-                data-selected={checked ? 'true' : undefined}
+                data-confirming={confirming ? 'true' : undefined}
                 role="button"
                 tabIndex={0}
                 title={opened ? undefined : entry.content}
-                onClick={() => { if (state.selecting) toggleSelected(key, entry.id); else toggleOpened(entry.id) }}
+                onClick={() => { if (!confirming) toggleOpened(entry.id) }}
                 onKeyDown={(event) => {
                   if (event.key !== 'Enter' && event.key !== ' ') return
                   event.preventDefault()
-                  if (state.selecting) toggleSelected(key, entry.id)
-                  else toggleOpened(entry.id)
+                  if (!confirming) toggleOpened(entry.id)
                 }}
               >
-                {state.selecting && (
-                  <input
-                    type="checkbox"
-                    className="kr-memory__check"
-                    checked={checked}
-                    aria-label="选择这条记忆"
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={() => toggleSelected(key, entry.id)}
-                  />
-                )}
-
-                {/* 置顶标记：点一下取消置顶（置顶入口在 triad 记忆面板，
-                    这里只做「看见 + 撤销」，不重复一套新增 pinned 的 UI） */}
-                <span
-                  className="kr-memory__pin"
-                  role={entry.pinned ? 'button' : undefined}
-                  title={entry.pinned ? '取消置顶' : undefined}
-                  aria-label={entry.pinned ? '取消置顶' : undefined}
-                  onClick={entry.pinned ? (event) => { event.stopPropagation(); void togglePin(entry) } : undefined}
-                >
-                  {entry.pinned && (
-                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M9.6 1.8 14.2 6.4l-2.1.7-2.6 3.9.4 3.2-2.3-1.4-3 2.6.2-3.5-3.6-2.3 3.3-.4 1-3.5 3.1 1.1z" />
-                    </svg>
-                  )}
-                </span>
-
                 <div className="kr-memory__body-col">
                   {/* 默认 1-2 行 + 省略号，点条目展开全文 */}
                   <div className="kr-memory__text" data-open={opened ? 'true' : undefined}>
                     {entry.content}
                   </div>
                   <div className="kr-memory__meta">
-                    {/* 只留有信息量的部分：类型/标签徽章 + 相对时间。
-                        版本号 vN 在记忆工作台详情里看，右栏不堆。 */}
+                    {/* 属性行只留三样：置顶星标（有才有）、类型、最多一个标签。
+                        标签从两个砍到一个——右栏是速览，完整标签在记忆工作台里看；
+                        版本号 vN 同样不在这里堆。 */}
+                    {entry.pinned && (
+                      <button
+                        type="button"
+                        className="kr-memory__flag"
+                        title="取消置顶"
+                        aria-label="取消置顶"
+                        onClick={(event) => { event.stopPropagation(); void togglePin(entry) }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M9.6 1.8 14.2 6.4l-2.1.7-2.6 3.9.4 3.2-2.3-1.4-3 2.6.2-3.5-3.6-2.3 3.3-.4 1-3.5 3.1 1.1z" />
+                        </svg>
+                      </button>
+                    )}
                     {kind !== '' && <span className="kr-memory__tag">{kind}</span>}
-                    {entry.tags.slice(0, 2).map((tag) => (
-                      <span className="kr-memory__tag" key={tag}>#{tag}</span>
-                    ))}
-                    <span className="kr-memory__time">{formatWhen(entry.updatedAt)}</span>
+                    {entry.tags[0] !== undefined && entry.tags[0] !== '' && (
+                      <span className="kr-memory__tag">#{entry.tags[0]}</span>
+                    )}
                   </div>
+                </div>
+
+                {/* 行尾操作：常态只有时间，删除键 hover/聚焦才浮现。确认态下时间
+                    就地换成「删除？确认 取消」——反悔在这一行里完成，不弹窗、
+                    不跳走，也不需要先进入什么「选择」模式。 */}
+                <div className="kr-memory__side" onClick={(event) => event.stopPropagation()}>
+                  {confirming ? (
+                    <>
+                      <span className="kr-memory__ask">删除？</span>
+                      <button
+                        type="button"
+                        className="kr-memory__link kr-memory__link--danger"
+                        disabled={state.busy}
+                        onClick={() => { void confirmDelete(entry) }}
+                      >
+                        {state.busy ? '删除中…' : '确认'}
+                      </button>
+                      <button
+                        type="button"
+                        className="kr-memory__link"
+                        onClick={() => setPendingDeleteId(null)}
+                      >
+                        取消
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="kr-memory__time kr-memory__time--side">{formatWhen(entry.updatedAt)}</span>
+                      <button
+                        type="button"
+                        className="kr-memory__act"
+                        title="删除这条记忆"
+                        aria-label="删除这条记忆"
+                        onClick={() => setPendingDeleteId(entry.id)}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M2.9 4.3h10.2M6.4 4.3V3.1a.9.9 0 0 1 .9-.9h1.4a.9.9 0 0 1 .9.9v1.2M4.4 4.3l.5 8.4a1 1 0 0 0 1 .9h4.2a1 1 0 0 0 1-.9l.5-8.4" />
+                        </svg>
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )
           })}
         </div>
+
+        {/* 「展开其余 N 条 / 收起」沉到列表底部居中一行：分区标题行只负责
+            说清是哪一批，交互不跟说明文字抢同一行的横向空间。 */}
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            className="kr-memory__more"
+            onClick={() => toggleShowAll(key)}
+          >
+            {state.showAll ? '收起' : `展开其余 ${hiddenCount} 条`}
+          </button>
+        )}
       </section>
     )
   }
@@ -607,8 +594,10 @@ export const KrMemoryCard = memo(function KrMemoryCard({
           </svg>
         </span>
         <span className="kr-card__title">记忆</span>
-        {/* 头部不再放计数徽章：每个分区标题自带 (N)，头部再放一个「N 新增」
-            是同一数字说两遍。没新增时右栏安静，有新增直接看分区内容。 */}
+        {/* 头部只留图标 + 名称 + 总数：原来把「(N)」「展开其余」「选择」三样都
+            堆在这一行，是「乱」的直接来源。现在总数是唯一的数字来源，分区行
+            只报各批条数，两者不再互相重复。 */}
+        <span className="kr-card__badge kr-card__badge--done">{newEntryCount}</span>
         <span className="kr-card__chevron" data-collapsed={collapsed ? 'true' : 'false'}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6">
             <path d="M2.5 4.5 6 8 9.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -616,22 +605,12 @@ export const KrMemoryCard = memo(function KrMemoryCard({
         </span>
       </div>
 
+      {/* 到这里必有本会话新增（否则组件早已 return null），所以只剩两种分区
+          组合，且都可以直接铺开渲染，不需要任何空态分支。 */}
       {!collapsed && (
         <div className="kr-memory__body">
-          {firstLoading ? (
-            <div className="kr-memory__note">加载中…</div>
-          ) : (sessionNewEntries.workspace.length + sessionNewEntries.global.length) === 0 ? (
-            /* 两个分区都没有本会话新增：不再渲染空分区占位，只留一行说明。
-               卡体收成一行头部 + 这行注，footer 高度降到最低。 */
-            <div className="kr-memory__note">本会话暂无新增记忆</div>
-          ) : (
-            <>
-              {/* 分区按「有新增才显示」渲染：没有新增的分区整个不出现，
-                  而不是占一行「本会话暂无新记忆」。 */}
-              {sessionNewEntries.workspace.length > 0 && renderSection('workspace')}
-              {sessionNewEntries.global.length > 0 && renderSection('global')}
-            </>
-          )}
+          {sessionNewEntries.workspace.length > 0 && renderSection('workspace')}
+          {sessionNewEntries.global.length > 0 && renderSection('global')}
         </div>
       )}
     </div>

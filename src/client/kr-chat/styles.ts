@@ -1266,9 +1266,11 @@ body[data-kr-resizing="true"] * {
   flex-direction: column;
 }
 
-.kr-card--memory {
-  /* 上边发丝线：把「常驻区」与上面的滚动内容划开（描边比其余三面重一档）。 */
-  border-top-color: var(--kr-card-hover);
+/* 记忆卡「没有本会话新增就整卡不渲染」时，dock 里一个子节点都不剩。
+   用 :empty 收掉 footer 的 padding —— 不必让父级再存一份「记忆卡可见吗」的
+   状态来回同步（那会让父级成为子组件的镜像，早一帧晚一帧都闪）。 */
+.kr-panel__memory-dock:empty {
+  display: none;
 }
 
 .kr-memory__body {
@@ -1289,11 +1291,26 @@ body[data-kr-resizing="true"] * {
   padding-top: 8px;
 }
 
+/* 分区行：只做说明，不再承担交互（原来的「展开其余 / 选择」两枚按钮分别
+   下沉到列表底部与行尾操作区）。小圆点是唯一的分区标识，比一条分割线轻。 */
 .kr-memory__section-head {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
+  padding-left: 2px;
+}
+
+.kr-memory__section-head::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  /* var() 必须自带 fallback：color-mix() 的第一个分量一旦求值失败，整条
+     background 就作废（不是回落成 transparent，而是什么都不画），圆点会
+     悄无声息地消失。 */
+  background: color-mix(in srgb, var(--dsw-alias-label-tertiary, #8b8f96) 55%, transparent);
 }
 
 .kr-memory__section-title {
@@ -1324,7 +1341,7 @@ body[data-kr-resizing="true"] * {
   white-space: nowrap;
 }
 
-/* 标题行内的文字按钮（选择 / 展开其余 / 删除 / 确认 / 取消） */
+/* 文字按钮（行内确认的「确认 / 取消」） */
 .kr-memory__link {
   flex: none;
   background: transparent;
@@ -1356,12 +1373,32 @@ body[data-kr-resizing="true"] * {
   cursor: default;
 }
 
-.kr-memory__selected {
+/* 「删除？」提示：确认态里给用户看清楚即将发生什么 */
+.kr-memory__ask {
   flex: none;
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+}
+
+/* 列表底部居中的「展开其余 N 条 / 收起」 */
+.kr-memory__more {
+  align-self: center;
+  margin-top: 2px;
+  padding: 3px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.kr-memory__more:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.1));
 }
 
 .kr-memory__list {
@@ -1370,8 +1407,9 @@ body[data-kr-resizing="true"] * {
   gap: 2px;
   min-width: 0;
   /* 兜底封顶：展开「其余 N 条」后也不允许把右栏顶穿，超出在内部滚动。
-     与 SECTION_PREVIEW_COUNT 成对抬到两倍 —— 默认 16 条正好填得满，再多才封顶。 */
-  max-height: 92vh;
+     与 SECTION_PREVIEW_COUNT 成对维护（6 条 ≈ 半屏）—— 记忆卡常驻钉在
+     右栏底部，给到 92vh 时它会自己吃掉整个右栏、思考卡被挤到最小档。 */
+  max-height: 40vh;
   overflow-y: auto;
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
@@ -1381,9 +1419,15 @@ body[data-kr-resizing="true"] * {
 /* 挤压态：思考卡已被压到最小档、右栏仍然装不下时，记忆卡自己再让一档，
    绝不上涨把思考卡彻底顶没（用户要的是「都能看见」而不是「记忆卡看全」）。 */
 .kr-card--memory[data-squeezed="true"] .kr-memory__list {
-  max-height: 60vh;
+  max-height: 26vh;
 }
 
+/*
+ * 单条记忆行：正文列 + 行尾操作列两段。
+ *
+ * 原来行首那条永远空着的 11px 置顶槽已经删掉——置顶收进属性行后，未置顶的行
+ * 左侧不再留一个「为了对齐而存在」的空位，正文可以真正贴齐左边缘。
+ */
 .kr-memory__row {
   display: flex;
   align-items: flex-start;
@@ -1391,43 +1435,70 @@ body[data-kr-resizing="true"] * {
   padding: 6px 6px 5px;
   border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.12s ease;
+  transition: background-color 0.12s ease, box-shadow 0.18s ease;
+  animation: kr-memory-row-in 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .kr-memory__row:hover {
   background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.07));
 }
 
-.kr-memory__row[data-selected="true"] {
+/* 确认删除态：只有这一行亮起来（描边 + 极淡填充），其余行保持原样——
+   一次只确认一条，界面上「正在删什么」必须一眼可见。 */
+.kr-memory__row[data-confirming="true"] {
   background: var(--kr-fill-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-label-secondary, #6b6f76) 22%, transparent);
 }
 
-.kr-memory__check {
-  flex: none;
-  margin: 2px 0 0;
-  accent-color: var(--kr-accent);
-  cursor: pointer;
+@keyframes kr-memory-row-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-/* 置顶图标占位：未置顶的行也留同一个 11px 槽，文本左边缘才对得齐 */
-.kr-memory__pin {
+/* 行尾操作列：时间常态在，删除键 hover/聚焦才浮现（带一点右移，读起来像
+   「从行边滑出来」而不是突然出现）。 */
+.kr-memory__side {
   flex: none;
-  width: 11px;
-  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  align-self: center;
+  min-height: 20px;
+}
+
+.kr-memory__act {
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
   color: var(--dsw-alias-label-tertiary);
-}
-
-.kr-memory__pin[role="button"] {
   cursor: pointer;
-  border-radius: 3px;
+  opacity: 0;
+  transform: translateX(3px);
+  transition: opacity 0.16s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease, color 0.15s ease;
 }
 
-.kr-memory__pin[role="button"]:hover {
+.kr-memory__row:hover .kr-memory__act,
+.kr-memory__act:focus-visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.kr-memory__act:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.16));
   color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12));
+}
+
+/* 触屏没有 hover，删除键常显（否则永远点不到） */
+@media (hover: none) {
+  .kr-memory__act {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .kr-memory__body-col {
@@ -1469,10 +1540,40 @@ body[data-kr-resizing="true"] * {
 
 /* 相对时间推到行尾：徽章（类型/标签）靠左，时间靠右，一行两端各有归属，
    不再挤成一坨灰色小字。 */
+/* 时间已移到行尾操作列（.kr-memory__time--side），这里只保留基础字号色 */
 .kr-memory__time {
-  margin-left: auto;
   flex: none;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* 置顶星标：属性行里一枚可点小星（点一下取消置顶）。置顶的完整入口在 triad
+   记忆面板，右栏只做「看见 + 撤销」。 */
+.kr-memory__flag {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
+}
+
+.kr-memory__flag:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12));
+  color: var(--dsw-alias-label-primary);
+}
+
+.kr-memory__flag:active {
+  transform: scale(0.9);
 }
 
 .kr-memory__tag {
@@ -1489,11 +1590,18 @@ body[data-kr-resizing="true"] * {
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* 删除失败等行内错误（不动用模态弹窗，也不打断多选态） */
+/* 行内错误（删除失败等）：不动用模态弹窗，也不打断阅读 */
 .kr-memory__err {
   padding: 2px 6px 3px;
   font-size: 11px;
   color: var(--dsw-alias-label-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kr-memory__row { animation: none; transition: background-color 0.12s linear; }
+  .kr-memory__act { transition: opacity 0.12s linear; transform: none; }
+  .kr-memory__flag:active { transform: none; }
+  .kr-memory__more { transition: color 0.12s linear, background-color 0.12s linear; }
 }
 
 /* ══ KR 极简 Agent 状态卡：只显示一句当前动作 + 可配置头像 ═══════════════ */
