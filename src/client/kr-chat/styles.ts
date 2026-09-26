@@ -155,41 +155,45 @@ body[data-dsh-kr-chat="true"],
   --kr-warning: #f59e0b;
   --kr-error: #ef4444;
   /*
-   * 表面策略：**整个右栏不投投影**，卡片也一律贴平。
+   * 表面策略：**大盘不铺底色，卡片常态投影浮起**。
    *
-   * 大盘与左侧官方侧边栏同色（见下方 --kr-canvas-bg），两者是同一层 chrome，
-   * 靠一根发丝分隔线划界即可；曾经那层「只往左投」的悬浮投影是大盘还纯白、
-   * 与左栏一灰一白时的做法，同色之后不再成立。
+   * 右栏不再刷一层自己的底色（--kr-canvas-bg = transparent），底色直接透出
+   * 下方主对话区，等于这层 chrome 从「一块色板」退回「一层透明容器」；
+   * 于是卡片之间的空隙、头部、footer 露出的都是主区底色，卡片靠自身投影
+   * 浮在这层底色上，层级一眼可读。分隔线仍保留一根发丝，标出这是独立栏位。
    *
-   * 卡片同理不投影：底板是浅灰 #f9fafb、卡片是白 layer-1，浅色下自带约 5 的
-   * 亮度差就够分层；再叠投影会变成「灰底上浮一层白卡又投一层影」。投影只留给
-   * hover 做瞬时反馈。
+   * 投影用「近距贴地 + 远距极淡」两层，模糊半径刻意收在滚动区 12px padding
+   * 之内（.kr-panel__scroll 是滚动容器，左右多一像素都会被裁掉），
+   * 保证滚动时卡片四周的影子不会被切边。
    */
   --kr-card-bg: var(--dsw-alias-bg-layer-1, #ffffff);
   --kr-surface-bg: var(--dsw-alias-bg-layer-1, #ffffff);
-  --kr-canvas-bg: var(--dsw-specific-sidebar-fill, var(--dsw-alias-bg-base, #ffffff));
+  /* 去掉大盘背景色：transparent 让右侧直接透出主对话区底色。 */
+  --kr-canvas-bg: transparent;
   /* 描边退到发丝级：浅色 4% 黑 / 深色 6% 白（l1 自带主题感知）。
-     卡片不再靠投影浮起，边界感全交给这根描边。 */
+     投影负责「浮起」，描边只负责「边界」，两者分工不重复。 */
   --kr-card-border: var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
   --kr-card-hover: var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.16));
   --kr-hairline: var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
   --kr-hover-bg: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
   --kr-fill-bg: var(--dsw-alias-interactive-bg-active, rgba(38, 49, 72, 0.1));
-  /* 卡片常态不投影（贴在大盘上）；hover 才轻微浮起一档做反馈。 */
-  --kr-card-shadow: none;
-  --kr-card-shadow-hover: 0 1px 3px rgba(16, 24, 40, 0.08), 0 4px 12px rgba(16, 24, 40, 0.07);
+  /* 常态投影：一层贴地定边、一层远距托底，卡片于是浮在大盘底色之上。 */
+  --kr-card-shadow: 0 1px 2px rgba(15, 17, 21, .05), 0 6px 14px -8px rgba(15, 17, 21, .18);
+  /* hover 再抬一档，同时卡片整体上浮 1px（见 .kr-card:hover）。 */
+  --kr-card-shadow-hover: 0 2px 4px rgba(15, 17, 21, .06), 0 12px 20px -12px rgba(15, 17, 21, .24);
   /* 对话流里那张 Agent 状态卡是浮在消息底上的（不贴大盘），必须留投影；
      深浅两套阴影都在 --kr-float-shadow 里给出，避免把 #FFFFFF 之类写死在规则里。 */
   --kr-float-shadow: 0 1px 2px rgba(15, 17, 21, .04), 0 8px 24px -18px rgba(15, 17, 21, .28);
 }
 
-/* 深色主题：卡片(layer-1 #232324)本就比大盘底亮，靠色差分层即可，
-   同样不给常态投影。 */
+/* 深色主题：底色透出主对话区后，卡片(layer-1)与底色只差几级亮度，
+   分层几乎全交给投影 —— 所以深色下的影要比浅色更黑、铺得更开，
+   否则白卡片贴在深底上还是「浮不动」。 */
 body[data-ds-dark-theme],
 body[data-ds-dark-theme] .kr-split__side {
   --kr-card-border: rgba(255, 255, 255, 0.07);
-  --kr-card-shadow: none;
-  --kr-card-shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+  --kr-card-shadow: 0 1px 2px rgba(0, 0, 0, .42), 0 6px 16px -8px rgba(0, 0, 0, .72);
+  --kr-card-shadow-hover: 0 2px 6px rgba(0, 0, 0, .5), 0 14px 24px -14px rgba(0, 0, 0, .85);
   /* 浮层卡在深色下靠描边 + 更黑的落影分层，不能沿用浅色的暖灰阴影。 */
   --kr-float-shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px -18px rgba(0, 0, 0, .78);
 }
@@ -224,10 +228,8 @@ body[data-ds-dark-theme] .kr-split__side {
   height: 100%;
   display: flex;
   flex-direction: column;
-  /* 与左侧官方侧边栏同色（--kr-canvas-bg），两者是同一层 chrome，
-     因此**不投悬浮投影**——只留一根发丝分隔线划出边界。
-     （历史上加过「只往左投」的悬浮投影，那是大盘还是纯白底、与左栏一灰一白
-     时的做法；同色之后那层投影不再成立，反而像贴了张浮纸。） */
+  /* 大盘不再刷自己的底色（--kr-canvas-bg = transparent）：底色透出主对话区，
+     卡片靠自身投影浮在这层底色上。栏位边界仍留一根发丝分隔线。 */
   border-left: 1px solid var(--kr-hairline);
   background: var(--kr-canvas-bg);
   position: relative;
@@ -299,10 +301,9 @@ body[data-kr-resizing="true"] * {
   gap: 10px;
   border-bottom: 1px solid var(--kr-hairline);
   flex: none;
-  /* 顶栏是面板级 chrome（横贯整个右栏），跟大盘底板同色。
-     不能取 --kr-surface-bg —— 那个 token 是给卡片/药丸内部小元素的
-     「白底」用的（它们要浮在灰底上分层），顶栏用它就会在这条 60px 上
-     留一道白色，与左右两栏的侧边栏色对不上。 */
+  /* 顶栏随大盘一起退成透明层：它横贯整栏，刷任何底色都会在「大盘无底色、
+     卡片全靠投影浮起」的新策略下显得突兀（一道比卡片还实的色带）。
+     下方分隔线继续承担「这是面板级 chrome」的边界声明。 */
   background: var(--kr-canvas-bg);
 }
 
@@ -482,10 +483,13 @@ body[data-kr-resizing="true"] * {
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
+  /* 左右 12px 的 padding 同时是卡片的「让影空间」：滚动容器会把溢出
+     padding box 的部分裁掉，投影的横向扩散必须收在这 12px 之内。 */
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* 随大盘退成透明：卡片之间的空隙直接露出主对话区底色。 */
   background: var(--kr-canvas-bg);
 }
 
@@ -500,6 +504,9 @@ body[data-kr-resizing="true"] * {
   border-radius: 8px;
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
+  /* 它也是浮在透明大盘上的一张小卡，跟 .kr-card 用同一档投影，
+     免得滚动区里出现「一部分浮、一部分贴平」的两种高度。 */
+  box-shadow: var(--kr-card-shadow);
 }
 
 .kr-panel__turn-hint-btn {
@@ -523,7 +530,7 @@ body[data-kr-resizing="true"] * {
    N 次失败 / 耗时）按用户要求整体去掉，相关样式随之删除。
    @keyframes kr-fade-in 仍被工具详情面板使用，保留在文件下方定义处。 */
 
-/* ══ 通用卡片容器（高雅纯白、轻柔投影、精细微边框） ══════════════════════════ */
+/* ══ 通用卡片容器（透明大盘上的悬浮卡片） ══════════════════════════════════ */
 .kr-card {
   background: var(--kr-card-bg);
   border: 1px solid var(--kr-card-border);
@@ -533,12 +540,34 @@ body[data-kr-resizing="true"] * {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  /* 投影 + 位移 + 描边同步过渡：悬浮感是「渐次浮起」而不是「啪一下换图」，
+     阴影走 .22s 的缓出曲线，和面板宽度/展开动画同一套节奏。 */
+  transition: border-color 0.18s ease, box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  /* 挂载时轻微上浮淡入：内容回流（新一轮任务/思考落盘）时卡片是重新挂载的，
+     入场动画正好替代了原来「贴平无感」的突兀出现。 */
+  animation: kr-card-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* hover：抬升 1px + 阴影再开一档，让「可交互」和「可折叠」被看见。 */
 .kr-card:hover {
   border-color: var(--kr-card-hover);
   box-shadow: var(--kr-card-shadow-hover);
+  transform: translateY(-1px);
+}
+
+@keyframes kr-card-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kr-card {
+    transition: border-color 0.15s linear;
+    animation: none;
+  }
+  .kr-card:hover {
+    transform: none;
+  }
 }
 
 .kr-card__header {
@@ -1223,6 +1252,7 @@ body[data-kr-resizing="true"] * {
 .kr-panel__memory-dock {
   flex: none;
   padding: 0 12px 12px;
+  /* 同样透明：footer 只是把记忆卡钉在下方，不该自己带一块底色。 */
   background: var(--kr-canvas-bg);
   display: flex;
   flex-direction: column;
